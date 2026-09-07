@@ -271,6 +271,11 @@ a:focus-visible {
   border: 1px solid var(--border);
   border-radius: 13px;
   background: white;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.info-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -12px rgba(15, 23, 42, 0.18);
 }
 .icon-circle {
   width: 60px;
@@ -281,6 +286,11 @@ a:focus-visible {
   border-radius: 50%;
   background: linear-gradient(145deg, #f4f2ff, #e8e3ff);
   color: var(--purple);
+  transition: transform 0.25s ease;
+}
+.info-card:hover .icon-circle,
+.benefit-card:hover .icon-circle {
+  transform: scale(1.08) rotate(-4deg);
 }
 .info-card h3,
 .benefit-card h3,
@@ -414,6 +424,11 @@ a:focus-visible {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: white;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.benefit-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -12px rgba(15, 23, 42, 0.18);
 }
 .benefit-card .icon-circle {
   width: 57px;
