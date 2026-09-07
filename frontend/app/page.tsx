@@ -1,69 +1,255 @@
 import Image from "next/image";
+import { Icon, type IconName } from "./components/icons";
+import { Logo } from "./components/Logo";
+
+function SkillPill({ type }: { type: "guitar" | "photoshop" }) {
+  return (
+    <div className={`skill-pill ${type === "guitar" ? "skill-pill--pink" : "skill-pill--blue"}`}>
+      {type === "guitar" ? (
+        <span className="guitar" aria-hidden="true">
+          🎸
+        </span>
+      ) : (
+        <span className="photoshop" aria-hidden="true">
+          Ps
+        </span>
+      )}
+      <strong>{type === "guitar" ? "Гітара" : "Photoshop"}</strong>
+    </div>
+  );
+}
+
+function FloatingSkill({ type }: { type: "guitar" | "photoshop" }) {
+  return (
+    <div className={`floating-skill floating-skill--${type}`}>
+      {type === "guitar" ? (
+        <span className="floating-skill__emoji" aria-hidden="true">
+          🎸
+        </span>
+      ) : (
+        <span className="photoshop photoshop--large" aria-hidden="true">
+          Ps
+        </span>
+      )}
+      <span>
+        <small>{type === "guitar" ? "Можу навчити:" : "Хочу навчитись:"}</small>
+        <strong>{type === "guitar" ? "Гітара" : "Photoshop"}</strong>
+      </span>
+    </div>
+  );
+}
+
+function Avatar({ person }: { person: "andrii" | "olena" }) {
+  return (
+    <div
+      className={`avatar avatar--${person}`}
+      role="img"
+      aria-label={person === "andrii" ? "Андрій" : "Олена"}
+    />
+  );
+}
+
+const steps: Array<{ icon: IconName; title: string; text: string }> = [
+  {
+    icon: "profile",
+    title: "1. Додаєш свої навички",
+    text: "Розкажи, що ти вмієш і чому можеш навчити інших.",
+  },
+  {
+    icon: "list",
+    title: "2. Вказуєш, що хочеш вивчити",
+    text: "Обери навички, які хочеш опанувати.",
+  },
+  {
+    icon: "people",
+    title: "3. Отримуєш сумісний match",
+    text: "Ми знаходимо студентів, чиї навички доповнюють твої.",
+  },
+];
+
+const benefits: Array<{ icon: IconName; title: string; text: string }> = [
+  {
+    icon: "bolt",
+    title: "Розумний matching",
+    text: "Алгоритм знаходить студентів, які справді доповнюють одне одного.",
+  },
+  {
+    icon: "sprout",
+    title: "Безкоштовний розвиток",
+    text: "Отримуй нові знання без фінансових витрат — лише через взаємодопомогу.",
+  },
+  {
+    icon: "people",
+    title: "Студентська спільнота",
+    text: "Знайомся з однодумцями з різних університетів і розширюй коло спілкування.",
+  },
+];
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div id="top" className="page-shell">
+      <header className="site-header">
+        <div className="container header-inner">
+          <Logo />
+          <nav className="main-nav" aria-label="Основна навігація">
+            <a href="#how">Як це працює</a>
+            <a href="#benefits">Переваги</a>
+            <a href="#match">Match</a>
+            <a href="#reviews">Відгуки</a>
+          </nav>
+          <a className="button button--small" href="#match">
+            Спробувати
+          </a>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+      </header>
+
+      <main>
+        <section className="hero container" aria-labelledby="hero-title">
+          <div className="hero-copy">
+            <h1 id="hero-title">
+              Обмінюйся
+              <br />
+              навичками
+              <br />
+              <span>зі студентами</span>
+            </h1>
+            <p>
+              Вчися тому, що цікаво, і ділись тим, у чому ти сильний. SkillSwap — платформа для
+              обміну знаннями між студентами.
+            </p>
+            <div className="hero-actions">
+              <a className="button" href="#match">
+                Знайти match <Icon name="arrow" size={20} />
+              </a>
+              <a className="button button--secondary" href="#how">
+                Як це працює
+              </a>
+            </div>
+          </div>
+          <div className="hero-visual">
             <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+              src="/skill-swap-hero.png"
+              alt="Студенти обмінюються навичками в університетському просторі"
+              fill
+              priority
+              sizes="(max-width: 760px) 100vw, 62vw"
             />
-            Deploy Now
+            <FloatingSkill type="guitar" />
+            <FloatingSkill type="photoshop" />
+          </div>
+        </section>
+
+        <section id="how" className="section container" aria-labelledby="how-title">
+          <div className="section-heading">
+            <h2 id="how-title">Як це працює</h2>
+            <p>Три прості кроки до нових знань і цікавих знайомств</p>
+          </div>
+          <div className="steps-grid">
+            {steps.map((step) => (
+              <article className="info-card" key={step.title}>
+                <span className="icon-circle">
+                  <Icon name={step.icon} />
+                </span>
+                <h3>{step.title}</h3>
+                <p>{step.text}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="match" className="match-section container" aria-labelledby="match-title">
+          <div className="section-heading section-heading--compact">
+            <h2 id="match-title">Приклад match</h2>
+            <p>Студенти обмінюються навичками та навчаються одне в одного.</p>
+          </div>
+          <div className="match-flow">
+            <article className="profile-card">
+              <div className="profile-head">
+                <Avatar person="andrii" />
+                <div>
+                  <h3>Андрій</h3>
+                  <p>Студент КПІ</p>
+                </div>
+              </div>
+              <div className="skill-row">
+                <span>Можу навчити:</span>
+                <SkillPill type="guitar" />
+              </div>
+              <div className="skill-row">
+                <span>Хочу навчитись:</span>
+                <SkillPill type="photoshop" />
+              </div>
+            </article>
+            <div className="swap-icon" aria-label="Взаємний обмін навичками">
+              <span>→</span>
+              <span>←</span>
+            </div>
+            <article className="profile-card">
+              <div className="profile-head">
+                <Avatar person="olena" />
+                <div>
+                  <h3>Олена</h3>
+                  <p>Студентка КНУ</p>
+                </div>
+              </div>
+              <div className="skill-row">
+                <span>Можу навчити:</span>
+                <SkillPill type="photoshop" />
+              </div>
+              <div className="skill-row">
+                <span>Хочу навчитись:</span>
+                <SkillPill type="guitar" />
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section
+          id="benefits"
+          className="section benefits container"
+          aria-labelledby="benefits-title"
+        >
+          <div className="section-heading section-heading--compact">
+            <h2 id="benefits-title">Чому SkillSwap?</h2>
+          </div>
+          <div className="benefits-grid">
+            {benefits.map((benefit) => (
+              <article className="benefit-card" key={benefit.title}>
+                <span className="icon-circle">
+                  <Icon name={benefit.icon} />
+                </span>
+                <div>
+                  <h3>{benefit.title}</h3>
+                  <p>{benefit.text}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="reviews" className="cta container" aria-labelledby="cta-title">
+          <div>
+            <h2 id="cta-title">Готовий знайти свій match?</h2>
+            <p>
+              Приєднуйся до SkillSwap і відкрий нові можливості разом зі студентами всієї України!
+            </p>
+          </div>
+          <a className="button" href="#top">
+            Спробувати <Icon name="arrow" size={20} />
           </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+        </section>
       </main>
+
+      <footer className="site-footer container">
+        <Logo />
+        <nav aria-label="Навігація в підвалі">
+          <a href="#how">Як це працює</a>
+          <a href="#benefits">Переваги</a>
+          <a href="#match">Match</a>
+          <a href="#reviews">Відгуки</a>
+        </nav>
+        <p>© 2026 SkillSwap. Всі права захищені.</p>
+      </footer>
     </div>
   );
 }
