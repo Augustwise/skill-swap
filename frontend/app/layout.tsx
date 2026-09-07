@@ -1,8 +1,13 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Caveat, Geist } from "next/font/google";
 import "./globals.css";
 
 const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin", "cyrillic"] });
+const caveat = Caveat({
+  variable: "--font-caveat",
+  subsets: ["latin", "cyrillic", "cyrillic-ext"],
+  weight: ["500", "600", "700"],
+});
 
 export const metadata: Metadata = {
   title: "SkillSwap — обмін навичками між студентами",
@@ -11,7 +16,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="uk" className={geist.variable}>
+    <html lang="uk" className={`${geist.variable} ${caveat.variable}`}>
       <body>{children}</body>
     </html>
   );

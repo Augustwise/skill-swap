@@ -228,15 +228,108 @@ export default function Home() {
         </section>
 
         <section id="reviews" className="cta container" aria-labelledby="cta-title">
-          <div>
-            <h2 id="cta-title">Готовий знайти свій match?</h2>
-            <p>
-              Приєднуйся до SkillSwap і відкрий нові можливості разом зі студентами всієї України!
-            </p>
+          <div className="cta-left">
+            <div className="cta-plane-badge" aria-hidden="true">
+              <svg
+                className="cta-plane-svg"
+                viewBox="0 0 72 60"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <line
+                  x1="18"
+                  y1="14"
+                  x2="8"
+                  y2="8"
+                  stroke="#8c8ff8"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                />
+                <line
+                  x1="14"
+                  y1="30"
+                  x2="3"
+                  y2="30"
+                  stroke="#8c8ff8"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                />
+                <line
+                  x1="18"
+                  y1="46"
+                  x2="8"
+                  y2="52"
+                  stroke="#8c8ff8"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                />
+
+                {/* Origami folded paper airplane */}
+                <polygon points="68,11 25,26 43,38" fill="#5c3ef7" />
+                <polygon points="68,11 43,38 55,41" fill="#4929ea" />
+                <polygon points="43,38 35,50 46,44" fill="#3619ce" />
+              </svg>
+            </div>
+
+            <div className="cta-content">
+              <h2 id="cta-title">
+                Готовий знайти свій <span>SkillSwap?</span>
+              </h2>
+              <p>
+                Приєднуйся вже сьогодні та відкрий нові можливості разом зі студентами з усієї
+                України!
+              </p>
+            </div>
           </div>
-          <a className="button" href="#top">
-            Спробувати <Icon name="arrow" size={20} />
-          </a>
+
+          <div className="cta-right">
+            <a className="cta-btn" href="#match">
+              <span>Знайти свій match</span>
+              <Icon name="arrow" size={17} />
+            </a>
+
+            <div className="cta-note" aria-hidden="true">
+              <svg
+                className="cta-note-burst"
+                viewBox="0 0 20 34"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <line
+                  x1="17"
+                  y1="8"
+                  x2="4"
+                  y2="4"
+                  stroke="#5439f5"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+                <line
+                  x1="19"
+                  y1="17"
+                  x2="3"
+                  y2="17"
+                  stroke="#5439f5"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+                <line
+                  x1="17"
+                  y1="26"
+                  x2="4"
+                  y2="30"
+                  stroke="#5439f5"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div className="cta-note-text">
+                <span>Нові навички.</span>
+                <span>Нові друзі.</span>
+                <span>Яскравіше майбутнє!</span>
+              </div>
+            </div>
+          </div>
         </section>
       </main>
 
