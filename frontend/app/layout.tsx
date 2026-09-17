@@ -1,6 +1,14 @@
 import type { Metadata } from "next";
 import { Caveat, Geist } from "next/font/google";
-import "./globals.css";
+import "./styles/globals.css";
+import "./styles/ui.css";
+import "./styles/header.css";
+import "./styles/home.css";
+import "./styles/how-it-works.css";
+import "./styles/match.css";
+import "./styles/benefits.css";
+import "./styles/cta.css";
+import "./styles/footer.css";
 
 const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin", "cyrillic"] });
 const caveat = Caveat({

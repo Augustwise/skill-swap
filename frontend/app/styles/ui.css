@@ -1,0 +1,106 @@
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  font-size: 21px;
+  font-weight: 780;
+  letter-spacing: -0.7px;
+}
+
+.logo svg {
+  width: 28px;
+  height: 28px;
+}
+
+.button {
+  min-height: 47px;
+  padding: 0 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #684cff, #4a2af1);
+  color: white;
+  font-weight: 650;
+  white-space: nowrap;
+  box-shadow: 0 6px 20px rgba(83, 54, 245, 0.18);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(83, 54, 245, 0.25);
+}
+
+.button svg {
+  flex: none;
+}
+
+.button--small {
+  min-width: 130px;
+  min-height: 41px;
+  margin-left: auto;
+  padding: 0 24px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.button--secondary {
+  min-width: 149px;
+  border: 1px solid #b9b3ff;
+  background: white;
+  color: var(--purple);
+  box-shadow: none;
+}
+
+.icon-circle {
+  width: 60px;
+  height: 60px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #f4f2ff, #e8e3ff);
+  color: var(--purple);
+  transition: transform 0.25s ease;
+}
+
+.photoshop {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 4px;
+  background: #063c7a;
+  color: #55c5ff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.photoshop--large {
+  width: 32px;
+  height: 32px;
+}
+
+@media (max-width: 760px) {
+  .button--small {
+    min-width: 112px;
+    padding-inline: 17px;
+  }
+}
+
+@media (max-width: 430px) {
+  .logo {
+    font-size: 18px;
+  }
+
+  .logo svg {
+    width: 25px;
+    height: 25px;
+  }
+}

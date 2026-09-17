@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #0a1046;
+  --muted: #697296;
+  --purple: #5b3df5;
+  --purple-dark: #4626ec;
+  --purple-soft: #f0edff;
+  --border: #dfe4f3;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.page-shell {
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.container {
+  width: min(100% - 80px, 1000px);
+  margin-inline: auto;
+}
+
+a:focus-visible,
+.button:focus-visible,
+.cta-btn:focus-visible {
+  outline: 3px solid #b9afff;
+  outline-offset: 3px;
+}
+
+@media (max-width: 960px) {
+  .container {
+    width: min(100% - 40px, 900px);
+  }
+}
+
+@media (max-width: 760px) {
+  .container {
+    width: min(100% - 32px, 640px);
+  }
+}
+
+@media (max-width: 430px) {
+  .container {
+    width: min(100% - 24px, 400px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
+}
