@@ -1,0 +1,157 @@
+.match-section {
+  margin-top: 23px;
+  padding: 16px 90px 17px;
+  border-radius: 17px;
+  background: linear-gradient(110deg, #f4f1ff, #f9f8ff 48%, #f0edff);
+}
+
+.match-section .section-heading h2 {
+  font-size: 29px;
+}
+
+.match-flow {
+  display: grid;
+  grid-template-columns: 1fr 62px 1fr;
+  align-items: center;
+  gap: 22px;
+}
+
+.profile-card {
+  min-height: 194px;
+  padding: 13px 22px 15px;
+  border: 1px solid #ececf5;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 24px rgba(62, 52, 123, 0.05);
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.profile-head h3 {
+  margin: 0 0 3px;
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: -0.25px;
+}
+
+.profile-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.avatar {
+  width: 76px;
+  height: 76px;
+  flex: none;
+  border: 2px solid white;
+  border-radius: 50%;
+  background-image: url("/skill-swap-hero.png");
+  background-repeat: no-repeat;
+  box-shadow: 0 0 0 1px #e8e8ef;
+}
+
+.avatar--andrii {
+  background-size: 355%;
+  background-position: 28% 27%;
+}
+
+.avatar--olena {
+  background-size: 340%;
+  background-position: 73% 29%;
+}
+
+.skill-row {
+  margin-top: 8px;
+}
+
+.skill-row > span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.skill-pill {
+  min-height: 35px;
+  padding: 4px 9px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 6px;
+}
+
+.skill-pill--pink {
+  background: linear-gradient(90deg, #ffe8f2, #fff0fa);
+}
+
+.skill-pill--blue {
+  background: linear-gradient(90deg, #e2f2ff, #e9f0ff);
+}
+
+.skill-pill .guitar {
+  font-size: 23px;
+  line-height: 1;
+}
+
+.skill-pill .photoshop {
+  width: 29px;
+  height: 29px;
+}
+
+.skill-pill strong {
+  font-size: 13px;
+}
+
+.swap-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--purple);
+  font-size: 40px;
+  font-weight: 450;
+  line-height: 0.64;
+}
+
+@media (max-width: 960px) {
+  .match-section {
+    padding-inline: 45px;
+  }
+}
+
+@media (max-width: 760px) {
+  .match-section {
+    margin-top: 35px;
+    padding: 26px;
+  }
+
+  .match-flow {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .swap-icon {
+    flex-direction: row;
+    justify-content: center;
+    gap: 6px;
+    transform: rotate(90deg);
+    font-size: 34px;
+  }
+
+  .profile-card {
+    width: 100%;
+    max-width: 420px;
+    margin-inline: auto;
+  }
+}
+
+@media (max-width: 430px) {
+  .profile-card {
+    padding-inline: 16px;
+  }
+}

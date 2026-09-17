@@ -1,0 +1,76 @@
+.benefits {
+  padding-top: 23px;
+}
+
+.benefits-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 17px;
+}
+
+.benefit-card {
+  min-height: 139px;
+  padding: 18px 19px;
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: white;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.benefit-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -12px rgba(15, 23, 42, 0.18);
+}
+
+.benefit-card .icon-circle {
+  width: 57px;
+  height: 57px;
+}
+
+.benefit-card h3 {
+  margin: 8px 0 7px;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: -0.25px;
+}
+
+.benefit-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.38;
+}
+
+@media (max-width: 960px) {
+  .benefit-card {
+    gap: 12px;
+    padding-inline: 14px;
+  }
+
+  .benefit-card .icon-circle {
+    width: 50px;
+    height: 50px;
+  }
+}
+
+@media (max-width: 760px) {
+  .benefits {
+    padding-top: 45px;
+  }
+
+  .benefits-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 430px) {
+  .benefit-card {
+    min-height: 0;
+  }
+}
