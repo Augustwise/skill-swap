@@ -32,4 +32,4 @@ Recent feature and refactor commits use scoped subjects such as `feat(backend): 
 
 ## Configuration & Security
 
-Copy `backend/.env.example` to a local environment file and set `DATABASE_URL`; do not commit credentials. Keep local API and frontend origins on loopback addresses. Remote database URLs require verified TLS settings (`sslmode=verify-full` and `sslrootcert`).
+Keep backend settings in `backend/.env` and set `DATABASE_URL`; use `backend/README.md` for setup values and do not commit credentials. Keep local API and frontend origins on loopback addresses. Remote database URLs require verified TLS settings (`sslmode=verify-full` and `sslrootcert`).

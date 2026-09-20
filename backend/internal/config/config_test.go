@@ -1,6 +1,37 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
+
+func TestLoadEnvFile(t *testing.T) {
+	t.Chdir(t.TempDir())
+	const key = "SKILLSWAP_ENV_TEST"
+	t.Setenv(key, "")
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatal(err)
+	}
+	if err := loadEnvFile(); err != nil {
+		t.Fatalf("missing optional .env: %v", err)
+	}
+	if err := os.WriteFile(".env", []byte(key+"=from-file\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := loadEnvFile(); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv(key); got != "from-file" {
+		t.Fatalf("value = %q, want from-file", got)
+	}
+	t.Setenv(key, "from-process")
+	if err := loadEnvFile(); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv(key); got != "from-process" {
+		t.Fatalf("value = %q, want from-process", got)
+	}
+}
 
 func TestLoadRequiresDatabaseURL(t *testing.T) {
 	setValidSMTPEnv(t)

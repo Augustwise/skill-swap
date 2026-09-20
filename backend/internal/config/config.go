@@ -41,11 +41,11 @@ func Load() (Config, error) {
 		SMTP:        smtp,
 	}
 	if cfg.DatabaseURL == "" {
-		return Config{}, errors.New("DATABASE_URL is required")
+		return Config{}, errors.New("DATABASE_URL is required: set a complete PostgreSQL URL in .env")
 	}
 	parsed, err := url.Parse(cfg.DatabaseURL)
 	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.Hostname() == "" {
-		return Config{}, errors.New("DATABASE_URL must be a PostgreSQL URL")
+		return Config{}, errors.New("DATABASE_URL must be a complete PostgreSQL URL (postgres://USER:PASSWORD@HOST:5432/DATABASE), not just a hostname")
 	}
 	dbHost := parsed.Hostname()
 	dbIP := net.ParseIP(dbHost)
@@ -100,15 +100,8 @@ func smtpFromEnvironment() (SMTPConfig, error) {
 }
 
 func loadEnvFile() error {
-	for _, path := range []string{".env.local", ".env"} {
-		_, err := os.Stat(path)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		return godotenv.Load(path)
+	if err := godotenv.Load(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return nil
 }

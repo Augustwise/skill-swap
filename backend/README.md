@@ -12,13 +12,8 @@ otherwise.
 
 ## Local configuration
 
-Create the local environment file:
-
-```bash
-cp .env.example .env.local
-```
-
-Use the following values as a starting point:
+Keep all backend settings in a single `backend/.env` file. Create it using
+the following values as a starting point:
 
 ```dotenv
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/skillswap?sslmode=disable
@@ -34,12 +29,23 @@ MAIL_FROM=no-reply@students.example.test
 the default Mailpit setup, or both be set. The adapter automatically enables
 STARTTLS when the SMTP server advertises it.
 
-The backend loads the first available file in this order: `.env.local`, then
-`.env`. Existing environment variables take precedence over values from these
-files. Do not commit local environment files or credentials.
+The backend reads only `.env`. Existing process environment variables take
+precedence, allowing test and deployment overrides. The `.env` file is ignored
+by Git; do not commit credentials.
 
 Remote PostgreSQL URLs must use verified TLS and include both
 `sslmode=verify-full` and `sslrootcert`.
+
+For the network database, use a complete URL, not just the server hostname:
+
+```dotenv
+DATABASE_URL="postgres://USER:URL_ENCODED_PASSWORD@HOST:5432/DBNAME?sslmode=verify-full&sslrootcert=C:/Projects/skill-swap/backend/.local/certs/eu-central-1-bundle.pem&connect_timeout=10"
+```
+
+Replace the placeholders with the database credentials and name. Percent-encode
+special characters in the username and password. The certificate path must point
+to the CA bundle for your database server. Mailpit remains independent of the
+network database: SMTP uses port 1025, its web UI uses 8025, and the API uses 8080.
 
 ## PostgreSQL migrations and demo data
 

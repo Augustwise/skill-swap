@@ -1,7 +1,6 @@
 # Local configuration and test services
 .env
 .env.*
-!.env.example
 backend/.local/
 backend/api.exe
 backend/coverage.out
