@@ -11,23 +11,50 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"skillswap/backend/docs"
 )
 
 type API struct {
-	db             *pgxpool.Pool
+	store          catalogStore
 	frontendOrigin string
 	logger         *slog.Logger
 }
 
 func New(db *pgxpool.Pool, frontendOrigin string, logger *slog.Logger) http.Handler {
-	a := &API{db: db, frontendOrigin: frontendOrigin, logger: logger}
+	return newHandler(newPostgresCatalogStore(db), frontendOrigin, logger)
+}
+
+func newHandler(store catalogStore, frontendOrigin string, logger *slog.Logger) http.Handler {
+	a := &API{store: store, frontendOrigin: frontendOrigin, logger: logger}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/health", a.health)
-	mux.HandleFunc("GET /api/v1/ready", a.ready)
-	mux.HandleFunc("GET /api/v1/universities", a.universities)
-	mux.HandleFunc("GET /api/v1/skill-categories", a.categories)
-	mux.HandleFunc("GET /api/v1/skills", a.skills)
+	mux.HandleFunc("/api/v1/health", getOnly(a.health))
+	mux.HandleFunc("/api/v1/ready", getOnly(a.ready))
+	mux.HandleFunc("/api/v1/universities", getOnly(a.universities))
+	mux.HandleFunc("/api/v1/skill-categories", getOnly(a.categories))
+	mux.HandleFunc("/api/v1/skills", getOnly(a.skills))
+	mux.HandleFunc("/api/v1/openapi.yaml", getOnly(openAPI))
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		problem(w, http.StatusNotFound, "not_found", "Resource was not found")
+	})
 	return a.withMiddleware(mux)
+}
+
+func openAPI(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(docs.OpenAPI)
+}
+
+func getOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			problem(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method is not allowed")
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (a *API) health(w http.ResponseWriter, _ *http.Request) {
@@ -37,8 +64,7 @@ func (a *API) health(w http.ResponseWriter, _ *http.Request) {
 func (a *API) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	var migrated bool
-	if err := a.db.QueryRow(ctx, `SELECT to_regclass('public.universities') IS NOT NULL`).Scan(&migrated); err != nil || !migrated {
+	if err := a.store.Ready(ctx); err != nil {
 		problem(w, http.StatusServiceUnavailable, "database_unavailable", "Database is unavailable")
 		return
 	}
@@ -56,30 +82,15 @@ type university struct {
 func (a *API) universities(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
-	rows, err := a.db.Query(ctx, `SELECT id, name, COALESCE(short_name, ''), email_domain, COALESCE(city, '')
-		FROM universities ORDER BY name, id`)
+	items, err := a.store.Universities(ctx)
 	if err != nil {
 		a.queryError(w, err)
 		return
 	}
-	defer rows.Close()
-	result := make([]university, 0)
-	for rows.Next() {
-		var item university
-		if err := rows.Scan(&item.ID, &item.Name, &item.ShortName, &item.EmailDomain, &item.City); err != nil {
-			a.queryError(w, err)
-			return
-		}
-		result = append(result, item)
-	}
-	if err := rows.Err(); err != nil {
-		a.queryError(w, err)
-		return
-	}
-	respond(w, http.StatusOK, map[string]any{"items": result})
+	respond(w, http.StatusOK, map[string]any{"items": items})
 }
 
-type category struct {
+type skillCategory struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Slug string `json:"slug"`
@@ -88,27 +99,12 @@ type category struct {
 func (a *API) categories(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
-	rows, err := a.db.Query(ctx, `SELECT id, name, slug FROM skill_categories
-		WHERE is_active = true ORDER BY sort_order, name, id`)
+	items, err := a.store.SkillCategories(ctx)
 	if err != nil {
 		a.queryError(w, err)
 		return
 	}
-	defer rows.Close()
-	result := make([]category, 0)
-	for rows.Next() {
-		var item category
-		if err := rows.Scan(&item.ID, &item.Name, &item.Slug); err != nil {
-			a.queryError(w, err)
-			return
-		}
-		result = append(result, item)
-	}
-	if err := rows.Err(); err != nil {
-		a.queryError(w, err)
-		return
-	}
-	respond(w, http.StatusOK, map[string]any{"items": result})
+	respond(w, http.StatusOK, map[string]any{"items": items})
 }
 
 type skill struct {
@@ -135,30 +131,12 @@ func (a *API) skills(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
-	rows, err := a.db.Query(ctx, `SELECT s.id, s.category_id, s.name, s.slug FROM skills s
-		JOIN skill_categories c ON c.id = s.category_id
-		WHERE s.is_active = true AND c.is_active = true
-		AND ($1 = '' OR strpos(lower(s.name), lower($1)) > 0 OR strpos(lower(s.slug), lower($1)) > 0)
-		ORDER BY s.name, s.id LIMIT $2`, query, limit)
+	items, err := a.store.Skills(ctx, query, limit)
 	if err != nil {
 		a.queryError(w, err)
 		return
 	}
-	defer rows.Close()
-	result := make([]skill, 0)
-	for rows.Next() {
-		var item skill
-		if err := rows.Scan(&item.ID, &item.CategoryID, &item.Name, &item.Slug); err != nil {
-			a.queryError(w, err)
-			return
-		}
-		result = append(result, item)
-	}
-	if err := rows.Err(); err != nil {
-		a.queryError(w, err)
-		return
-	}
-	respond(w, http.StatusOK, map[string]any{"items": result})
+	respond(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (a *API) queryError(w http.ResponseWriter, err error) {

@@ -27,6 +27,10 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+Backend setup, database migrations, API tests, and Mailpit instructions are in
+[`backend/README.md`](backend/README.md). The Sprint 1 OpenAPI contract is in
+[`backend/docs/openapi.yaml`](backend/docs/openapi.yaml).
+
 ### Production build
 
 To create and run a production build:

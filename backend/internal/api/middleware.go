@@ -9,7 +9,7 @@ import (
 func (a *API) withMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		w.Header().Set("Vary", "Origin")
+		w.Header().Add("Vary", "Origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if origin := r.Header.Get("Origin"); origin != "" {
 			if origin != a.frontendOrigin {
@@ -22,6 +22,8 @@ func (a *API) withMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
 		}
 		if r.Method == http.MethodOptions {
+			w.Header().Add("Vary", "Access-Control-Request-Method")
+			w.Header().Add("Vary", "Access-Control-Request-Headers")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

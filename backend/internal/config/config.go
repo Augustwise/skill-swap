@@ -3,8 +3,10 @@ package config
 import (
 	"errors"
 	"net"
+	"net/mail"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -14,16 +16,29 @@ type Config struct {
 	APIAddr     string
 	DatabaseURL string
 	FrontendURL string
+	SMTP        SMTPConfig
+}
+
+type SMTPConfig struct {
+	Addr     string
+	Username string
+	Password string
+	From     string
 }
 
 func Load() (Config, error) {
 	if err := loadEnvFile(); err != nil {
 		return Config{}, err
 	}
+	smtp, err := smtpFromEnvironment()
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		APIAddr:     value("API_ADDR", "127.0.0.1:8080"),
 		DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		FrontendURL: value("FRONTEND_ORIGIN", "http://localhost:3000"),
+		SMTP:        smtp,
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")
@@ -48,6 +63,38 @@ func Load() (Config, error) {
 	}
 	if cfg.FrontendURL != "http://localhost:3000" && cfg.FrontendURL != "http://127.0.0.1:3000" {
 		return Config{}, errors.New("FRONTEND_ORIGIN must be a local frontend origin")
+	}
+	return cfg, nil
+}
+
+func LoadSMTP() (SMTPConfig, error) {
+	if err := loadEnvFile(); err != nil {
+		return SMTPConfig{}, err
+	}
+	return smtpFromEnvironment()
+}
+
+func smtpFromEnvironment() (SMTPConfig, error) {
+	cfg := SMTPConfig{
+		Addr:     value("SMTP_ADDR", "127.0.0.1:1025"),
+		Username: strings.TrimSpace(os.Getenv("SMTP_USERNAME")),
+		Password: os.Getenv("SMTP_PASSWORD"),
+		From:     value("MAIL_FROM", "no-reply@students.example.test"),
+	}
+	host, portText, err := net.SplitHostPort(cfg.Addr)
+	if err != nil || strings.TrimSpace(host) == "" {
+		return SMTPConfig{}, errors.New("SMTP_ADDR must be a host:port pair")
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return SMTPConfig{}, errors.New("SMTP_ADDR must contain a valid port")
+	}
+	if (cfg.Username == "") != (cfg.Password == "") {
+		return SMTPConfig{}, errors.New("SMTP_USERNAME and SMTP_PASSWORD must be set together")
+	}
+	address, err := mail.ParseAddress(cfg.From)
+	if err != nil || address.Address == "" {
+		return SMTPConfig{}, errors.New("MAIL_FROM must be a valid email address")
 	}
 	return cfg, nil
 }

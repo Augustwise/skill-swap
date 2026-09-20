@@ -1,0 +1,249 @@
+openapi: 3.0.3
+info:
+  title: Skill Swap API
+  version: 1.0.0
+  description: Public HTTP contract implemented by the Sprint 1 backend.
+servers:
+  - url: http://127.0.0.1:8080/api/v1
+    description: Local development
+tags:
+  - name: Service
+  - name: Catalog
+paths:
+  /openapi.yaml:
+    get:
+      tags: [Service]
+      operationId: getOpenAPI
+      summary: Download this OpenAPI contract
+      responses:
+        "200":
+          description: OpenAPI contract
+          content:
+            application/yaml:
+              schema:
+                type: string
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+  /health:
+    get:
+      tags: [Service]
+      operationId: getHealth
+      summary: Check whether the API process is running
+      responses:
+        "200":
+          description: API process is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+  /ready:
+    get:
+      tags: [Service]
+      operationId: getReadiness
+      summary: Check whether the database and required schema are available
+      responses:
+        "200":
+          description: API is ready to serve database-backed requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+              example:
+                status: ready
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /universities:
+    get:
+      tags: [Catalog]
+      operationId: listUniversities
+      summary: List universities ordered by name
+      responses:
+        "200":
+          description: University catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/University"
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /skill-categories:
+    get:
+      tags: [Catalog]
+      operationId: listSkillCategories
+      summary: List active skill categories in display order
+      responses:
+        "200":
+          description: Skill category catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SkillCategory"
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /skills:
+    get:
+      tags: [Catalog]
+      operationId: listSkills
+      summary: List or search active skills
+      parameters:
+        - name: q
+          in: query
+          description: Case-insensitive substring matched against skill name or slug.
+          required: false
+          schema:
+            type: string
+            maxLength: 150
+        - name: limit
+          in: query
+          description: Maximum number of returned skills.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: Skill catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Skill"
+        "400":
+          description: Invalid q or limit query parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidQuery:
+                  value:
+                    error:
+                      code: invalid_query
+                      message: q must be 150 characters or fewer
+                invalidLimit:
+                  value:
+                    error:
+                      code: invalid_limit
+                      message: limit must be between 1 and 100
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+components:
+  responses:
+    OriginForbidden:
+      description: Request Origin does not match the configured frontend origin
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: origin_forbidden
+              message: Origin is not allowed
+    DatabaseUnavailable:
+      description: PostgreSQL is unavailable or the required schema has not been applied
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: database_unavailable
+              message: Database is unavailable
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    Readiness:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ready]
+    University:
+      type: object
+      required: [id, name, shortName, emailDomain, city]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        shortName:
+          type: string
+        emailDomain:
+          type: string
+        city:
+          type: string
+    SkillCategory:
+      type: object
+      required: [id, name, slug]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+    Skill:
+      type: object
+      required: [id, categoryId, name, slug]
+      properties:
+        id:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string

@@ -6,3 +6,5 @@ backend/.local/
 backend/api.exe
 backend/coverage.out
 .codex-temp/
+output/
+tmp/
