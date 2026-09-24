@@ -2,13 +2,23 @@ openapi: 3.0.3
 info:
   title: Skill Swap API
   version: 1.0.0
-  description: Public HTTP contract implemented by the Sprint 1 backend.
+  description: |
+    HTTP contract implemented by the Sprint 1-2 backend.
+
+    Authentication (FR-01) uses an opaque server-side session stored in the HttpOnly
+    `skillswap_session` cookie (SameSite=Lax, Path=/). Browsers should call the API through
+    the frontend origin (the Next.js `/api/v1/*` rewrite) with `credentials: "include"`.
+
+    Every POST must come from the configured frontend origin (`Origin` header) and send
+    `Content-Type: application/json` when it has a body. POST requests that need a session
+    must also send the `X-CSRF-Token` header returned by `/auth/login` and `/auth/me`.
 servers:
   - url: http://127.0.0.1:8080/api/v1
     description: Local development
 tags:
   - name: Service
   - name: Catalog
+  - name: Auth
 paths:
   /openapi.yaml:
     get:
@@ -158,8 +168,384 @@ paths:
           $ref: "#/components/responses/OriginForbidden"
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: register
+      summary: Create an account with a university email and send a verification link
+      description: |
+        The email is trimmed and lower-cased. Its domain must be listed in
+        ALLOWED_EMAIL_DOMAINS and belong to a university. The password must have at least
+        12 characters and at most 72 UTF-8 bytes; longer values are rejected, never truncated.
+        The verification link points to `{FRONTEND_ORIGIN}/verify-email?token=...` and is valid
+        for 24 hours. This call does not sign the user in.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user, verificationEmailSent]
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                  verificationEmailSent:
+                    type: boolean
+                    description: False when SMTP failed; the user can sign in and resend the link.
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "409":
+          description: The normalized email is already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: email_taken
+                  message: An account with this email already exists
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Sign in and receive the session cookie
+      description: |
+        Unverified users may sign in; `user.emailVerified` tells the frontend to show a
+        verification reminder. After 5 failed attempts for one email within 15 minutes,
+        sign-in for that email is locked for 2 hours.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Signed in
+          headers:
+            Set-Cookie:
+              description: "skillswap_session=...; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          description: Email or password is incorrect
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_credentials
+                  message: Email or password is incorrect
+        "403":
+          description: Foreign origin (`origin_forbidden`) or suspended account (`account_suspended`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          description: Too many failed attempts
+          headers:
+            Retry-After:
+              description: Seconds until sign-in is allowed again
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: login_locked
+                  message: Too many failed attempts. Try again later
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /auth/me:
+    get:
+      tags: [Auth]
+      operationId: getCurrentUser
+      summary: Return the signed-in user and the CSRF token for this session
+      description: Call this on page load to restore the session and obtain the CSRF token.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke the current session and clear the cookie
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "204":
+          description: Signed out
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRFOrOriginForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /auth/verify-email:
+    post:
+      tags: [Auth]
+      operationId: verifyEmail
+      summary: Confirm the email address with the token from the verification link
+      description: A token works once. Used, replaced, or expired tokens return `invalid_token`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenRequest"
+      responses:
+        "200":
+          description: Email verified
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [verified]
+        "400":
+          $ref: "#/components/responses/InvalidToken"
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /auth/resend-verification:
+    post:
+      tags: [Auth]
+      operationId: resendVerification
+      summary: Send a new verification link to the signed-in user
+      description: The new link invalidates previously sent verification links.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "202":
+          description: Email sent
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [sent]
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRFOrOriginForbidden"
+        "409":
+          description: The email is already verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: email_already_verified
+                  message: Email is already verified
+        "503":
+          description: Database (`database_unavailable`) or SMTP (`mail_unavailable`) is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      operationId: forgotPassword
+      summary: Send a password reset link if an active account exists
+      description: |
+        Always answers 202 for a well-formed email so the response does not reveal whether an
+        account exists. The link points to `{FRONTEND_ORIGIN}/reset-password?token=...`, is valid
+        for 1 hour, and invalidates earlier reset links.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailRequest"
+      responses:
+        "202":
+          description: Request accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [accepted]
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Set a new password with the token from the reset link
+      description: |
+        On success every session of the user is revoked and a login lockout is lifted.
+        The user then signs in with the new password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+      responses:
+        "200":
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [password_reset]
+        "400":
+          $ref: "#/components/responses/InvalidToken"
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: skillswap_session
+  parameters:
+    CSRFToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      description: The `csrfToken` value from `/auth/login` or `/auth/me`.
+      schema:
+        type: string
   responses:
+    Unauthenticated:
+      description: The session cookie is missing, expired, or revoked
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: unauthenticated
+              message: Sign in to continue
+    CSRFOrOriginForbidden:
+      description: Missing or wrong X-CSRF-Token (`csrf_invalid`) or foreign origin (`origin_forbidden`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: csrf_invalid
+              message: CSRF token is missing or invalid
+    InvalidJSON:
+      description: The body is not a single JSON object with the documented fields
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: invalid_json
+              message: Request body must be a valid JSON object
+    UnsupportedMediaType:
+      description: The body is not sent as application/json
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: unsupported_media_type
+              message: Content-Type must be application/json
+    ValidationFailed:
+      description: One or more fields are invalid; `fields` maps each field name to a message
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: validation_failed
+              message: Some fields are invalid
+              fields:
+                password: Password must contain at least 12 characters
+    InvalidToken:
+      description: The link token is malformed, already used, replaced, or expired
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: invalid_token
+              message: The link is invalid, already used, or expired
     OriginForbidden:
       description: Request Origin does not match the configured frontend origin
       content:
@@ -235,6 +621,99 @@ components:
           type: string
         slug:
           type: string
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, firstName, lastName]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+          example: olena.koval@students.example.test
+        password:
+          type: string
+          minLength: 12
+          description: 12+ characters, at most 72 UTF-8 bytes
+        firstName:
+          type: string
+          maxLength: 100
+          example: Олена
+        lastName:
+          type: string
+          maxLength: 100
+          example: Коваль
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    EmailRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    TokenRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: The `token` query parameter from the email link
+    ResetPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [token, password]
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+          minLength: 12
+          description: 12+ characters, at most 72 UTF-8 bytes
+    User:
+      type: object
+      required: [id, email, firstName, lastName, universityId, role, emailVerified, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        universityId:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [STUDENT, ADMIN]
+        emailVerified:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    SessionResponse:
+      type: object
+      required: [user, csrfToken]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        csrfToken:
+          type: string
+          description: Send as the X-CSRF-Token header on POST requests that need a session.
     ErrorResponse:
       type: object
       required: [error]
@@ -247,3 +726,8 @@ components:
               type: string
             message:
               type: string
+            fields:
+              type: object
+              description: Field-level messages, present only for validation_failed.
+              additionalProperties:
+                type: string

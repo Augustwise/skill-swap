@@ -1,4 +1,3 @@
-// Command mailtest sends one development email through the configured SMTP server.
 package main
 
 import (

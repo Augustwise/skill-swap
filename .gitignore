@@ -7,3 +7,4 @@ backend/coverage.out
 .codex-temp/
 output/
 tmp/
+logs/

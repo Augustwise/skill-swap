@@ -2,7 +2,7 @@
 
 ## Backend Layout
 
-This directory is the Go module `skillswap/backend`. `cmd/api/main.go` starts the HTTP server; `cmd/db/main.go` handles database checks, migrations, and demo seeding. Put request handlers and middleware in `internal/api/`, and environment parsing and validation in `internal/config/`. PostgreSQL schema changes live in numbered Goose files under `migrations/`; repeatable presentation data belongs in `seeds/demo.sql`.
+This directory is the Go module `skillswap/backend`. `cmd/api/main.go` starts the HTTP server; `cmd/db/main.go` handles database checks, migrations, and demo seeding. Code follows the LR2 component diagram: request handlers, DTOs, and middleware go in `internal/api/`; sign-up, sessions, and one-time links in `internal/auth/`; domain modules in their own packages (for example `internal/profile/`) behind `core.IApplication` in `internal/core/`; SQL repositories (`IData`) and `ITransaction` in `internal/data/`; environment parsing and validation in `internal/config/`. Handlers must not run SQL or send email directly, and services must not import `net/http`. PostgreSQL schema changes live in numbered Goose files under `migrations/`; repeatable presentation data belongs in `seeds/demo.sql`.
 
 ## Development Commands
 

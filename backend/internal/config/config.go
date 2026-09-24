@@ -17,6 +17,8 @@ type Config struct {
 	DatabaseURL string
 	FrontendURL string
 	SMTP        SMTPConfig
+
+	AllowedEmailDomains []string
 }
 
 type SMTPConfig struct {
@@ -39,6 +41,10 @@ func Load() (Config, error) {
 		DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		FrontendURL: value("FRONTEND_ORIGIN", "http://localhost:3000"),
 		SMTP:        smtp,
+	}
+	cfg.AllowedEmailDomains, err = emailDomains(value("ALLOWED_EMAIL_DOMAINS", "students.example.test"))
+	if err != nil {
+		return Config{}, err
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required: set a complete PostgreSQL URL in .env")
@@ -97,6 +103,24 @@ func smtpFromEnvironment() (SMTPConfig, error) {
 		return SMTPConfig{}, errors.New("MAIL_FROM must be a valid email address")
 	}
 	return cfg, nil
+}
+
+func emailDomains(raw string) ([]string, error) {
+	domains := make([]string, 0)
+	for _, part := range strings.Split(raw, ",") {
+		domain := strings.ToLower(strings.TrimSpace(part))
+		if domain == "" {
+			continue
+		}
+		if strings.ContainsAny(domain, "@ /\\") || !strings.Contains(domain, ".") {
+			return nil, errors.New("ALLOWED_EMAIL_DOMAINS must be a comma-separated list of domains such as students.example.test")
+		}
+		domains = append(domains, domain)
+	}
+	if len(domains) == 0 {
+		return nil, errors.New("ALLOWED_EMAIL_DOMAINS must contain at least one domain")
+	}
+	return domains, nil
 }
 
 func loadEnvFile() error {

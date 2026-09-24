@@ -13,7 +13,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"skillswap/backend/internal/api"
+	"skillswap/backend/internal/auth"
 	"skillswap/backend/internal/config"
+	"skillswap/backend/internal/core"
+	"skillswap/backend/internal/data"
+	"skillswap/backend/internal/mailer"
+	"skillswap/backend/internal/profile"
 )
 
 func main() {
@@ -36,9 +41,15 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer db.Close()
+	store := data.NewPostgres(db)
+	access := auth.NewService(store, store, mailer.NewSMTP(cfg.SMTP), auth.Config{
+		FrontendOrigin:      cfg.FrontendURL,
+		AllowedEmailDomains: cfg.AllowedEmailDomains,
+	}, logger)
+	app := core.NewApplication(profile.NewService(store))
 	server := &http.Server{
 		Addr:              cfg.APIAddr,
-		Handler:           api.New(db, cfg.FrontendURL, logger),
+		Handler:           api.New(app, access, store, api.Settings{FrontendOrigin: cfg.FrontendURL}, logger),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}

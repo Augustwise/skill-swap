@@ -23,7 +23,12 @@ SMTP_ADDR=127.0.0.1:1025
 SMTP_USERNAME=
 SMTP_PASSWORD=
 MAIL_FROM=no-reply@students.example.test
+ALLOWED_EMAIL_DOMAINS=students.example.test
 ```
+
+`ALLOWED_EMAIL_DOMAINS` is a comma-separated list of university email domains
+accepted at registration. Each domain must also exist in `universities.email_domain`
+(the demo seed adds `students.example.test`).
 
 `SMTP_USERNAME` and `SMTP_PASSWORD` must either both be empty, as they are for
 the default Mailpit setup, or both be set. The adapter automatically enables
@@ -78,6 +83,72 @@ Local development addresses:
 - allowed frontend origin: `http://localhost:3000`;
 - Mailpit SMTP server: `127.0.0.1:1025`;
 - Mailpit web interface: `http://127.0.0.1:8025`.
+
+## Authentication (Sprint 2, FR-01)
+
+The API uses opaque server-side sessions: `POST /auth/login` sets the HttpOnly
+`skillswap_session` cookie (SameSite=Lax, Path=/, 7 days) and stores only its SHA-256
+hash in `user_sessions`. Passwords are bcrypt hashes with cost 12; a password needs
+at least 12 characters and at most 72 UTF-8 bytes. Email verification and password
+reset links are single-use tokens stored as hashes in `one_time_tokens` (24 hours and
+1 hour). After 5 failed sign-ins for one email within 15 minutes, sign-in is locked
+for 2 hours (`login_throttles`, migration `00002_auth.sql`).
+
+### Code structure (LR2 component diagram)
+
+| Diagram component | Package |
+| ----------------- | ------- |
+| HTTP handlers: routes, DTOs, errors | `internal/api` |
+| Access and authentication | `internal/auth` |
+| Domain core and `IApplication` | `internal/core` (modules such as `internal/profile`) |
+| Data access: `IData` / `ITransaction`, pgx v5, pgxpool | `internal/data` |
+| Mail adapter `IMailer` | `internal/mailer` |
+
+Handlers only check the request format, take the user from the session, and call
+`internal/auth` or `core.IApplication`. Services group repository calls with
+`ITransaction.WithinTx`; every repository method called with that context joins the same
+transaction, and emails are sent only after COMMIT. `internal/data/datatest` and
+`internal/mailer/mailertest` provide in-memory doubles for unit tests.
+
+| Method | Path | Session | Purpose |
+| ------ | ---- | ------- | ------- |
+| POST | `/api/v1/auth/register` | — | Create an account and email a verification link |
+| POST | `/api/v1/auth/verify-email` | — | Confirm the email with `{ "token" }` |
+| POST | `/api/v1/auth/login` | — | Sign in; returns `{ user, csrfToken }` and sets the cookie |
+| GET | `/api/v1/auth/me` | cookie | Current `{ user, csrfToken }` or 401 |
+| POST | `/api/v1/auth/logout` | cookie + CSRF | Revoke the session |
+| POST | `/api/v1/auth/resend-verification` | cookie + CSRF | Send a new verification link |
+| POST | `/api/v1/auth/forgot-password` | — | Email a reset link (always 202) |
+| POST | `/api/v1/auth/reset-password` | — | Set a new password with `{ "token", "password" }` |
+
+The full contract, including request fields and error codes, is in `docs/openapi.yaml`.
+
+### Connecting the frontend
+
+- The Next.js app proxies `/api/v1/*` to `http://127.0.0.1:8080` (see
+  `frontend/next.config.ts`). Call relative URLs such as `fetch("/api/v1/auth/me")` so
+  the session cookie belongs to `http://localhost:3000`, and open the app at
+  `http://localhost:3000` because that is the allowed `Origin`.
+- Send JSON bodies with `Content-Type: application/json`.
+- Keep `csrfToken` from `/auth/login` or `/auth/me` in memory and send it as the
+  `X-CSRF-Token` header on `/auth/logout` and `/auth/resend-verification` (and on every
+  later POST that needs a session). On page load call `/auth/me` to restore it.
+- Email links open frontend pages `/verify-email?token=...` and
+  `/reset-password?token=...`; these pages send the `token` query value to
+  `/auth/verify-email` or `/auth/reset-password`.
+- Errors always have the shape `{ "error": { "code", "message" } }`; `validation_failed`
+  (422) also has `fields`, a map from field name to message for form hints.
+- `user.emailVerified` is `false` until the link is opened. Unverified users can sign in,
+  but later features (exchange requests) must require verification.
+
+Example session with curl (the `Origin` header is required on POST):
+
+```bash
+curl -i -c cookies.txt -H "Origin: http://localhost:3000" -H "Content-Type: application/json" \
+  -d '{"email":"student@students.example.test","password":"correct horse battery"}' \
+  http://127.0.0.1:8080/api/v1/auth/login
+curl -b cookies.txt http://127.0.0.1:8080/api/v1/auth/me
+```
 
 ## Run Mailpit on Windows without Docker
 
@@ -140,7 +211,7 @@ go vet ./...
 go build ./...
 ```
 
-The catalog integration test is skipped unless `TEST_DATABASE_URL` is set. To
+The catalog and auth integration tests are skipped unless `TEST_DATABASE_URL` is set. To
 run it, use a separate local database that already has the migrations and demo
 seed applied:
 
@@ -150,5 +221,5 @@ export DATABASE_URL="$TEST_DATABASE_URL"
 
 go run ./cmd/db up
 go run ./cmd/db seed
-go test ./internal/api -run TestCatalogAgainstLocalPostgres -v
+go test ./internal/api -run AgainstLocalPostgres -v
 ```

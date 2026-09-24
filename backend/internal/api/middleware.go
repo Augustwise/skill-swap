@@ -12,13 +12,13 @@ func (a *API) withMiddleware(next http.Handler) http.Handler {
 		w.Header().Add("Vary", "Origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if origin := r.Header.Get("Origin"); origin != "" {
-			if origin != a.frontendOrigin {
+			if origin != a.settings.FrontendOrigin {
 				problem(w, http.StatusForbidden, "origin_forbidden", "Origin is not allowed")
 				return
 			}
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
 		}
 		if r.Method == http.MethodOptions {

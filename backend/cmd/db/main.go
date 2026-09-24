@@ -1,4 +1,3 @@
-// Command db runs reviewed schema migrations and optional demo seed data.
 package main
 
 import (

@@ -118,3 +118,32 @@ func setValidSMTPEnv(t *testing.T) {
 	t.Setenv("SMTP_PASSWORD", "")
 	t.Setenv("MAIL_FROM", "no-reply@students.example.test")
 }
+
+func TestLoadAllowedEmailDomains(t *testing.T) {
+	setValidSMTPEnv(t)
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("ALLOWED_EMAIL_DOMAINS", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.AllowedEmailDomains) != 1 || cfg.AllowedEmailDomains[0] != "students.example.test" {
+		t.Fatalf("default domains = %v", cfg.AllowedEmailDomains)
+	}
+
+	t.Setenv("ALLOWED_EMAIL_DOMAINS", " Students.Example.Test , kpi.ua ")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.AllowedEmailDomains) != 2 || cfg.AllowedEmailDomains[0] != "students.example.test" || cfg.AllowedEmailDomains[1] != "kpi.ua" {
+		t.Fatalf("domains = %v", cfg.AllowedEmailDomains)
+	}
+
+	for _, invalid := range []string{"user@kpi.ua", "localhost", " , "} {
+		t.Setenv("ALLOWED_EMAIL_DOMAINS", invalid)
+		if _, err := Load(); err == nil {
+			t.Fatalf("expected %q to fail", invalid)
+		}
+	}
+}
