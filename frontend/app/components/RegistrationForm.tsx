@@ -46,11 +46,22 @@ export function RegistrationForm() {
   const [universityError, setUniversityError] = useState("");
   const [universityId, setUniversityId] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [agreed, setAgreed] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [registeredEmail, setRegisteredEmail] = useState("");
   const [verificationEmailSent, setVerificationEmailSent] = useState(true);
+
+  const clearFieldError = (field: string) => {
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -85,10 +96,57 @@ export function RegistrationForm() {
       .trim()
       .toLowerCase();
     const password = String(form.get("password") ?? "");
+    const agreement = agreed || form.get("agreement") === "on";
     const university = universities.find((item) => item.id === universityId);
 
-    if (university && email.split("@")[1] !== university.emailDomain.toLowerCase()) {
-      setFieldErrors({ email: `Пошта має належати домену ${university.emailDomain}.` });
+    const errors: Record<string, string> = {};
+
+    if (!firstName) {
+      errors.firstName = "Введи ім’я.";
+    } else if (firstName.length > 100) {
+      errors.firstName = "Введи ім’я довжиною до 100 символів.";
+    }
+
+    if (!lastName) {
+      errors.lastName = "Введи прізвище.";
+    } else if (lastName.length > 100) {
+      errors.lastName = "Введи прізвище довжиною до 100 символів.";
+    }
+
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email) {
+      errors.email = "Введи університетську пошту.";
+    } else if (!emailPattern.test(email)) {
+      errors.email = "Введи коректну адресу пошти.";
+    } else if (university && email.split("@")[1] !== university.emailDomain.toLowerCase()) {
+      errors.email = `Пошта має належати домену ${university.emailDomain}.`;
+    }
+
+    if (!universityId) {
+      errors.university = "Обери університет зі списку.";
+    }
+
+    if (!password) {
+      errors.password = "Введи пароль.";
+    } else if (password.length < 12) {
+      errors.password = "Пароль має містити щонайменше 12 символів.";
+    } else if (new TextEncoder().encode(password).length > 72) {
+      errors.password = "Пароль не може перевищувати 72 байти.";
+    }
+
+    if (!agreement) {
+      errors.agreement = "Погодься з умовами використання, щоб продовжити.";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      const formEl = event.currentTarget;
+      const order = ["firstName", "lastName", "email", "university", "password", "agreement"];
+      const firstField = order.find((f) => errors[f]);
+      if (firstField) {
+        const el = formEl.elements.namedItem(firstField) as HTMLElement | null;
+        el?.focus();
+      }
       return;
     }
 
@@ -138,7 +196,7 @@ export function RegistrationForm() {
   }
 
   return (
-    <form className="register-form" onSubmit={handleSubmit}>
+    <form className="register-form" noValidate onSubmit={handleSubmit}>
       <div className="register-form__heading">
         <h1 id="register-title">Створи акаунт</h1>
         <p>Реєстрація займе менше хвилини</p>
@@ -153,6 +211,8 @@ export function RegistrationForm() {
             placeholder="Андрій"
             autoComplete="given-name"
             maxLength={100}
+            aria-invalid={Boolean(fieldErrors.firstName)}
+            onChange={() => clearFieldError("firstName")}
             required
           />
           {fieldErrors.firstName && (
@@ -167,6 +227,8 @@ export function RegistrationForm() {
             placeholder="Мельник"
             autoComplete="family-name"
             maxLength={100}
+            aria-invalid={Boolean(fieldErrors.lastName)}
+            onChange={() => clearFieldError("lastName")}
             required
           />
           {fieldErrors.lastName && (
@@ -184,6 +246,7 @@ export function RegistrationForm() {
           autoComplete="email"
           maxLength={320}
           aria-invalid={Boolean(fieldErrors.email)}
+          onChange={() => clearFieldError("email")}
           required
         />
         {fieldErrors.email && <small className="register-field__error">{fieldErrors.email}</small>}
@@ -192,8 +255,16 @@ export function RegistrationForm() {
       <label className="register-field register-field--select">
         <span>Університет</span>
         <select
+          name="university"
           value={universityId}
-          onChange={(event) => setUniversityId(event.target.value)}
+          onChange={(event) => {
+            setUniversityId(event.target.value);
+            clearFieldError("university");
+            if (fieldErrors.email?.includes("Пошта має належати домену")) {
+              clearFieldError("email");
+            }
+          }}
+          aria-invalid={Boolean(fieldErrors.university)}
           required
         >
           <option value="" disabled>
@@ -206,7 +277,11 @@ export function RegistrationForm() {
           ))}
         </select>
         <Image src={`${asset}/chevron-down.svg`} alt="" width={16} height={16} />
-        {universityError && <small className="register-field__error">{universityError}</small>}
+        {(fieldErrors.university || universityError) && (
+          <small className="register-field__error">
+            {fieldErrors.university || universityError}
+          </small>
+        )}
       </label>
 
       <div className="register-field register-field--password">
@@ -218,6 +293,8 @@ export function RegistrationForm() {
           placeholder="Мінімум 12 символів"
           autoComplete="new-password"
           minLength={12}
+          aria-invalid={Boolean(fieldErrors.password)}
+          onChange={() => clearFieldError("password")}
           required
         />
         <button
@@ -247,10 +324,25 @@ export function RegistrationForm() {
         </p>
       </div>
 
-      <label className="register-form__agreement">
-        <input name="agreement" type="checkbox" required />
-        <span>Погоджуюся з умовами використання</span>
-      </label>
+      <div className="register-form__agreement-wrap">
+        <label className="register-form__agreement">
+          <input
+            name="agreement"
+            type="checkbox"
+            checked={agreed}
+            onChange={(event) => {
+              setAgreed(event.target.checked);
+              clearFieldError("agreement");
+            }}
+            aria-invalid={Boolean(fieldErrors.agreement)}
+            required
+          />
+          <span>Погоджуюся з умовами використання</span>
+        </label>
+        {fieldErrors.agreement && (
+          <small className="register-field__error">{fieldErrors.agreement}</small>
+        )}
+      </div>
 
       {error && (
         <p className="register-form__error" role="alert">

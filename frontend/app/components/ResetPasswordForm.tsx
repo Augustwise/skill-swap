@@ -7,20 +7,54 @@ import { useState, type FormEvent } from "react";
 export function ResetPasswordForm({ token }: { token: string }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [complete, setComplete] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
 
+  const clearFieldError = (field: string) => {
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
+  };
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setFieldErrors({});
+
     const form = new FormData(event.currentTarget);
     const password = String(form.get("password") ?? "");
     const confirmation = String(form.get("confirmation") ?? "");
-    if (password !== confirmation) {
-      setError("Паролі не збігаються.");
+
+    const newFieldErrors: Record<string, string> = {};
+    if (!password) {
+      newFieldErrors.password = "Введи новий пароль.";
+    } else if (password.length < 12) {
+      newFieldErrors.password = "Пароль має містити щонайменше 12 символів.";
+    } else if (new TextEncoder().encode(password).length > 72) {
+      newFieldErrors.password = "Пароль не може перевищувати 72 байти.";
+    }
+
+    if (!confirmation) {
+      newFieldErrors.confirmation = "Повтори новий пароль.";
+    } else if (password && confirmation && password !== confirmation) {
+      newFieldErrors.confirmation = "Паролі не збігаються.";
+    }
+
+    if (Object.keys(newFieldErrors).length > 0) {
+      setFieldErrors(newFieldErrors);
+      const firstField = ["password", "confirmation"].find((f) => newFieldErrors[f]);
+      if (firstField) {
+        (event.currentTarget.elements.namedItem(firstField) as HTMLElement | null)?.focus();
+      }
       return;
     }
+
     setPending(true);
     try {
       const response = await fetch("/api/v1/auth/reset-password", {
@@ -57,7 +91,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
   }
 
   return (
-    <form className="register-form" onSubmit={handleSubmit}>
+    <form className="register-form" noValidate onSubmit={handleSubmit}>
       <div className="register-form__heading">
         <h1 id="reset-title">Новий пароль</h1>
         <p>Використай щонайменше 12 символів.</p>
@@ -70,6 +104,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
           type={showPassword ? "text" : "password"}
           autoComplete="new-password"
           minLength={12}
+          aria-invalid={Boolean(fieldErrors.password)}
+          onChange={() => clearFieldError("password")}
           required
         />
         <button
@@ -86,6 +122,9 @@ export function ResetPasswordForm({ token }: { token: string }) {
             height={17}
           />
         </button>
+        {fieldErrors.password && (
+          <small className="register-field__error">{fieldErrors.password}</small>
+        )}
       </div>
       <div className="register-field register-field--password">
         <label htmlFor="reset-confirmation">Повтори пароль</label>
@@ -95,6 +134,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
           type={showConfirmation ? "text" : "password"}
           autoComplete="new-password"
           minLength={12}
+          aria-invalid={Boolean(fieldErrors.confirmation)}
+          onChange={() => clearFieldError("confirmation")}
           required
         />
         <button
@@ -111,6 +152,9 @@ export function ResetPasswordForm({ token }: { token: string }) {
             height={17}
           />
         </button>
+        {fieldErrors.confirmation && (
+          <small className="register-field__error">{fieldErrors.confirmation}</small>
+        )}
       </div>
       {error && (
         <p className="register-form__error" role="alert">
