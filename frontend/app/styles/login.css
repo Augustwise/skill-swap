@@ -1,0 +1,113 @@
+.login-form__options {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.login-form__remember {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #313960;
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.login-form__remember input {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin: 0;
+  appearance: none;
+  border: 1.5px solid #dfe4f3;
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.login-form__remember input:checked {
+  border-color: #5b3df5;
+  background: #5b3df5 url("/figma/login/check.svg") center / 12px 12px no-repeat;
+}
+
+.login-form__options > button,
+.login-form__back {
+  border: 0;
+  background: transparent;
+  color: #5b3df5;
+  font:
+    500 13px/18px var(--font-geist-sans),
+    Arial,
+    sans-serif;
+  cursor: pointer;
+}
+
+.login-form__options > button {
+  padding: 0;
+}
+
+.login-form__back {
+  align-self: center;
+  padding: 4px;
+}
+
+.login-form__divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #9aa3c0;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.login-form__divider::before,
+.login-form__divider::after {
+  height: 1px;
+  flex: 1;
+  background: #e4e8f4;
+  content: "";
+}
+
+.login-form__university {
+  width: 100%;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #dfe4f3;
+  border-radius: 12px;
+  background: #fff;
+  color: #1b2350;
+  box-shadow: 0 1px 2px rgb(10 16 70 / 6%);
+  font:
+    600 14px/20px var(--font-geist-sans),
+    Arial,
+    sans-serif;
+  cursor: pointer;
+}
+
+.login-form__university img {
+  flex: none;
+}
+
+.login-form__university:hover {
+  background: #f8f7ff;
+}
+
+@media (max-width: 430px) {
+  .login-form__options {
+    gap: 8px;
+  }
+
+  .login-form__remember {
+    font-size: 13px;
+  }
+
+  .login-form__university {
+    font-size: 12px;
+  }
+}

@@ -177,7 +177,7 @@ paths:
         The email is trimmed and lower-cased. Its domain must be listed in
         ALLOWED_EMAIL_DOMAINS and belong to a university. The password must have at least
         12 characters and at most 72 UTF-8 bytes; longer values are rejected, never truncated.
-        The verification link points to `{FRONTEND_ORIGIN}/verify-email?token=...` and is valid
+        The verification link points to `{FRONTEND_ORIGIN}/onboarding?token=...` and is valid
         for 24 hours. This call does not sign the user in.
       requestBody:
         required: true
@@ -239,7 +239,7 @@ paths:
           description: Signed in
           headers:
             Set-Cookie:
-              description: "skillswap_session=...; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax"
+              description: "skillswap_session=...; Path=/; HttpOnly; SameSite=Lax. With rememberMe=true, also includes Max-Age=604800 and Expires."
               schema:
                 type: string
           content:
@@ -653,6 +653,10 @@ components:
           format: email
         password:
           type: string
+        rememberMe:
+          type: boolean
+          default: false
+          description: Persist the cookie for seven days. If false, the cookie expires when the browser closes.
     EmailRequest:
       type: object
       additionalProperties: false

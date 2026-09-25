@@ -9,6 +9,9 @@ import "./styles/match.css";
 import "./styles/benefits.css";
 import "./styles/cta.css";
 import "./styles/footer.css";
+import "./styles/register.css";
+import "./styles/login.css";
+import "./styles/onboarding.css";
 
 const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin", "cyrillic"] });
 const caveat = Caveat({

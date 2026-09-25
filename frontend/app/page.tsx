@@ -97,7 +97,7 @@ export default function Home() {
             <a href="#match">Match</a>
             <a href="#reviews">Відгуки</a>
           </nav>
-          <a className="button button--small" href="#match">
+          <a className="button button--small" href="/register">
             Спробувати
           </a>
         </div>
@@ -118,7 +118,7 @@ export default function Home() {
               обміну знаннями між студентами.
             </p>
             <div className="hero-actions">
-              <a className="button" href="#match">
+              <a className="button" href="/register">
                 Знайти match <Icon name="arrow" size={20} />
               </a>
               <a className="button button--secondary" href="#how">
@@ -283,7 +283,7 @@ export default function Home() {
           </div>
 
           <div className="cta-right">
-            <a className="cta-btn" href="#match">
+            <a className="cta-btn" href="/register">
               <span>Знайти свій match</span>
               <Icon name="arrow" size={17} />
             </a>
