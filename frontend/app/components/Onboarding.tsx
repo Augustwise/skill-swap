@@ -115,9 +115,6 @@ export function Onboarding() {
           <span>SkillSwap</span>
         </Link>
         <span className="onboarding-header__step">Крок {step === "skills" ? "2" : "4"} з 4</span>
-        <Link className="onboarding-skip" href="/">
-          Пропустити
-        </Link>
       </header>
 
       <div className="onboarding-layout">
@@ -314,26 +311,14 @@ export function Onboarding() {
               <span className="onboarding-matches__icon">
                 <Icon name="sparkles" size={16} />
               </span>
-              <h2>Уже 12 збігів</h2>
+              <h2>Збіги знаходяться в розробці</h2>
             </div>
             <p>
-              Стільки студентів вміють Photoshop або Figma і водночас хочуть навчитися гри на
-              гітарі.
+              Ми працюємо над розумним підбором студентів на основі взаємних навичок.
             </p>
-            {[
-              { initials: "ОК", name: "Олена Ковальчук", match: "94%" },
-              { initials: "МГ", name: "Марія Гнатюк", match: "91%" },
-              { initials: "ТЛ", name: "Тарас Левченко", match: "85%" },
-            ].map((person, index) => (
-              <div className="onboarding-match" key={person.name}>
-                <span className={`onboarding-avatar onboarding-avatar--${index}`}>
-                  {person.initials}
-                </span>
-                <span className="onboarding-match__name">{person.name}</span>
-                <span className="onboarding-match__score">{person.match}</span>
-              </div>
-            ))}
-            <small>+ ще 9 після завершення реєстрації</small>
+            <div className="onboarding-matches__placeholder">
+              Тут зʼявляться персональні рекомендації, щойно алгоритм підбору буде запущено.
+            </div>
           </div>
           <div className="onboarding-tip">
             <span className="onboarding-tip__icon">
