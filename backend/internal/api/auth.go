@@ -90,8 +90,9 @@ func (a *API) register(w http.ResponseWriter, r *http.Request) {
 }
 
 type loginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	RememberMe bool   `json:"rememberMe"`
 }
 
 func (a *API) login(w http.ResponseWriter, r *http.Request) {
@@ -116,17 +117,19 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		a.authError(w, err)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
+	cookie := &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    session.Token,
 		Path:     "/",
-		Expires:  session.ExpiresAt,
-		MaxAge:   int(auth.SessionTTL.Seconds()),
 		HttpOnly: true,
-
 		Secure:   false,
 		SameSite: http.SameSiteLaxMode,
-	})
+	}
+	if body.RememberMe {
+		cookie.Expires = session.ExpiresAt
+		cookie.MaxAge = int(auth.SessionTTL.Seconds())
+	}
+	http.SetCookie(w, cookie)
 	respond(w, http.StatusOK, map[string]any{"user": toUser(session.User), "csrfToken": session.CSRFToken})
 }
 
