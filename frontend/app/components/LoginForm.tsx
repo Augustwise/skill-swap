@@ -168,7 +168,12 @@ export function LoginForm() {
           aria-label={showPassword ? "Приховати пароль" : "Показати пароль"}
           aria-pressed={showPassword}
         >
-          <Image src="/figma/register/eye.svg" alt="" width={17} height={17} />
+          <Image
+            src={`/figma/register/${showPassword ? "eye-off" : "eye"}.svg`}
+            alt=""
+            width={17}
+            height={17}
+          />
         </button>
       </div>
       <div className="login-form__options">

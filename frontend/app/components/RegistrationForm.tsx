@@ -227,7 +227,12 @@ export function RegistrationForm() {
           aria-label={showPassword ? "Приховати пароль" : "Показати пароль"}
           aria-pressed={showPassword}
         >
-          <Image src={`${asset}/eye.svg`} alt="" width={17} height={17} />
+          <Image
+            src={`${asset}/${showPassword ? "eye-off" : "eye"}.svg`}
+            alt=""
+            width={17}
+            height={17}
+          />
         </button>
         {fieldErrors.password && (
           <small className="register-field__error">{fieldErrors.password}</small>

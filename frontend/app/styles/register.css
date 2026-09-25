@@ -216,14 +216,12 @@
 }
 
 .register-field input::placeholder {
-  color: #9aa3c0;
+  color: #697296;
   opacity: 1;
 }
 
-.register-field input[name="firstName"]::placeholder,
-.register-field input[name="lastName"]::placeholder,
-.register-field input[name="email"]::placeholder {
-  color: #0a1046;
+.register-field select:invalid {
+  color: #697296;
 }
 
 .register-field input:focus,

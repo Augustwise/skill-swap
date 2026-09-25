@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
@@ -7,6 +8,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [complete, setComplete] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,26 +62,56 @@ export function ResetPasswordForm({ token }: { token: string }) {
         <h1 id="reset-title">Новий пароль</h1>
         <p>Використай щонайменше 12 символів.</p>
       </div>
-      <label className="register-field">
-        <span>Новий пароль</span>
+      <div className="register-field register-field--password">
+        <label htmlFor="reset-password">Новий пароль</label>
         <input
+          id="reset-password"
           name="password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           autoComplete="new-password"
           minLength={12}
           required
         />
-      </label>
-      <label className="register-field">
-        <span>Повтори пароль</span>
+        <button
+          type="button"
+          className="register-field__eye"
+          onClick={() => setShowPassword((value) => !value)}
+          aria-label={showPassword ? "Приховати пароль" : "Показати пароль"}
+          aria-pressed={showPassword}
+        >
+          <Image
+            src={`/figma/register/${showPassword ? "eye-off" : "eye"}.svg`}
+            alt=""
+            width={17}
+            height={17}
+          />
+        </button>
+      </div>
+      <div className="register-field register-field--password">
+        <label htmlFor="reset-confirmation">Повтори пароль</label>
         <input
+          id="reset-confirmation"
           name="confirmation"
-          type="password"
+          type={showConfirmation ? "text" : "password"}
           autoComplete="new-password"
           minLength={12}
           required
         />
-      </label>
+        <button
+          type="button"
+          className="register-field__eye"
+          onClick={() => setShowConfirmation((value) => !value)}
+          aria-label={showConfirmation ? "Приховати пароль" : "Показати пароль"}
+          aria-pressed={showConfirmation}
+        >
+          <Image
+            src={`/figma/register/${showConfirmation ? "eye-off" : "eye"}.svg`}
+            alt=""
+            width={17}
+            height={17}
+          />
+        </button>
+      </div>
       {error && (
         <p className="register-form__error" role="alert">
           {error}
