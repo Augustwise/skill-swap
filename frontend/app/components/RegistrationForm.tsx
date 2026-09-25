@@ -327,6 +327,7 @@ export function RegistrationForm() {
       <div className="register-form__agreement-wrap">
         <label className="register-form__agreement">
           <input
+            className="checkbox"
             name="agreement"
             type="checkbox"
             checked={agreed}

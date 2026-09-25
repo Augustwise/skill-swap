@@ -247,6 +247,7 @@ export function LoginForm() {
       <div className="login-form__options">
         <label className="login-form__remember">
           <input
+            className="checkbox"
             type="checkbox"
             checked={rememberMe}
             onChange={(event) => setRememberMe(event.target.checked)}

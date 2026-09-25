@@ -315,21 +315,6 @@
   cursor: pointer;
 }
 
-.register-form__agreement input {
-  width: 18px;
-  height: 18px;
-  flex: none;
-  margin: 0;
-  accent-color: #5b3df5;
-  cursor: pointer;
-}
-
-.register-form__agreement input[aria-invalid="true"] {
-  outline: 2px solid #d93d64;
-  outline-offset: 1px;
-  border-radius: 3px;
-}
-
 .register-form__error {
   margin: 0;
   color: #b8274c;

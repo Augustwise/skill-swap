@@ -16,23 +16,6 @@
   cursor: pointer;
 }
 
-.login-form__remember input {
-  width: 18px;
-  height: 18px;
-  flex: none;
-  margin: 0;
-  appearance: none;
-  border: 1.5px solid #dfe4f3;
-  border-radius: 5px;
-  background: #fff;
-  cursor: pointer;
-}
-
-.login-form__remember input:checked {
-  border-color: #5b3df5;
-  background: #5b3df5 url("/figma/login/check.svg") center / 12px 12px no-repeat;
-}
-
 .login-form__options > button,
 .login-form__back {
   border: 0;
