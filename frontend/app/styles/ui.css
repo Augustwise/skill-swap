@@ -87,6 +87,27 @@
   height: 32px;
 }
 
+.checkbox {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin: 0;
+  appearance: none;
+  border: 1.5px solid var(--border);
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.checkbox:checked {
+  border-color: var(--purple);
+  background: var(--purple) url("/figma/login/check.svg") center / 12px 12px no-repeat;
+}
+
+.checkbox[aria-invalid="true"] {
+  border-color: #d93d64;
+}
+
 @media (max-width: 760px) {
   .button--small {
     min-width: 112px;

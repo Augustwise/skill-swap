@@ -121,7 +121,7 @@ func TestRegisterSendsVerificationEmail(t *testing.T) {
 	if mail.Count() != 1 || mail.Last().To[0] != "olena.koval@students.example.test" {
 		t.Fatalf("unexpected mail: %+v", mail.Last())
 	}
-	if !strings.Contains(mail.Last().TextBody, "http://localhost:3000/verify-email?token=") {
+	if !strings.Contains(mail.Last().TextBody, "http://localhost:3000/onboarding?token=") {
 		t.Fatalf("email has no verification link: %q", mail.Last().TextBody)
 	}
 
@@ -263,6 +263,38 @@ func TestLoginSessionAndLogout(t *testing.T) {
 	}
 	response = send(t, handler, http.MethodGet, "/api/v1/auth/me", "", s)
 	assertProblem(t, response, http.StatusUnauthorized, "unauthenticated")
+}
+
+func TestLoginRememberMeControlsCookiePersistence(t *testing.T) {
+	handler, _, _ := newAuthHandler()
+	send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody("a@students.example.test", testPassword), nil)
+
+	for _, test := range []struct {
+		name       string
+		rememberMe bool
+	}{
+		{"browser session", false},
+		{"persistent", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"email":"a@students.example.test","password":%q,"rememberMe":%t}`, testPassword, test.rememberMe)
+			response := send(t, handler, http.MethodPost, "/api/v1/auth/login", body, nil)
+			if response.Code != http.StatusOK {
+				t.Fatalf("login status = %d, body = %s", response.Code, response.Body.String())
+			}
+			cookie := sessionCookie(response)
+			if cookie == nil {
+				t.Fatal("session cookie missing")
+			}
+			if test.rememberMe {
+				if cookie.MaxAge != int(auth.SessionTTL.Seconds()) || cookie.Expires.IsZero() {
+					t.Fatalf("expected persistent cookie, got %+v", cookie)
+				}
+			} else if cookie.MaxAge != 0 || !cookie.Expires.IsZero() {
+				t.Fatalf("expected browser-session cookie, got %+v", cookie)
+			}
+		})
+	}
 }
 
 func TestLoginLockoutAfterFiveFailures(t *testing.T) {

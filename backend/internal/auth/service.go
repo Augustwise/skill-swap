@@ -345,7 +345,7 @@ func (s *Service) replaceToken(ctx context.Context, userID, purpose string, ttl 
 }
 
 func (s *Service) sendVerificationEmail(ctx context.Context, user data.User, token string) error {
-	link := s.config.FrontendOrigin + "/verify-email?token=" + url.QueryEscape(token)
+	link := s.config.FrontendOrigin + "/onboarding?token=" + url.QueryEscape(token)
 	err := s.sendEmail(ctx, mailer.Message{
 		To:      []string{user.Email},
 		Subject: "Підтвердіть пошту SkillSwap",

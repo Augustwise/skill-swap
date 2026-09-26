@@ -133,9 +133,11 @@ The full contract, including request fields and error codes, is in `docs/openapi
 - Keep `csrfToken` from `/auth/login` or `/auth/me` in memory and send it as the
   `X-CSRF-Token` header on `/auth/logout` and `/auth/resend-verification` (and on every
   later POST that needs a session). On page load call `/auth/me` to restore it.
-- Email links open frontend pages `/verify-email?token=...` and
-  `/reset-password?token=...`; these pages send the `token` query value to
-  `/auth/verify-email` or `/auth/reset-password`.
+- Verification emails open `/onboarding?token=...`, where the frontend confirms
+  the email through `/auth/verify-email` and then removes the token from the URL.
+  Older `/verify-email?token=...` links redirect to the same onboarding page.
+  Password-reset emails open `/reset-password?token=...` and use
+  `/auth/reset-password`.
 - Errors always have the shape `{ "error": { "code", "message" } }`; `validation_failed`
   (422) also has `fields`, a map from field name to message for form hints.
 - `user.emailVerified` is `false` until the link is opened. Unverified users can sign in,

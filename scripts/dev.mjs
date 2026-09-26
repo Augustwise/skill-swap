@@ -243,6 +243,31 @@ function commandExists(command) {
   return probe.status === 0;
 }
 
+/**
+ * Windows processes keep the PATH they inherited when they were started. If Go was
+ * installed or added to PATH afterward, discover the standard installation so the
+ * dev runner works without requiring a reboot or a parent terminal restart.
+ */
+function ensureCommandOnPath(command) {
+  if (commandExists(command)) return true;
+  if (!IS_WIN) return false;
+
+  const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+  const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+  const candidates = [
+    path.join(programFiles, "Go", "bin"),
+    path.join(programFilesX86, "Go", "bin"),
+  ];
+  const installDir = candidates.find((directory) =>
+    existsSync(path.join(directory, `${command}.exe`)),
+  );
+  if (!installDir) return false;
+
+  process.env.PATH = `${installDir}${path.delimiter}${process.env.PATH ?? ""}`;
+  log.info(`Found ${command} at ${installDir}; added it to PATH for this run.`);
+  return commandExists(command);
+}
+
 function readEnvFile(file) {
   const values = {};
   for (const raw of readFileSync(file, "utf8").split(/\r?\n/)) {
@@ -272,7 +297,7 @@ async function main() {
   log.info(`Skill Swap dev stack · logs → ${path.relative(ROOT, LOG_DIR)}${path.sep}`);
 
   // Preflight: tools, config, dependencies, and ports.
-  if (useApi && !commandExists("go")) {
+  if (useApi && !ensureCommandOnPath("go")) {
     log.error("Go is not on PATH (Go 1.26 is required for the backend).");
     return shutdown(1);
   }
