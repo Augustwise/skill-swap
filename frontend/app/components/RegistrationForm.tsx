@@ -325,8 +325,10 @@ export function RegistrationForm() {
       </div>
 
       <div className="register-form__agreement-wrap">
-        <label className="register-form__agreement">
+        <div className="register-form__agreement">
           <input
+            id="register-agreement"
+            aria-labelledby="register-agreement-text"
             className="checkbox"
             name="agreement"
             type="checkbox"
@@ -338,8 +340,14 @@ export function RegistrationForm() {
             aria-invalid={Boolean(fieldErrors.agreement)}
             required
           />
-          <span>Погоджуюся з умовами використання</span>
-        </label>
+          <span id="register-agreement-text">
+            <label htmlFor="register-agreement">Погоджуюся з </label>
+            <Link href="/terms" target="_blank" rel="noopener noreferrer">
+              умовами використання та обробки даних
+              <span className="sr-only"> (відкриється в новій вкладці)</span>
+            </Link>
+          </span>
+        </div>
         {fieldErrors.agreement && (
           <small className="register-field__error">{fieldErrors.agreement}</small>
         )}

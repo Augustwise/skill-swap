@@ -322,6 +322,16 @@
   line-height: 18px;
 }
 
+.register-form__agreement a {
+  color: var(--purple);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.register-form__agreement a:hover {
+  color: var(--purple-dark);
+}
+
 .register-submit {
   width: 100%;
   height: 48px;
