@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"net/mail"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
@@ -19,7 +18,6 @@ const (
 	minPasswordRunes = 12
 	maxPasswordBytes = 72
 	maxEmailLength   = 320
-	maxNameLength    = 100
 )
 
 var dummyPasswordHash, _ = bcrypt.GenerateFromPassword([]byte("skillswap-timing-placeholder"), bcryptCost)
@@ -98,17 +96,4 @@ func CSRFToken(sessionToken string) string {
 func ValidCSRF(sessionToken, header string) bool {
 	expected := CSRFToken(sessionToken)
 	return header != "" && subtle.ConstantTimeCompare([]byte(expected), []byte(header)) == 1
-}
-
-func cleanName(raw string) (string, bool) {
-	name := strings.TrimSpace(raw)
-	if name == "" || utf8.RuneCountInString(name) > maxNameLength {
-		return "", false
-	}
-	for _, r := range name {
-		if unicode.IsControl(r) {
-			return "", false
-		}
-	}
-	return name, true
 }

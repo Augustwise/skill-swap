@@ -20,15 +20,20 @@ import (
 	"skillswap/backend/internal/mailer/mailertest"
 )
 
+// testPassword is a valid password used by all tests.
 const testPassword = "correct horse battery"
 
+// linkToken finds the 43-character token in the links sent by email.
 var linkToken = regexp.MustCompile(`token=([A-Za-z0-9_-]{43})`)
 
+// session holds what a logged-in browser would send: the session cookie and the CSRF token.
 type session struct {
 	cookie *http.Cookie
 	csrf   string
 }
 
+// newAuthHandler builds the API with an in-memory store and a fake mailer.
+// The store and mailer are returned so tests can inspect them.
 func newAuthHandler() (http.Handler, *datatest.Memory, *mailertest.Recorder) {
 	store := datatest.NewMemory()
 	mail := &mailertest.Recorder{}
@@ -36,6 +41,8 @@ func newAuthHandler() (http.Handler, *datatest.Memory, *mailertest.Recorder) {
 	return New(&fakeApp{}, access, &fakeApp{}, testSettings, discardLogger()), store, mail
 }
 
+// send makes a request as a browser on the allowed origin would.
+// A nil session means the user is not logged in.
 func send(t *testing.T, handler http.Handler, method, path, body string, s *session) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -56,14 +63,18 @@ func send(t *testing.T, handler http.Handler, method, path, body string, s *sess
 	return response
 }
 
+// registerBody returns a JSON registration request with fixed demo names.
 func registerBody(email, password string) string {
 	return fmt.Sprintf(`{"email":%q,"password":%q,"firstName":"Олена","lastName":"Коваль"}`, email, password)
 }
 
+// loginBody returns a JSON login request.
 func loginBody(email, password string) string {
 	return fmt.Sprintf(`{"email":%q,"password":%q}`, email, password)
 }
 
+// tokenFromMail returns the one-time token from the link in the last email sent.
+// The token is used to verify an email address or to reset a password.
 func tokenFromMail(t *testing.T, mail *mailertest.Recorder) string {
 	t.Helper()
 	match := linkToken.FindStringSubmatch(mail.Last().TextBody)
@@ -73,6 +84,8 @@ func tokenFromMail(t *testing.T, mail *mailertest.Recorder) string {
 	return match[1]
 }
 
+// login signs the user in and returns the session cookie and CSRF token.
+// It fails the test if either is missing.
 func login(t *testing.T, handler http.Handler, email, password string) *session {
 	t.Helper()
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/login", loginBody(email, password), nil)
@@ -91,6 +104,7 @@ func login(t *testing.T, handler http.Handler, email, password string) *session 
 	return &session{cookie: cookie, csrf: body.CSRFToken}
 }
 
+// sessionCookie returns the session cookie set by the response, or nil if there is none.
 func sessionCookie(response *httptest.ResponseRecorder) *http.Cookie {
 	for _, cookie := range response.Result().Cookies() {
 		if cookie.Name == sessionCookieName {
@@ -100,6 +114,8 @@ func sessionCookie(response *httptest.ResponseRecorder) *http.Cookie {
 	return nil
 }
 
+// Registering creates an unverified user, normalizes the email (trim, lowercase),
+// sends one verification email, and rejects the same email in another letter case.
 func TestRegisterSendsVerificationEmail(t *testing.T) {
 	handler, _, mail := newAuthHandler()
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/register",
@@ -130,6 +146,7 @@ func TestRegisterSendsVerificationEmail(t *testing.T) {
 	assertProblem(t, response, http.StatusConflict, "email_taken")
 }
 
+// A mail failure must not block registration; the response reports that no email was sent.
 func TestRegisterStillSucceedsWhenMailIsDown(t *testing.T) {
 	handler, _, mail := newAuthHandler()
 	mail.Err = errors.New("smtp down")
@@ -140,6 +157,7 @@ func TestRegisterStillSucceedsWhenMailIsDown(t *testing.T) {
 	}
 }
 
+// Bad registration input gives a 422 that names the invalid field.
 func TestRegisterValidation(t *testing.T) {
 	handler, _, _ := newAuthHandler()
 	tests := []struct {
@@ -150,6 +168,7 @@ func TestRegisterValidation(t *testing.T) {
 		{"invalid email", registerBody("not-an-email", testPassword), "email"},
 		{"foreign domain", registerBody("student@gmail.com", testPassword), "email"},
 		{"short password", registerBody("a@students.example.test", "short"), "password"},
+		// 72 bytes is the most bcrypt can use, so longer passwords are refused.
 		{"73-byte password", registerBody("a@students.example.test", strings.Repeat("a", 73)), "password"},
 		{"missing names", `{"email":"a@students.example.test","password":"correct horse battery","firstName":" ","lastName":""}`, "firstName"},
 	}
@@ -170,15 +189,19 @@ func TestRegisterValidation(t *testing.T) {
 	}
 }
 
+// Checks basic request rules: an Origin header is required, the body must be
+// JSON with known fields only, and only the allowed method works.
 func TestAuthRequestFormat(t *testing.T) {
 	handler, _, _ := newAuthHandler()
 
+	// No Origin header.
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(loginBody("a@students.example.test", testPassword)))
 	req.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, req)
 	assertProblem(t, response, http.StatusForbidden, "origin_forbidden")
 
+	// Form data instead of JSON.
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader("email=a"))
 	req.Header.Set("Origin", "http://localhost:3000")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -186,6 +209,7 @@ func TestAuthRequestFormat(t *testing.T) {
 	handler.ServeHTTP(response, req)
 	assertProblem(t, response, http.StatusUnsupportedMediaType, "unsupported_media_type")
 
+	// Unknown field ("role") is refused, so clients cannot try to set their own role.
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/login", `{"email":"a","role":"ADMIN"}`, nil)
 	assertProblem(t, response, http.StatusBadRequest, "invalid_json")
 
@@ -193,6 +217,7 @@ func TestAuthRequestFormat(t *testing.T) {
 	assertProblem(t, response, http.StatusMethodNotAllowed, "method_not_allowed")
 }
 
+// A verification token works once; reused or invalid tokens are rejected.
 func TestVerifyEmailLinkWorksOnce(t *testing.T) {
 	handler, _, mail := newAuthHandler()
 	send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody("a@students.example.test", testPassword), nil)
@@ -215,6 +240,7 @@ func TestVerifyEmailLinkWorksOnce(t *testing.T) {
 	}
 }
 
+// A token that has expired can no longer verify the email.
 func TestExpiredVerificationLinkFails(t *testing.T) {
 	handler, store, mail := newAuthHandler()
 	send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody("a@students.example.test", testPassword), nil)
@@ -223,15 +249,19 @@ func TestExpiredVerificationLinkFails(t *testing.T) {
 	assertProblem(t, response, http.StatusBadRequest, "invalid_token")
 }
 
+// Covers login, the session cookie settings, /me, and logout with CSRF protection.
 func TestLoginSessionAndLogout(t *testing.T) {
 	handler, _, _ := newAuthHandler()
 	send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody("a@students.example.test", testPassword), nil)
 
+	// Wrong password and unknown user give the same error, so accounts cannot be guessed.
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/login", loginBody("a@students.example.test", "wrong password!!"), nil)
 	assertProblem(t, response, http.StatusUnauthorized, "invalid_credentials")
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/login", loginBody("nobody@students.example.test", testPassword), nil)
 	assertProblem(t, response, http.StatusUnauthorized, "invalid_credentials")
 
+	// The email is normalized on login. The cookie must be HttpOnly and SameSite=Lax
+	// (not Secure, because tests run over plain HTTP).
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/login", loginBody(" A@Students.Example.Test", testPassword), nil)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -242,6 +272,7 @@ func TestLoginSessionAndLogout(t *testing.T) {
 	}
 	s := login(t, handler, "a@students.example.test", testPassword)
 
+	// /me works with the session and fails without it.
 	response = send(t, handler, http.MethodGet, "/api/v1/auth/me", "", s)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"email":"a@students.example.test"`) {
 		t.Fatalf("me status = %d, body = %s", response.Code, response.Body.String())
@@ -249,11 +280,13 @@ func TestLoginSessionAndLogout(t *testing.T) {
 	response = send(t, handler, http.MethodGet, "/api/v1/auth/me", "", nil)
 	assertProblem(t, response, http.StatusUnauthorized, "unauthenticated")
 
+	// Logout needs a correct CSRF token.
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/logout", "", &session{cookie: s.cookie})
 	assertProblem(t, response, http.StatusForbidden, "csrf_invalid")
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/logout", "", &session{cookie: s.cookie, csrf: "wrong"})
 	assertProblem(t, response, http.StatusForbidden, "csrf_invalid")
 
+	// Logout clears the cookie and ends the session on the server.
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/logout", "", s)
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("logout status = %d, body = %s", response.Code, response.Body.String())
@@ -265,6 +298,8 @@ func TestLoginSessionAndLogout(t *testing.T) {
 	assertProblem(t, response, http.StatusUnauthorized, "unauthenticated")
 }
 
+// "Remember me" makes the cookie persistent; without it the cookie lasts only
+// until the browser closes.
 func TestLoginRememberMeControlsCookiePersistence(t *testing.T) {
 	handler, _, _ := newAuthHandler()
 	send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody("a@students.example.test", testPassword), nil)
@@ -297,6 +332,8 @@ func TestLoginRememberMeControlsCookiePersistence(t *testing.T) {
 	}
 }
 
+// After five failed logins the account is locked, even for the correct password,
+// and Retry-After says how long to wait (about 40 minutes).
 func TestLoginLockoutAfterFiveFailures(t *testing.T) {
 	handler, _, _ := newAuthHandler()
 	send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody("a@students.example.test", testPassword), nil)
@@ -307,12 +344,13 @@ func TestLoginLockoutAfterFiveFailures(t *testing.T) {
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/login", loginBody("a@students.example.test", testPassword), nil)
 	assertProblem(t, response, http.StatusTooManyRequests, "login_locked")
 	retryAfter, err := strconv.Atoi(response.Header().Get("Retry-After"))
-
-	if err != nil || retryAfter < 2*60*60-60 || retryAfter > 2*60*60+1 {
+	if err != nil || retryAfter < 40*60-60 || retryAfter > 40*60+1 {
 		t.Fatalf("Retry-After = %q", response.Header().Get("Retry-After"))
 	}
 }
 
+// Resending sends a new email and makes the old token invalid.
+// Once the email is verified, resending is refused.
 func TestResendVerification(t *testing.T) {
 	handler, _, mail := newAuthHandler()
 	send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody("a@students.example.test", testPassword), nil)
@@ -334,11 +372,14 @@ func TestResendVerification(t *testing.T) {
 	assertProblem(t, response, http.StatusConflict, "email_already_verified")
 }
 
+// Full password reset flow. The reset token works once, and a reset logs out
+// old sessions and replaces the old password.
 func TestPasswordReset(t *testing.T) {
 	handler, _, mail := newAuthHandler()
 	send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody("a@students.example.test", testPassword), nil)
 	oldSession := login(t, handler, "a@students.example.test", testPassword)
 
+	// An unknown email gets the same 202 answer but no mail is sent, so accounts cannot be discovered.
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/forgot-password", `{"email":"nobody@students.example.test"}`, nil)
 	if response.Code != http.StatusAccepted || mail.Count() != 1 {
 		t.Fatalf("unknown email: status = %d, mails = %d", response.Code, mail.Count())
@@ -352,6 +393,7 @@ func TestPasswordReset(t *testing.T) {
 	}
 	token := tokenFromMail(t, mail)
 
+	// A weak new password is refused; then the reset succeeds and cannot be repeated.
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/reset-password", fmt.Sprintf(`{"token":%q,"password":"short"}`, token), nil)
 	assertProblem(t, response, http.StatusUnprocessableEntity, "validation_failed")
 
@@ -364,6 +406,7 @@ func TestPasswordReset(t *testing.T) {
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/reset-password", body, nil)
 	assertProblem(t, response, http.StatusBadRequest, "invalid_token")
 
+	// The old session and old password no longer work; the new password does.
 	response = send(t, handler, http.MethodGet, "/api/v1/auth/me", "", oldSession)
 	assertProblem(t, response, http.StatusUnauthorized, "unauthenticated")
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/login", loginBody("a@students.example.test", testPassword), nil)
@@ -371,6 +414,8 @@ func TestPasswordReset(t *testing.T) {
 	login(t, handler, "a@students.example.test", newPassword)
 }
 
+// End-to-end check of the auth flow against a real PostgreSQL database.
+// Skipped unless TEST_DATABASE_URL is set.
 func TestAuthAgainstLocalPostgres(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -383,6 +428,7 @@ func TestAuthAgainstLocalPostgres(t *testing.T) {
 	defer pool.Close()
 	mail := &mailertest.Recorder{}
 	handler := postgresHandler(pool, mail)
+	// A unique email per run avoids clashes with users from earlier runs.
 	email := fmt.Sprintf("it-%d@students.example.test", time.Now().UnixNano())
 
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody(email, testPassword), nil)
@@ -392,6 +438,7 @@ func TestAuthAgainstLocalPostgres(t *testing.T) {
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody(strings.ToUpper(email), testPassword), nil)
 	assertProblem(t, response, http.StatusConflict, "email_taken")
 
+	// Verify the email; the token cannot be reused.
 	verifyBody := fmt.Sprintf(`{"token":%q}`, tokenFromMail(t, mail))
 	if response = send(t, handler, http.MethodPost, "/api/v1/auth/verify-email", verifyBody, nil); response.Code != http.StatusOK {
 		t.Fatalf("verify status = %d, body = %s", response.Code, response.Body.String())
@@ -405,6 +452,7 @@ func TestAuthAgainstLocalPostgres(t *testing.T) {
 		t.Fatalf("me status = %d, body = %s", response.Code, response.Body.String())
 	}
 
+	// Reset the password; the old session must stop working.
 	send(t, handler, http.MethodPost, "/api/v1/auth/forgot-password", fmt.Sprintf(`{"email":%q}`, email), nil)
 	const newPassword = "a brand new passphrase"
 	resetBody := fmt.Sprintf(`{"token":%q,"password":%q}`, tokenFromMail(t, mail), newPassword)
@@ -414,6 +462,7 @@ func TestAuthAgainstLocalPostgres(t *testing.T) {
 	response = send(t, handler, http.MethodGet, "/api/v1/auth/me", "", s)
 	assertProblem(t, response, http.StatusUnauthorized, "unauthenticated")
 
+	// Five failures lock the account; then remove the lock record directly so the test can log in again.
 	for attempt := 1; attempt <= 5; attempt++ {
 		response = send(t, handler, http.MethodPost, "/api/v1/auth/login", loginBody(email, "wrong password!!"), nil)
 		assertProblem(t, response, http.StatusUnauthorized, "invalid_credentials")

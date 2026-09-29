@@ -27,6 +27,7 @@ import (
 var errDatabaseUnavailable = errors.New("database unavailable")
 
 type fakeApp struct {
+	core.IApplication
 	readyErr        error
 	universities    []data.University
 	universitiesErr error
@@ -76,7 +77,7 @@ func testHandler(app *fakeApp) http.Handler {
 func postgresHandler(pool *pgxpool.Pool, mail mailer.IMailer) http.Handler {
 	store := data.NewPostgres(pool)
 	access := auth.NewService(store, store, mail, testAuthConfig, discardLogger())
-	return New(core.NewApplication(profile.NewService(store)), access, store, testSettings, discardLogger())
+	return New(core.NewApplication(profile.NewService(store, store, store)), access, store, testSettings, discardLogger())
 }
 
 func request(t *testing.T, handler http.Handler, method, target string) *httptest.ResponseRecorder {
@@ -108,7 +109,8 @@ func TestOpenAPIContract(t *testing.T) {
 	if got := response.Header().Get("Content-Type"); got != "application/yaml; charset=utf-8" {
 		t.Fatalf("Content-Type = %q", got)
 	}
-	for _, fragment := range []string{"openapi: 3.0.3", "/universities:", "/skills:", "/auth/login:", "/auth/reset-password:"} {
+	for _, fragment := range []string{"openapi: 3.0.3", "/universities:", "/skills:", "/auth/login:", "/auth/reset-password:",
+		"/universities/{universityId}/faculties:", "/me/profile:", "/me/teaching-skills/{skillId}:", "/me/learning-skills:"} {
 		if !strings.Contains(response.Body.String(), fragment) {
 			t.Fatalf("OpenAPI contract does not contain %q", fragment)
 		}
@@ -287,7 +289,8 @@ func TestCatalogAgainstLocalPostgres(t *testing.T) {
 		wantCount int
 	}{
 		{path: "/api/v1/universities", wantCount: 1},
-		{path: "/api/v1/skill-categories", wantCount: 3},
+		{path: "/api/v1/skill-categories", wantCount: 4},
+		{path: "/api/v1/universities/10000000-0000-0000-0000-000000000001/faculties", wantCount: 4},
 		{path: "/api/v1/skills?q=Photoshop", wantCount: 1},
 		{path: "/api/v1/skills?q=%25", wantCount: 0},
 		{path: "/api/v1/skills?limit=1", wantCount: 1},

@@ -12,6 +12,7 @@ import (
 
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/mailer"
+	"skillswap/backend/internal/validate"
 )
 
 const (
@@ -24,7 +25,7 @@ const (
 var loginThrottle = data.ThrottlePolicy{
 	MaxFailures: 5,
 	Window:      15 * time.Minute,
-	Lockout:     2 * time.Hour,
+	Lockout:     40 * time.Minute,
 }
 
 var (
@@ -88,11 +89,11 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (user data.Use
 	if message := validatePassword(in.Password); message != "" {
 		fields["password"] = message
 	}
-	firstName, ok := cleanName(in.FirstName)
+	firstName, ok := validate.Name(in.FirstName)
 	if !ok {
 		fields["firstName"] = "First name is required and must be at most 100 characters"
 	}
-	lastName, ok := cleanName(in.LastName)
+	lastName, ok := validate.Name(in.LastName)
 	if !ok {
 		fields["lastName"] = "Last name is required and must be at most 100 characters"
 	}

@@ -25,18 +25,7 @@ const (
 )
 
 func (a *API) postOnly(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			problem(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method is not allowed")
-			return
-		}
-		if r.Header.Get("Origin") != a.settings.FrontendOrigin {
-			problem(w, http.StatusForbidden, "origin_forbidden", "Origin is not allowed")
-			return
-		}
-		next(w, r)
-	}
+	return a.methods(map[string]http.HandlerFunc{http.MethodPost: next})
 }
 
 type userHandler func(w http.ResponseWriter, r *http.Request, current data.User, sessionToken string)
