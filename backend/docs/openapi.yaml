@@ -3,15 +3,20 @@ info:
   title: Skill Swap API
   version: 1.0.0
   description: |
-    HTTP contract implemented by the Sprint 1-2 backend.
+    HTTP contract implemented by the Sprint 1-3 backend.
 
     Authentication (FR-01) uses an opaque server-side session stored in the HttpOnly
     `skillswap_session` cookie (SameSite=Lax, Path=/). Browsers should call the API through
     the frontend origin (the Next.js `/api/v1/*` rewrite) with `credentials: "include"`.
 
-    Every POST must come from the configured frontend origin (`Origin` header) and send
-    `Content-Type: application/json` when it has a body. POST requests that need a session
-    must also send the `X-CSRF-Token` header returned by `/auth/login` and `/auth/me`.
+    Every POST, PATCH and DELETE must come from the configured frontend origin (`Origin`
+    header) and send `Content-Type: application/json` when it has a body. Those requests
+    that need a session must also send the `X-CSRF-Token` header returned by `/auth/login`
+    and `/auth/me`.
+
+    Profile endpoints (Sprint 3, FR-02 and FR-03) live under `/me`: the user always comes
+    from the session, never from the path or the body. Every successful change returns the
+    whole updated profile, so the client can replace its copy.
 servers:
   - url: http://127.0.0.1:8080/api/v1
     description: Local development
@@ -19,6 +24,7 @@ tags:
   - name: Service
   - name: Catalog
   - name: Auth
+  - name: Profile
 paths:
   /openapi.yaml:
     get:
@@ -88,6 +94,49 @@ paths:
                       $ref: "#/components/schemas/University"
         "403":
           $ref: "#/components/responses/OriginForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /universities/{universityId}/faculties:
+    get:
+      tags: [Catalog]
+      operationId: listFaculties
+      summary: List faculties of a university ordered by name
+      parameters:
+        - name: universityId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Faculties; an unknown university has none
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Faculty"
+              example:
+                items:
+                  - id: 50000000-0000-0000-0000-000000000001
+                    name: Факультет інформатики та обчислювальної техніки
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "404":
+          description: universityId is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: not_found
+                  message: Resource was not found
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
   /skill-categories:
@@ -469,6 +518,237 @@ paths:
           $ref: "#/components/responses/ValidationFailed"
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
+  /me/profile:
+    get:
+      tags: [Profile]
+      operationId: getMyProfile
+      summary: Return the signed-in user's profile with both skill lists
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Profile"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+    patch:
+      tags: [Profile]
+      operationId: updateMyProfile
+      summary: Change some profile fields (FR-02)
+      description: |
+        Send only the fields to change; missing fields stay as they are. `null` clears
+        `facultyId`, `course`, `city`, `bio` and `formats`. The university comes from the
+        account email and cannot be changed. The whole result is validated: `city` is
+        required when `formats` contains `OFFLINE`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdateRequest"
+            example:
+              firstName: Олена
+              lastName: Коваль
+              facultyId: 50000000-0000-0000-0000-000000000001
+              course: 2
+              city: Київ
+              bio: Граю на гітарі 5 років, хочу навчитися Photoshop.
+              formats: [ONLINE, OFFLINE]
+      responses:
+        "200":
+          $ref: "#/components/responses/Profile"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRFOrOriginForbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: One or more fields are invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: validation_failed
+                  message: Some fields are invalid
+                  fields:
+                    bio: Description must be at most 600 characters
+                    city: City is required for offline lessons
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/teaching-skills:
+    post:
+      tags: [Profile]
+      operationId: addTeachingSkill
+      summary: Add a catalog skill to the "I teach" list
+      description: "`level` is a self-assessment of the skill. A skill can be in each list once."
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        $ref: "#/components/requestBodies/AddSkill"
+      responses:
+        "201":
+          $ref: "#/components/responses/ProfileChanged"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRFOrOriginForbidden"
+        "404":
+          $ref: "#/components/responses/SkillNotFound"
+        "409":
+          $ref: "#/components/responses/SkillAlreadyAdded"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/InvalidLevel"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/teaching-skills/{skillId}:
+    parameters:
+      - $ref: "#/components/parameters/SkillID"
+    patch:
+      tags: [Profile]
+      operationId: updateTeachingSkillLevel
+      summary: Change the level of a skill in the "I teach" list
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        $ref: "#/components/requestBodies/SkillLevel"
+      responses:
+        "200":
+          $ref: "#/components/responses/Profile"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRFOrOriginForbidden"
+        "404":
+          $ref: "#/components/responses/SkillNotInList"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/InvalidLevel"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+    delete:
+      tags: [Profile]
+      operationId: removeTeachingSkill
+      summary: Remove a skill from the "I teach" list
+      description: The other list is not changed.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "200":
+          $ref: "#/components/responses/Profile"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRFOrOriginForbidden"
+        "404":
+          $ref: "#/components/responses/SkillNotInList"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/learning-skills:
+    post:
+      tags: [Profile]
+      operationId: addLearningSkill
+      summary: Add a catalog skill to the "I learn" list
+      description: "`level` is the current level of knowledge. A skill can be in each list once."
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        $ref: "#/components/requestBodies/AddSkill"
+      responses:
+        "201":
+          $ref: "#/components/responses/ProfileChanged"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRFOrOriginForbidden"
+        "404":
+          $ref: "#/components/responses/SkillNotFound"
+        "409":
+          $ref: "#/components/responses/SkillAlreadyAdded"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/InvalidLevel"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/learning-skills/{skillId}:
+    parameters:
+      - $ref: "#/components/parameters/SkillID"
+    patch:
+      tags: [Profile]
+      operationId: updateLearningSkillLevel
+      summary: Change the level of a skill in the "I learn" list
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        $ref: "#/components/requestBodies/SkillLevel"
+      responses:
+        "200":
+          $ref: "#/components/responses/Profile"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRFOrOriginForbidden"
+        "404":
+          $ref: "#/components/responses/SkillNotInList"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/InvalidLevel"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+    delete:
+      tags: [Profile]
+      operationId: removeLearningSkill
+      summary: Remove a skill from the "I learn" list
+      description: The other list is not changed.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "200":
+          $ref: "#/components/responses/Profile"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRFOrOriginForbidden"
+        "404":
+          $ref: "#/components/responses/SkillNotInList"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
 components:
   securitySchemes:
     sessionCookie:
@@ -483,7 +763,121 @@ components:
       description: The `csrfToken` value from `/auth/login` or `/auth/me`.
       schema:
         type: string
+    SkillID:
+      name: skillId
+      in: path
+      required: true
+      description: Catalog skill id (`Skill.id`), not a row id of the list.
+      schema:
+        type: string
+        format: uuid
+  requestBodies:
+    AddSkill:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AddSkillRequest"
+          example:
+            skillId: 30000000-0000-0000-0000-000000000001
+            level: ADVANCED
+    SkillLevel:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/SkillLevelRequest"
+          example:
+            level: INTERMEDIATE
+  examples:
+    Profile:
+      value:
+        profile:
+          id: 40000000-0000-0000-0000-000000000001
+          firstName: Олена
+          lastName: Коваль
+          university:
+            id: 10000000-0000-0000-0000-000000000001
+            name: Демонстраційний університет
+          faculty:
+            id: 50000000-0000-0000-0000-000000000001
+            name: Факультет інформатики та обчислювальної техніки
+          course: 2
+          city: Київ
+          bio: Граю на гітарі 5 років, хочу навчитися Photoshop.
+          formats: [ONLINE, OFFLINE]
+          teachingSkills:
+            - skillId: 30000000-0000-0000-0000-000000000001
+              categoryId: 20000000-0000-0000-0000-000000000001
+              name: Гітара
+              level: ADVANCED
+          learningSkills:
+            - skillId: 30000000-0000-0000-0000-000000000002
+              categoryId: 20000000-0000-0000-0000-000000000002
+              name: Photoshop
+              level: BEGINNER
+          eligibleForMatching: true
   responses:
+    Profile:
+      description: The current profile
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProfileEnvelope"
+          examples:
+            profile:
+              $ref: "#/components/examples/Profile"
+    ProfileChanged:
+      description: The skill was added; the body is the updated profile
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProfileEnvelope"
+          examples:
+            profile:
+              $ref: "#/components/examples/Profile"
+    SkillNotFound:
+      description: The skill is not in the catalog, is inactive, or `skillId` is not a UUID
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: skill_not_found
+              message: Skill was not found in the catalog
+    SkillNotInList:
+      description: The skill is not in this list of the signed-in user
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: skill_not_found
+              message: Skill is not in this list
+    SkillAlreadyAdded:
+      description: The skill is already in this list
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: skill_already_added
+              message: Skill is already in this list
+    InvalidLevel:
+      description: The level is not one of the allowed values
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: validation_failed
+              message: Some fields are invalid
+              fields:
+                level: Level must be BEGINNER, INTERMEDIATE or ADVANCED
     Unauthenticated:
       description: The session cookie is missing, expired, or revoked
       content:
@@ -621,6 +1015,148 @@ components:
           type: string
         slug:
           type: string
+    Faculty:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    Reference:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    SkillLevel:
+      type: string
+      enum: [BEGINNER, INTERMEDIATE, ADVANCED]
+    LessonFormat:
+      type: string
+      enum: [ONLINE, OFFLINE]
+    UserSkill:
+      type: object
+      required: [skillId, categoryId, name, level]
+      properties:
+        skillId:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        level:
+          $ref: "#/components/schemas/SkillLevel"
+    Profile:
+      type: object
+      description: The owner's view of the profile; it has no email, password or account status.
+      required: [id, firstName, lastName, university, faculty, course, city, bio, formats,
+        teachingSkills, learningSkills, eligibleForMatching]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        university:
+          $ref: "#/components/schemas/Reference"
+        faculty:
+          allOf:
+            - $ref: "#/components/schemas/Reference"
+          nullable: true
+        course:
+          type: integer
+          minimum: 1
+          maximum: 6
+          nullable: true
+        city:
+          type: string
+          description: Empty string when not set.
+        bio:
+          type: string
+          description: Plain text; clients must display it without interpreting HTML.
+        formats:
+          type: array
+          items:
+            $ref: "#/components/schemas/LessonFormat"
+        teachingSkills:
+          type: array
+          description: The "I teach" list, ordered by skill name.
+          items:
+            $ref: "#/components/schemas/UserSkill"
+        learningSkills:
+          type: array
+          description: The "I learn" list, ordered by skill name.
+          items:
+            $ref: "#/components/schemas/UserSkill"
+        eligibleForMatching:
+          type: boolean
+          description: True when both lists are filled, a format is chosen, and offline has a city.
+    ProfileEnvelope:
+      type: object
+      required: [profile]
+      properties:
+        profile:
+          $ref: "#/components/schemas/Profile"
+    ProfileUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        firstName:
+          type: string
+          maxLength: 100
+        lastName:
+          type: string
+          maxLength: 100
+        facultyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Must be a faculty of the user's university.
+        course:
+          type: integer
+          minimum: 1
+          maximum: 6
+          nullable: true
+        city:
+          type: string
+          maxLength: 100
+          nullable: true
+        bio:
+          type: string
+          maxLength: 600
+          nullable: true
+          description: Up to 600 characters (not bytes); line breaks are allowed.
+        formats:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/LessonFormat"
+    AddSkillRequest:
+      type: object
+      additionalProperties: false
+      required: [skillId, level]
+      properties:
+        skillId:
+          type: string
+          format: uuid
+        level:
+          $ref: "#/components/schemas/SkillLevel"
+    SkillLevelRequest:
+      type: object
+      additionalProperties: false
+      required: [level]
+      properties:
+        level:
+          $ref: "#/components/schemas/SkillLevel"
     RegisterRequest:
       type: object
       additionalProperties: false

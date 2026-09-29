@@ -92,7 +92,7 @@ hash in `user_sessions`. Passwords are bcrypt hashes with cost 12; a password ne
 at least 12 characters and at most 72 UTF-8 bytes. Email verification and password
 reset links are single-use tokens stored as hashes in `one_time_tokens` (24 hours and
 1 hour). After 5 failed sign-ins for one email within 15 minutes, sign-in is locked
-for 2 hours (`login_throttles`, migration `00002_auth.sql`).
+for 40 minutes (NFR-08; `login_throttles`, migration `00002_auth.sql`).
 
 ### Code structure (LR2 component diagram)
 
@@ -101,6 +101,7 @@ for 2 hours (`login_throttles`, migration `00002_auth.sql`).
 | HTTP handlers: routes, DTOs, errors | `internal/api` |
 | Access and authentication | `internal/auth` |
 | Domain core and `IApplication` | `internal/core` (modules such as `internal/profile`) |
+| Shared input checks (names, text length, UUID) | `internal/validate` |
 | Data access: `IData` / `ITransaction`, pgx v5, pgxpool | `internal/data` |
 | Mail adapter `IMailer` | `internal/mailer` |
 
@@ -132,7 +133,7 @@ The full contract, including request fields and error codes, is in `docs/openapi
 - Send JSON bodies with `Content-Type: application/json`.
 - Keep `csrfToken` from `/auth/login` or `/auth/me` in memory and send it as the
   `X-CSRF-Token` header on `/auth/logout` and `/auth/resend-verification` (and on every
-  later POST that needs a session). On page load call `/auth/me` to restore it.
+  POST, PATCH and DELETE that needs a session). On page load call `/auth/me` to restore it.
 - Verification emails open `/onboarding?token=...`, where the frontend confirms
   the email through `/auth/verify-email` and then removes the token from the URL.
   Older `/verify-email?token=...` links redirect to the same onboarding page.
@@ -151,6 +152,52 @@ curl -i -c cookies.txt -H "Origin: http://localhost:3000" -H "Content-Type: appl
   http://127.0.0.1:8080/api/v1/auth/login
 curl -b cookies.txt http://127.0.0.1:8080/api/v1/auth/me
 ```
+
+## Profile and skill lists (Sprint 3, FR-02–FR-03)
+
+`ProfileService` (`internal/profile`) validates and saves the profile and the two skill
+lists. All `/me` routes take the user from the session cookie, so a user can only read
+and change their own profile; changes also need `X-CSRF-Token` and the frontend `Origin`.
+Every successful change returns the whole updated `{ "profile": ... }`.
+
+| Method | Path | Session | Purpose |
+| ------ | ---- | ------- | ------- |
+| GET | `/api/v1/universities/{universityId}/faculties` | — | Faculties for the profile form |
+| GET | `/api/v1/me/profile` | cookie | Profile, both lists and `eligibleForMatching` |
+| PATCH | `/api/v1/me/profile` | cookie + CSRF | Change only the sent fields; `null` clears a value |
+| POST | `/api/v1/me/teaching-skills` | cookie + CSRF | Add `{ "skillId", "level" }` to "I teach" (201) |
+| PATCH | `/api/v1/me/teaching-skills/{skillId}` | cookie + CSRF | Change the level `{ "level" }` |
+| DELETE | `/api/v1/me/teaching-skills/{skillId}` | cookie + CSRF | Remove the skill from "I teach" |
+| POST, PATCH, DELETE | `/api/v1/me/learning-skills[/{skillId}]` | cookie + CSRF | The same for "I learn" |
+
+Rules checked on the server (NFR-09):
+
+- `firstName` and `lastName` are required, up to 100 characters; the university comes from
+  the email domain and cannot be changed;
+- `facultyId` must belong to the user's university; `course` is 1–6; `city` is up to
+  100 characters; `bio` is up to 600 characters (characters, not bytes);
+- `formats` contains `ONLINE` and/or `OFFLINE`; `OFFLINE` requires a `city`;
+- `level` is `BEGINNER`, `INTERMEDIATE` or `ADVANCED` (a self-assessment in "I teach", the
+  current level in "I learn"); a skill must be active in the catalog and can be in each
+  list once (409 `skill_already_added`);
+- `eligibleForMatching` is true when both lists are filled, a format is chosen, and
+  offline lessons have a city.
+
+A removed skill is kept as an inactive row (`is_active = false`), so exchanges created in
+later sprints keep their references; adding it again reactivates the row.
+
+Migration `00003_profile.sql` adds the `OFFLINE` lesson format, limits the course to 1–6,
+and makes the learning-goal priority optional (priorities belong to FR-16). Before
+applying it to a shared database, make a backup outside the PostgreSQL data directory
+(NFR-04), for example:
+
+```bash
+pg_dump --format=custom --file=../backups/skillswap-before-00003.dump "$DATABASE_URL"
+go run ./cmd/db up
+go run ./cmd/db seed
+```
+
+The demo seed adds faculties of the demo university and the skills shown in onboarding.
 
 ## Run Mailpit on Windows without Docker
 

@@ -38,6 +38,7 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	mux.HandleFunc("/api/v1/health", getOnly(a.healthCheck))
 	mux.HandleFunc("/api/v1/ready", getOnly(a.ready))
 	mux.HandleFunc("/api/v1/universities", getOnly(a.universities))
+	mux.HandleFunc("/api/v1/universities/{universityId}/faculties", getOnly(a.faculties))
 	mux.HandleFunc("/api/v1/skill-categories", getOnly(a.categories))
 	mux.HandleFunc("/api/v1/skills", getOnly(a.skills))
 	mux.HandleFunc("/api/v1/openapi.yaml", getOnly(openAPI))
@@ -49,6 +50,24 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	mux.HandleFunc("/api/v1/auth/resend-verification", a.postOnly(a.withUser(a.resendVerification)))
 	mux.HandleFunc("/api/v1/auth/forgot-password", a.postOnly(a.forgotPassword))
 	mux.HandleFunc("/api/v1/auth/reset-password", a.postOnly(a.resetPassword))
+	mux.HandleFunc("/api/v1/me/profile", a.methods(map[string]http.HandlerFunc{
+		http.MethodGet:   a.withUser(a.getProfile),
+		http.MethodPatch: a.withUser(a.updateProfile),
+	}))
+	mux.HandleFunc("/api/v1/me/teaching-skills", a.methods(map[string]http.HandlerFunc{
+		http.MethodPost: a.withUser(a.addSkill(data.TeachingList)),
+	}))
+	mux.HandleFunc("/api/v1/me/teaching-skills/{skillId}", a.methods(map[string]http.HandlerFunc{
+		http.MethodPatch:  a.withUser(a.updateSkillLevel(data.TeachingList)),
+		http.MethodDelete: a.withUser(a.removeSkill(data.TeachingList)),
+	}))
+	mux.HandleFunc("/api/v1/me/learning-skills", a.methods(map[string]http.HandlerFunc{
+		http.MethodPost: a.withUser(a.addSkill(data.LearningList)),
+	}))
+	mux.HandleFunc("/api/v1/me/learning-skills/{skillId}", a.methods(map[string]http.HandlerFunc{
+		http.MethodPatch:  a.withUser(a.updateSkillLevel(data.LearningList)),
+		http.MethodDelete: a.withUser(a.removeSkill(data.LearningList)),
+	}))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		problem(w, http.StatusNotFound, "not_found", "Resource was not found")
 	})

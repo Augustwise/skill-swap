@@ -2,7 +2,10 @@ package api
 
 import (
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -18,7 +21,7 @@ func (a *API) withMiddleware(next http.Handler) http.Handler {
 			}
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
 		}
 		if r.Method == http.MethodOptions {
@@ -31,6 +34,23 @@ func (a *API) withMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(wrapped, r)
 		a.logger.Log(r.Context(), slog.LevelInfo, "http request", "method", r.Method, "path", r.URL.Path, "status", wrapped.status, "duration_ms", time.Since(start).Milliseconds())
 	})
+}
+
+func (a *API) methods(handlers map[string]http.HandlerFunc) http.HandlerFunc {
+	allow := strings.Join(slices.Sorted(maps.Keys(handlers)), ", ")
+	return func(w http.ResponseWriter, r *http.Request) {
+		next, ok := handlers[r.Method]
+		if !ok {
+			w.Header().Set("Allow", allow)
+			problem(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method is not allowed")
+			return
+		}
+		if r.Method != http.MethodGet && r.Header.Get("Origin") != a.settings.FrontendOrigin {
+			problem(w, http.StatusForbidden, "origin_forbidden", "Origin is not allowed")
+			return
+		}
+		next(w, r)
+	}
 }
 
 type statusWriter struct {

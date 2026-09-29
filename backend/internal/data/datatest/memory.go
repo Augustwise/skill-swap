@@ -10,20 +10,38 @@ import (
 	"skillswap/backend/internal/data"
 )
 
-const DemoUniversityID = "10000000-0000-0000-0000-000000000001"
+// Demo catalog identifiers
+const (
+	DemoUniversityID  = "10000000-0000-0000-0000-000000000001"
+	OtherUniversityID = "10000000-0000-0000-0000-000000000002"
+	DemoFacultyID     = "50000000-0000-0000-0000-000000000001"
+	OtherFacultyID    = "50000000-0000-0000-0000-000000000099"
+	GuitarSkillID     = "30000000-0000-0000-0000-000000000001"
+	PhotoshopSkillID  = "30000000-0000-0000-0000-000000000002"
+	InactiveSkillID   = "30000000-0000-0000-0000-000000000098"
+)
 
 type Memory struct {
 	mu           sync.Mutex
 	universities map[string]string
+	faculties    map[string][]data.Faculty
+	skills       map[string]catalogSkill
 	users        map[string]*account
 	sessions     map[string]*session
 	tokens       map[string]*token
 	throttles    map[string]*throttle
 }
 
+type catalogSkill struct {
+	skill  data.Skill
+	active bool
+}
+
 type account struct {
 	user         data.User
 	passwordHash string
+	profile      data.ProfileUpdate
+	skills       map[data.SkillList]map[string]string // skill ID -> level
 }
 
 type session struct {
@@ -47,16 +65,27 @@ type throttle struct {
 
 var (
 	_ data.IAuthData    = (*Memory)(nil)
+	_ data.ICatalogData = (*Memory)(nil)
+	_ data.IProfileData = (*Memory)(nil)
 	_ data.ITransaction = (*Memory)(nil)
 )
 
 func NewMemory() *Memory {
 	return &Memory{
 		universities: map[string]string{"students.example.test": DemoUniversityID},
-		users:        map[string]*account{},
-		sessions:     map[string]*session{},
-		tokens:       map[string]*token{},
-		throttles:    map[string]*throttle{},
+		faculties: map[string][]data.Faculty{
+			DemoUniversityID:  {{ID: DemoFacultyID, Name: "Факультет інформатики та обчислювальної техніки"}},
+			OtherUniversityID: {{ID: OtherFacultyID, Name: "Факультет іншого університету"}},
+		},
+		skills: map[string]catalogSkill{
+			GuitarSkillID:    {skill: data.Skill{ID: GuitarSkillID, CategoryID: "20000000-0000-0000-0000-000000000001", Name: "Гітара", Slug: "guitar"}, active: true},
+			PhotoshopSkillID: {skill: data.Skill{ID: PhotoshopSkillID, CategoryID: "20000000-0000-0000-0000-000000000002", Name: "Photoshop", Slug: "photoshop"}, active: true},
+			InactiveSkillID:  {skill: data.Skill{ID: InactiveSkillID, CategoryID: "20000000-0000-0000-0000-000000000002", Name: "Flash", Slug: "flash"}},
+		},
+		users:     map[string]*account{},
+		sessions:  map[string]*session{},
+		tokens:    map[string]*token{},
+		throttles: map[string]*throttle{},
 	}
 }
 
@@ -107,16 +136,20 @@ func (m *Memory) CreateUser(_ context.Context, user data.NewUser) (string, error
 		return "", data.ErrEmailTaken
 	}
 	id := fmt.Sprintf("40000000-0000-0000-0000-%012d", len(m.users)+1)
-	m.users[id] = &account{user: data.User{
-		ID:           id,
-		Email:        user.Email,
-		FirstName:    user.FirstName,
-		LastName:     user.LastName,
-		UniversityID: user.UniversityID,
-		Role:         "STUDENT",
-		Status:       "ACTIVE",
-		CreatedAt:    time.Now().UTC(),
-	}}
+	m.users[id] = &account{
+		user: data.User{
+			ID:           id,
+			Email:        user.Email,
+			FirstName:    user.FirstName,
+			LastName:     user.LastName,
+			UniversityID: user.UniversityID,
+			Role:         "STUDENT",
+			Status:       "ACTIVE",
+			CreatedAt:    time.Now().UTC(),
+		},
+		profile: data.ProfileUpdate{FirstName: user.FirstName, LastName: user.LastName},
+		skills:  map[data.SkillList]map[string]string{data.TeachingList: {}, data.LearningList: {}},
+	}
 	return id, nil
 }
 

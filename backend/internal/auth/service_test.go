@@ -118,7 +118,7 @@ func TestRegisterWritesInOneTransactionAndMailsAfterCommit(t *testing.T) {
 	}
 }
 
-func TestLoginLockoutLastsTwoHours(t *testing.T) {
+func TestLoginLockoutLastsFortyMinutes(t *testing.T) {
 	s, tx, _ := newTestService(t)
 	register(t, s, "a@students.example.test")
 	ctx := context.Background()
@@ -133,8 +133,8 @@ func TestLoginLockoutLastsTwoHours(t *testing.T) {
 	if !errors.As(err, &locked) {
 		t.Fatalf("err = %v, want LockedError", err)
 	}
-	if left := time.Until(locked.Until); left < 2*time.Hour-time.Minute || left > 2*time.Hour {
-		t.Fatalf("lockout left = %s, want 2h", left)
+	if left := time.Until(locked.Until); left < 40*time.Minute-time.Minute || left > 40*time.Minute {
+		t.Fatalf("lockout left = %s, want 40m (NFR-08)", left)
 	}
 	if !tx.LockedUntil("a@students.example.test").Equal(locked.Until) {
 		t.Fatal("lockout was not stored")

@@ -46,7 +46,7 @@ func run(logger *slog.Logger) error {
 		FrontendOrigin:      cfg.FrontendURL,
 		AllowedEmailDomains: cfg.AllowedEmailDomains,
 	}, logger)
-	app := core.NewApplication(profile.NewService(store))
+	app := core.NewApplication(profile.NewService(store, store, store))
 	server := &http.Server{
 		Addr:              cfg.APIAddr,
 		Handler:           api.New(app, access, store, api.Settings{FrontendOrigin: cfg.FrontendURL}, logger),

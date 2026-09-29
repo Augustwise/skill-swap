@@ -13,6 +13,8 @@ var (
 	ErrNotFound = errors.New("not found")
 
 	ErrEmailTaken = errors.New("email is already registered")
+
+	ErrSkillAlreadyAdded = errors.New("skill is already in this list")
 )
 
 type ITransaction interface {
