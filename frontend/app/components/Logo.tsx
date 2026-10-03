@@ -1,4 +1,16 @@
-export function Logo() {
+import Image from "next/image";
+import Link from "next/link";
+
+export function Logo({ variant }: { variant?: "app" } = {}) {
+  if (variant === "app") {
+    return (
+      <Link className="dashboard-brand" href="/main" aria-label="SkillSwap — головна">
+        <Image src="/figma/main/mark.svg" alt="" width={30} height={30} />
+        <span>SkillSwap</span>
+      </Link>
+    );
+  }
+
   return (
     <a className="logo" href="#top" aria-label="SkillSwap — на початок сторінки">
       <svg viewBox="0 0 32 32" aria-hidden="true">
