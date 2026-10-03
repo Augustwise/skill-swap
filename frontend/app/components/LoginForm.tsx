@@ -2,12 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 type ApiProblem = { error?: { code?: string; fields?: Record<string, string> } };
-type Mode = "login" | "recovery" | "recoverySent" | "signedIn";
+type Mode = "login" | "recovery" | "recoverySent";
 
 export function LoginForm() {
+  const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -78,7 +80,7 @@ export function LoginForm() {
         else setError("Не вдалося увійти. Спробуй ще раз.");
         return;
       }
-      setMode("signedIn");
+      router.replace("/onboarding");
     } catch {
       setError("Не вдалося зв’язатися із сервером. Перевір з’єднання і спробуй ще раз.");
     } finally {
@@ -122,18 +124,6 @@ export function LoginForm() {
     } finally {
       setPending(false);
     }
-  }
-
-  if (mode === "signedIn") {
-    return (
-      <div className="register-form register-success" role="status">
-        <h1 id="login-title">Вхід виконано</h1>
-        <p>Ти увійшов в акаунт SkillSwap.</p>
-        <Link className="register-submit register-success__link" href="/">
-          На головну
-        </Link>
-      </div>
-    );
   }
 
   if (mode === "recoverySent") {
