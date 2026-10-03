@@ -53,6 +53,81 @@
     0 2px 8px rgba(10, 16, 70, 0.06);
 }
 
+.onboarding-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.onboarding-fields:disabled .onboarding-button,
+.onboarding-fields:disabled button,
+.onboarding-skip.is-disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.onboarding-skip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  color: #4b5478;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.onboarding-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.onboarding-profile textarea {
+  width: 100%;
+  min-height: 108px;
+  padding: 12px 14px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  color: var(--foreground);
+  background: var(--background);
+  font:
+    400 14px/21px var(--font-geist-sans),
+    Arial,
+    sans-serif;
+}
+
+.onboarding-profile textarea::placeholder {
+  color: var(--muted);
+}
+
+.onboarding-profile textarea[aria-invalid="true"] {
+  border-color: #d93d64;
+}
+
+.onboarding-profile input[readonly] {
+  background: #f7f8fc;
+  color: var(--muted);
+}
+
+.onboarding-field-hint,
+.onboarding-optional {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.onboarding-catalog-error p {
+  margin: 0 0 12px;
+  color: #b42318;
+  font-size: 13px;
+}
+
 .onboarding-progress {
   display: flex;
   align-items: center;
@@ -259,6 +334,30 @@
   border-radius: 11px;
   background: #fff;
   cursor: grab;
+}
+
+.onboarding-selected__row--teaching {
+  cursor: default;
+}
+
+.onboarding-reorder {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.onboarding-reorder button {
+  width: 20px;
+  height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: #f7f8fc;
+  color: #4b5478;
+  cursor: pointer;
+}
+
+.onboarding-reorder button:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .onboarding-selected__rank {
@@ -502,6 +601,7 @@
 .onboarding-page a:focus-visible,
 .onboarding-page button:focus-visible,
 .onboarding-page input:focus-visible,
+.onboarding-page textarea:focus-visible,
 .onboarding-page select:focus-visible {
   outline: 3px solid #b9afff;
   outline-offset: 3px;
@@ -532,6 +632,14 @@
     font-size: 0;
     gap: 0;
   }
+  .onboarding-progress__item:not(.onboarding-progress__item--active) .onboarding-progress__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   .onboarding-progress__item--active {
     font-size: 12px;
     gap: 6px;
@@ -545,6 +653,9 @@
 }
 
 @media (max-width: 520px) {
+  .onboarding-profile .register-form__name-row {
+    flex-direction: column;
+  }
   .onboarding-header__step {
     display: none;
   }
