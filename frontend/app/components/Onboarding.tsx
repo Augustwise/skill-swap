@@ -243,7 +243,7 @@ export function Onboarding() {
       } else
         await saveSkills(step === 1 ? "teaching" : "learning", step === 1 ? teaching : learning);
       if (step < 3) changeStep(step + 1);
-      else router.push("/");
+      else router.replace("/main");
     } catch (error) {
       if (error instanceof OnboardingError) {
         setSessionExpired(error.status === 401);
@@ -317,7 +317,7 @@ export function Onboarding() {
         <span className="onboarding-header__step">Крок {step + 1} з 4</span>
         <Link
           className={`onboarding-skip ${pending ? "is-disabled" : ""}`}
-          href="/"
+          href="/main"
           aria-disabled={pending}
           onClick={(event) => {
             if (pending) event.preventDefault();

@@ -80,7 +80,8 @@ export function LoginForm() {
         else setError("Не вдалося увійти. Спробуй ще раз.");
         return;
       }
-      router.replace("/onboarding");
+      const next = new URLSearchParams(window.location.search).get("next");
+      router.replace(next === "/main" ? "/main" : "/onboarding");
     } catch {
       setError("Не вдалося зв’язатися із сервером. Перевір з’єднання і спробуй ще раз.");
     } finally {
