@@ -6,19 +6,6 @@ The project uses a Next.js web client, a modular Go API, and PostgreSQL.
 
 Repository: [Augustwise/skill-swap](https://github.com/Augustwise/skill-swap).
 
-## Implementation scope
-
-This checkout (`feat/SCRUM-6-profile-backend`, code commit `b349455`) contains the
-application foundation, authentication, reference catalogs, and the profile and skill-list
-API (FR-01–FR-03). The web client includes the landing page, registration, sign-in,
-password reset, email verification, and an initial onboarding interface. In this checkout,
-onboarding skill selection is still local UI state; the profile API is implemented separately.
-Later frontend integration is available on newer branches and `main`.
-
-Matching, exchange requests, chat, lesson scheduling, reviews, and moderation remain
-planned application modules. An existing database table or UI placeholder does not mean
-that the corresponding end-to-end feature is complete.
-
 ## Project structure
 
 ```text
