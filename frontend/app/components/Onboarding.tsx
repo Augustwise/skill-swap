@@ -9,6 +9,7 @@ import {
   onboardingRequest,
   profileFields,
   selectedSkills,
+  type AuthSession,
   type Profile,
   type ProfileFields,
   type Reference,
@@ -30,11 +31,7 @@ const fieldMessages: Record<string, string> = {
 
 export function Onboarding() {
   const router = useRouter();
-  const [status, setStatus] = useState<
-    "loading" | "ready" | "login" | "error" | "verificationError"
-  >("loading");
-  const verification = useRef<Promise<unknown> | null>(null);
-  const [verified, setVerified] = useState(false);
+  const [status, setStatus] = useState<"loading" | "ready" | "login" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
   const [csrfToken, setCsrfToken] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -69,27 +66,18 @@ export function Onboarding() {
     async function load() {
       const token = new URLSearchParams(window.location.search).get("token");
       if (token) {
-        // Email tokens are single-use; share the request across Strict Mode effect replays.
-        verification.current ??= onboardingRequest("auth/verify-email", {
-          method: "POST",
-          body: JSON.stringify({ token }),
-        });
-        try {
-          await verification.current;
-          if (controller.signal.aborted) return;
-          const url = new URL(window.location.href);
-          url.searchParams.delete("token");
-          window.history.replaceState(null, "", url.pathname + url.search);
-          setVerified(true);
-        } catch {
-          if (!controller.signal.aborted) setStatus("verificationError");
-          return;
-        }
+        router.replace(`/verify-email?token=${encodeURIComponent(token)}`);
+        return;
       }
       try {
-        const session = await onboardingRequest<{ csrfToken: string }>("auth/me", {
+        const session = await onboardingRequest<AuthSession>("auth/me", {
           signal: controller.signal,
         });
+        if (controller.signal.aborted) return;
+        if (!session.user.emailVerified) {
+          router.replace("/verify-email");
+          return;
+        }
         const [data, categoryData] = await Promise.all([
           onboardingRequest<{ profile: Profile }>("me/profile", { signal: controller.signal }),
           onboardingRequest<{ items: Reference[] }>("skill-categories", {
@@ -117,7 +105,7 @@ export function Onboarding() {
     }
     void load();
     return () => controller.abort();
-  }, [attempt]);
+  }, [attempt, router]);
 
   useEffect(() => {
     if (status !== "ready" || (step !== 1 && step !== 2)) return;
@@ -272,21 +260,15 @@ export function Onboarding() {
             {status === "loading"
               ? "Завантажуємо профіль…"
               : status === "login"
-                ? verified
-                  ? "Пошту підтверджено"
-                  : "Увійди, щоб продовжити"
-                : status === "verificationError"
-                  ? "Посилання не працює"
-                  : "Не вдалося завантажити профіль"}
+                ? "Увійди, щоб продовжити"
+                : "Не вдалося завантажити профіль"}
           </h1>
           <p>
             {status === "loading"
               ? "Зачекай, поки ми підготуємо твої дані."
               : status === "login"
                 ? "Увійди в акаунт, щоб заповнити профіль і додати навички."
-                : status === "verificationError"
-                  ? "Посилання недійсне або вже використане. Увійди в акаунт, щоб продовжити."
-                  : "Перевір з’єднання із сервером і спробуй ще раз."}
+                : "Перевір з’єднання із сервером і спробуй ще раз."}
           </p>
           {status === "error" ? (
             <button
@@ -500,11 +482,6 @@ export function Onboarding() {
           </div>
         </aside>
       </div>
-      {verified && (
-        <span className="sr-only" role="status">
-          Пошту підтверджено.
-        </span>
-      )}
     </main>
   );
 }

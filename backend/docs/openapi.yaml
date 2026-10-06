@@ -15,7 +15,8 @@ info:
     and `/auth/me`.
 
     Profile endpoints (Sprint 3, FR-02 and FR-03) live under `/me`: the user always comes
-    from the session, never from the path or the body. Every successful change returns the
+    from the session, never from the path or the body, and must have a verified email.
+    Unverified users receive 403 `email_not_verified`. Every successful change returns the
     whole updated profile, so the client can replace its copy.
 servers:
   - url: http://127.0.0.1:8080/api/v1
@@ -226,7 +227,7 @@ paths:
         The email is trimmed and lower-cased. Its domain must be listed in
         ALLOWED_EMAIL_DOMAINS and belong to a university. The password must have at least
         12 characters and at most 72 UTF-8 bytes; longer values are rejected, never truncated.
-        The verification link points to `{FRONTEND_ORIGIN}/onboarding?token=...` and is valid
+        The verification link points to `{FRONTEND_ORIGIN}/verify-email?token=...` and is valid
         for 24 hours. This call does not sign the user in.
       requestBody:
         required: true
@@ -274,8 +275,10 @@ paths:
       operationId: login
       summary: Sign in and receive the session cookie
       description: |
-        Unverified users may sign in; `user.emailVerified` tells the frontend to show a
-        verification reminder. After 5 failed attempts for one email within 15 minutes,
+        Unverified users may sign in to check status, resend verification, or sign out.
+        The frontend sends them to `/verify-email`; onboarding and all `/me` endpoints
+        remain blocked until `user.emailVerified` is true.
+        After 5 failed attempts for one email within 15 minutes,
         sign-in for that email is locked for 2 hours.
       requestBody:
         required: true
@@ -531,7 +534,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/OriginForbidden"
+          $ref: "#/components/responses/ProfileForbidden"
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
     patch:
@@ -569,7 +572,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/CSRFOrOriginForbidden"
+          $ref: "#/components/responses/ProfileForbidden"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
         "422":
@@ -607,7 +610,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/CSRFOrOriginForbidden"
+          $ref: "#/components/responses/ProfileForbidden"
         "404":
           $ref: "#/components/responses/SkillNotFound"
         "409":
@@ -639,7 +642,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/CSRFOrOriginForbidden"
+          $ref: "#/components/responses/ProfileForbidden"
         "404":
           $ref: "#/components/responses/SkillNotInList"
         "415":
@@ -663,7 +666,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/CSRFOrOriginForbidden"
+          $ref: "#/components/responses/ProfileForbidden"
         "404":
           $ref: "#/components/responses/SkillNotInList"
         "503":
@@ -688,7 +691,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/CSRFOrOriginForbidden"
+          $ref: "#/components/responses/ProfileForbidden"
         "404":
           $ref: "#/components/responses/SkillNotFound"
         "409":
@@ -720,7 +723,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/CSRFOrOriginForbidden"
+          $ref: "#/components/responses/ProfileForbidden"
         "404":
           $ref: "#/components/responses/SkillNotInList"
         "415":
@@ -744,7 +747,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/CSRFOrOriginForbidden"
+          $ref: "#/components/responses/ProfileForbidden"
         "404":
           $ref: "#/components/responses/SkillNotInList"
         "503":
@@ -888,6 +891,16 @@ components:
             error:
               code: unauthenticated
               message: Sign in to continue
+    ProfileForbidden:
+      description: Unverified email (`email_not_verified`), invalid CSRF token (`csrf_invalid`), or foreign origin (`origin_forbidden`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: email_not_verified
+              message: Verify your email to continue
     CSRFOrOriginForbidden:
       description: Missing or wrong X-CSRF-Token (`csrf_invalid`) or foreign origin (`origin_forbidden`)
       content:

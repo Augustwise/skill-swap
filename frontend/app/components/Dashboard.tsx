@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Logo } from "./Logo";
-import { OnboardingError, onboardingRequest, type Profile } from "./OnboardingApi";
+import {
+  OnboardingError,
+  onboardingRequest,
+  type AuthSession,
+  type Profile,
+} from "./OnboardingApi";
 import type { DashboardMatch } from "./DashboardData";
 import { DashboardIcon as Icon, type DashboardIconName } from "./DashboardIcon";
 import { DashboardModal, type DashboardModalContent } from "./DashboardModal";
@@ -47,10 +52,17 @@ export function Dashboard() {
     const controller = new AbortController();
     async function load() {
       try {
-        const [session, data] = await Promise.all([
-          onboardingRequest<{ csrfToken: string }>("auth/me", { signal: controller.signal }),
-          onboardingRequest<{ profile: Profile }>("me/profile", { signal: controller.signal }),
-        ]);
+        const session = await onboardingRequest<AuthSession>("auth/me", {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        if (!session.user.emailVerified) {
+          router.replace("/verify-email");
+          return;
+        }
+        const data = await onboardingRequest<{ profile: Profile }>("me/profile", {
+          signal: controller.signal,
+        });
         if (controller.signal.aborted) return;
         setCsrfToken(session.csrfToken);
         setProfile(data.profile);
@@ -63,7 +75,7 @@ export function Dashboard() {
     }
     void load();
     return () => controller.abort();
-  }, [attempt]);
+  }, [attempt, router]);
 
   async function logout() {
     if (logoutPending.current) return;

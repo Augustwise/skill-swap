@@ -80,8 +80,11 @@ export function LoginForm() {
         else setError("Не вдалося увійти. Спробуй ще раз.");
         return;
       }
+      const data: { user: { emailVerified: boolean } } = await response.json();
       const next = new URLSearchParams(window.location.search).get("next");
-      router.replace(next === "/main" ? "/main" : "/onboarding");
+      router.replace(
+        data.user.emailVerified ? (next === "/main" ? "/main" : "/onboarding") : "/verify-email",
+      );
     } catch {
       setError("Не вдалося зв’язатися із сервером. Перевір з’єднання і спробуй ще раз.");
     } finally {

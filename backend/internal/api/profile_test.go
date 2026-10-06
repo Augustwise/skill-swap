@@ -30,10 +30,13 @@ const (
 func newProfileHandler(t *testing.T) (http.Handler, *session) {
 	t.Helper()
 	store := datatest.NewMemory()
-	access := auth.NewService(store, store, &mailertest.Recorder{}, testAuthConfig, discardLogger())
+	mail := &mailertest.Recorder{}
+	access := auth.NewService(store, store, mail, testAuthConfig, discardLogger())
 	app := core.NewApplication(profile.NewService(store, store, store))
 	handler := New(app, access, &fakeApp{}, testSettings, discardLogger())
 	send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody("a@students.example.test", testPassword), nil)
+	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/verify-email",
+		fmt.Sprintf(`{"token":%q}`, tokenFromMail(t, mail)), nil), http.StatusOK)
 	return handler, login(t, handler, "a@students.example.test", testPassword)
 }
 
@@ -84,6 +87,52 @@ func TestProfileRequiresSession(t *testing.T) {
 			assertProblem(t, response, http.StatusUnauthorized, "unauthenticated")
 		})
 	}
+}
+
+func TestProfileRequiresVerifiedEmail(t *testing.T) {
+	store := datatest.NewMemory()
+	mail := &mailertest.Recorder{}
+	access := auth.NewService(store, store, mail, testAuthConfig, discardLogger())
+	app := core.NewApplication(profile.NewService(store, store, store))
+	handler := New(app, access, &fakeApp{}, testSettings, discardLogger())
+	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/register",
+		registerBody("pending@students.example.test", testPassword), nil), http.StatusCreated)
+	s := login(t, handler, "pending@students.example.test", testPassword)
+	originalToken := tokenFromMail(t, mail)
+
+	for _, test := range []struct{ method, path, body string }{
+		{http.MethodGet, "/api/v1/me/profile", ""},
+		{http.MethodPatch, "/api/v1/me/profile", `{"city":"Київ"}`},
+		{http.MethodPost, "/api/v1/me/teaching-skills", `{"skillId":"` + datatest.GuitarSkillID + `","level":"BEGINNER"}`},
+		{http.MethodPatch, guitarPath, `{"level":"ADVANCED"}`},
+		{http.MethodDelete, guitarPath, ""},
+		{http.MethodPost, "/api/v1/me/learning-skills", `{"skillId":"` + datatest.PhotoshopSkillID + `","level":"BEGINNER"}`},
+		{http.MethodPatch, photoshopPath, `{"level":"ADVANCED"}`},
+		{http.MethodDelete, photoshopPath, ""},
+	} {
+		t.Run(test.method+" "+test.path, func(t *testing.T) {
+			assertProblem(t, send(t, handler, test.method, test.path, test.body, s),
+				http.StatusForbidden, "email_not_verified")
+		})
+	}
+
+	// Authentication and resend remain available while onboarding is blocked.
+	expectStatus(t, send(t, handler, http.MethodGet, "/api/v1/auth/me", "", s), http.StatusOK)
+	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/resend-verification", "", s), http.StatusAccepted)
+	assertProblem(t, send(t, handler, http.MethodPost, "/api/v1/auth/verify-email",
+		fmt.Sprintf(`{"token":%q}`, originalToken), nil), http.StatusBadRequest, "invalid_token")
+	assertProblem(t, send(t, handler, http.MethodGet, "/api/v1/me/profile", "", s), http.StatusForbidden, "email_not_verified")
+	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/verify-email",
+		fmt.Sprintf(`{"token":%q}`, tokenFromMail(t, mail)), nil), http.StatusOK)
+
+	// The existing session gains access only after a valid link has been used.
+	response := send(t, handler, http.MethodGet, "/api/v1/me/profile", "", s)
+	expectStatus(t, response, http.StatusOK)
+	if got := decodeProfile(t, response).City; got != "" {
+		t.Fatalf("unverified request changed city to %q", got)
+	}
+	expectStatus(t, send(t, handler, http.MethodPatch, "/api/v1/me/profile", `{"city":"Київ"}`, s), http.StatusOK)
+	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/logout", "", s), http.StatusNoContent)
 }
 
 // Requests that change data must carry a valid CSRF token and an allowed Origin.
@@ -298,10 +347,13 @@ func TestProfileAgainstLocalPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	handler := postgresHandler(pool, &mailertest.Recorder{})
+	mail := &mailertest.Recorder{}
+	handler := postgresHandler(pool, mail)
 	// A unique email per run avoids clashes with users from earlier runs.
 	email := fmt.Sprintf("profile-%d@students.example.test", time.Now().UnixNano())
 	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody(email, testPassword), nil), http.StatusCreated)
+	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/verify-email",
+		fmt.Sprintf(`{"token":%q}`, tokenFromMail(t, mail)), nil), http.StatusOK)
 	s := login(t, handler, email, testPassword)
 
 	// Update the profile; the 600-character bio is the maximum allowed length.

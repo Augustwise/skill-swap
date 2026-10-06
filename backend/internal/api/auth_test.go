@@ -137,7 +137,7 @@ func TestRegisterSendsVerificationEmail(t *testing.T) {
 	if mail.Count() != 1 || mail.Last().To[0] != "olena.koval@students.example.test" {
 		t.Fatalf("unexpected mail: %+v", mail.Last())
 	}
-	if !strings.Contains(mail.Last().TextBody, "http://localhost:3000/onboarding?token=") {
+	if !strings.Contains(mail.Last().TextBody, "http://localhost:3000/verify-email?token=") {
 		t.Fatalf("email has no verification link: %q", mail.Last().TextBody)
 	}
 

@@ -134,15 +134,18 @@ The full contract, including request fields and error codes, is in `docs/openapi
 - Keep `csrfToken` from `/auth/login` or `/auth/me` in memory and send it as the
   `X-CSRF-Token` header on `/auth/logout` and `/auth/resend-verification` (and on every
   POST, PATCH and DELETE that needs a session). On page load call `/auth/me` to restore it.
-- Verification emails open `/onboarding?token=...`, where the frontend confirms
+- Verification emails open `/verify-email?token=...`, where the frontend confirms
   the email through `/auth/verify-email` and then removes the token from the URL.
-  Older `/verify-email?token=...` links redirect to the same onboarding page.
+  Older `/onboarding?token=...` links redirect to the verification page.
+  Signed-in users continue to onboarding after verification; otherwise they must sign in.
   Password-reset emails open `/reset-password?token=...` and use
   `/auth/reset-password`.
 - Errors always have the shape `{ "error": { "code", "message" } }`; `validation_failed`
   (422) also has `fields`, a map from field name to message for form hints.
-- `user.emailVerified` is `false` until the link is opened. Unverified users can sign in,
-  but later features (exchange requests) must require verification.
+- `user.emailVerified` is `false` until a valid link is opened. Unverified users can sign in
+  only to check verification status, resend the email, or sign out. The frontend sends them
+  to `/verify-email` and blocks onboarding and the dashboard. All profile and skill-list
+  endpoints under `/me` return 403 `email_not_verified` until verification succeeds.
 
 Example session with curl (the `Origin` header is required on POST):
 

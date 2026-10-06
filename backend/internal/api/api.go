@@ -51,22 +51,22 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	mux.HandleFunc("/api/v1/auth/forgot-password", a.postOnly(a.forgotPassword))
 	mux.HandleFunc("/api/v1/auth/reset-password", a.postOnly(a.resetPassword))
 	mux.HandleFunc("/api/v1/me/profile", a.methods(map[string]http.HandlerFunc{
-		http.MethodGet:   a.withUser(a.getProfile),
-		http.MethodPatch: a.withUser(a.updateProfile),
+		http.MethodGet:   a.withVerifiedUser(a.getProfile),
+		http.MethodPatch: a.withVerifiedUser(a.updateProfile),
 	}))
 	mux.HandleFunc("/api/v1/me/teaching-skills", a.methods(map[string]http.HandlerFunc{
-		http.MethodPost: a.withUser(a.addSkill(data.TeachingList)),
+		http.MethodPost: a.withVerifiedUser(a.addSkill(data.TeachingList)),
 	}))
 	mux.HandleFunc("/api/v1/me/teaching-skills/{skillId}", a.methods(map[string]http.HandlerFunc{
-		http.MethodPatch:  a.withUser(a.updateSkillLevel(data.TeachingList)),
-		http.MethodDelete: a.withUser(a.removeSkill(data.TeachingList)),
+		http.MethodPatch:  a.withVerifiedUser(a.updateSkillLevel(data.TeachingList)),
+		http.MethodDelete: a.withVerifiedUser(a.removeSkill(data.TeachingList)),
 	}))
 	mux.HandleFunc("/api/v1/me/learning-skills", a.methods(map[string]http.HandlerFunc{
-		http.MethodPost: a.withUser(a.addSkill(data.LearningList)),
+		http.MethodPost: a.withVerifiedUser(a.addSkill(data.LearningList)),
 	}))
 	mux.HandleFunc("/api/v1/me/learning-skills/{skillId}", a.methods(map[string]http.HandlerFunc{
-		http.MethodPatch:  a.withUser(a.updateSkillLevel(data.LearningList)),
-		http.MethodDelete: a.withUser(a.removeSkill(data.LearningList)),
+		http.MethodPatch:  a.withVerifiedUser(a.updateSkillLevel(data.LearningList)),
+		http.MethodDelete: a.withVerifiedUser(a.removeSkill(data.LearningList)),
 	}))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		problem(w, http.StatusNotFound, "not_found", "Resource was not found")

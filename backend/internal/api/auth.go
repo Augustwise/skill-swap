@@ -30,6 +30,16 @@ func (a *API) postOnly(next http.HandlerFunc) http.HandlerFunc {
 
 type userHandler func(w http.ResponseWriter, r *http.Request, current data.User, sessionToken string)
 
+func (a *API) withVerifiedUser(next userHandler) http.HandlerFunc {
+	return a.withUser(func(w http.ResponseWriter, r *http.Request, current data.User, sessionToken string) {
+		if !current.EmailVerified {
+			problem(w, http.StatusForbidden, "email_not_verified", "Verify your email to continue")
+			return
+		}
+		next(w, r, current, sessionToken)
+	})
+}
+
 func (a *API) withUser(next userHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := ""

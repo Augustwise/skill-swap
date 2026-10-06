@@ -1,4 +1,8 @@
 export type Reference = { id: string; name: string };
+export type AuthSession = {
+  user: { email: string; emailVerified: boolean };
+  csrfToken: string;
+};
 export type Skill = Reference & { categoryId: string };
 export type SkillLevel = "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
 export type SelectedSkill = Skill & { level: SkillLevel };
@@ -28,6 +32,7 @@ export class OnboardingError extends Error {
   constructor(
     public status: number,
     public fields: Record<string, string> = {},
+    public code?: string,
   ) {
     super(
       status === 401
@@ -54,7 +59,7 @@ export async function onboardingRequest<T>(
   });
   if (!response.ok) {
     const problem = await response.json().catch(() => null);
-    throw new OnboardingError(response.status, problem?.error?.fields);
+    throw new OnboardingError(response.status, problem?.error?.fields, problem?.error?.code);
   }
   return response.json() as Promise<T>;
 }
