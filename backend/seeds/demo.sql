@@ -138,3 +138,31 @@ ON CONFLICT (user_id) DO NOTHING;
 INSERT INTO user_blocks (blocker_id, blocked_id)
 VALUES ('60000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000010')
 ON CONFLICT DO NOTHING;
+
+-- Sprint 5 (FR-06, FR-07): Dmytro does not accept new requests, and Olha has one
+-- incoming request from Taras.
+INSERT INTO user_profile_settings (user_id, accepts_requests)
+VALUES ('60000000-0000-0000-0000-000000000005', false)
+ON CONFLICT (user_id) DO NOTHING;
+
+INSERT INTO exchange_requests (id, requester_id, recipient_id,
+  requester_teaching_skill_id, recipient_learning_skill_id, recipient_teaching_skill_id, requester_learning_skill_id,
+  format, total_sessions, requester_sessions, recipient_sessions,
+  requester_duration_minutes, recipient_duration_minutes, message)
+SELECT '70000000-0000-0000-0000-000000000001', taras_teaches.user_id, olha_teaches.user_id,
+  taras_teaches.id, olha_learns.id, olha_teaches.id, taras_learns.id,
+  'OFFLINE', 4, 2, 2, 60, 60, 'Привіт! Покажу Photoshop на живих прикладах, а ти мене навчиш гітари. Зустрінемося в Києві?'
+FROM user_teaching_skills taras_teaches
+JOIN user_learning_skills olha_learns
+  ON olha_learns.user_id = '60000000-0000-0000-0000-000000000001' AND olha_learns.skill_id = '30000000-0000-0000-0000-000000000002'
+JOIN user_teaching_skills olha_teaches
+  ON olha_teaches.user_id = '60000000-0000-0000-0000-000000000001' AND olha_teaches.skill_id = '30000000-0000-0000-0000-000000000001'
+JOIN user_learning_skills taras_learns
+  ON taras_learns.user_id = '60000000-0000-0000-0000-000000000007' AND taras_learns.skill_id = '30000000-0000-0000-0000-000000000001'
+WHERE taras_teaches.user_id = '60000000-0000-0000-0000-000000000007' AND taras_teaches.skill_id = '30000000-0000-0000-0000-000000000002'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO exchange_request_status_history (id, request_id, status, changed_by_user_id, created_at)
+SELECT '71000000-0000-0000-0000-000000000001', id, 'PENDING', requester_id, created_at
+FROM exchange_requests WHERE id = '70000000-0000-0000-0000-000000000001'
+ON CONFLICT (id) DO NOTHING;
