@@ -202,6 +202,37 @@ go run ./cmd/db seed
 
 The demo seed adds faculties of the demo university and the skills shown in onboarding.
 
+## Search and mutual matches (FR-04, FR-05)
+
+Migration `00004_discovery.sql` enables the `pg_trgm` extension and adds indexes for
+searching by a part of a skill name or a person's name, plus a reverse index on
+`user_blocks` so a block hides profiles in both directions. Back up a shared database
+before applying it (NFR-04):
+
+```bash
+pg_dump --format=custom --file=../backups/skillswap-before-00004.dump "$DATABASE_URL"
+go run ./cmd/db up
+go run ./cmd/db seed
+```
+
+The seed also adds 11 demo students (`demo.<name>@students.example.test`) who sign in
+with the local-only password `SkillSwapDemo2026`. Sign in as `demo.olha` to check the
+acceptance cases:
+
+| Student | Case as seen by Olha |
+| --- | --- |
+| `demo.andrii` | guitar ↔ Photoshop online: a mutual match |
+| `demo.taras` | the same pair, offline only, both in Kyiv: a mutual match |
+| `demo.marko` | teaches Photoshop but wants English: one-sided, not mutual |
+| `demo.kateryna` | teaches Photoshop, no learning skills: found by search only |
+| `demo.nataliia` | hidden profile: never shown |
+| `demo.viktor` | unverified email: never shown |
+| `demo.oleh` | blocked by Olha: never shown to her |
+
+`demo.sofiia` shares skills with Andrii and Taras but only the offline format in a
+different city, so she has no mutual matches. `demo.iryna` has two matches with a
+different number of skill pairs (Dmytro 3, Marko 2) to check the ordering.
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for

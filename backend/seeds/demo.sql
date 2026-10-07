@@ -38,3 +38,113 @@ VALUES
   ('30000000-0000-0000-0000-000000000013', '20000000-0000-0000-0000-000000000003', 'JavaScript', 'javascript', 'Основи мови JavaScript'),
   ('30000000-0000-0000-0000-000000000014', '20000000-0000-0000-0000-000000000004', 'Англійська', 'english', 'Розмовна англійська мова')
 ON CONFLICT (id) DO NOTHING;
+
+-- Sprint 4 (FR-04, FR-05): demo students for search and mutual matches.
+-- Every account logs in with the password SkillSwapDemo2026 (local presentations only).
+-- Who is who, as seen by Olha (demo.olha):
+--   Andrii   guitar <-> Photoshop online: a mutual match (the FR-05 acceptance pair);
+--   Taras    the same pair, offline only, same city (Kyiv): a mutual match;
+--   Marko    teaches Photoshop but wants English: one-sided interest, not mutual;
+--   Kateryna teaches Photoshop but has no learning skills: found by search, never mutual;
+--   Nataliia hidden profile; Viktor unverified email; Oleh blocked by Olha: never shown to her.
+-- Other cases: Sofiia matches Andrii and Taras by skills, but they share only the offline
+-- format and live in different cities, so they are not mutual; Iryna has two matches with
+-- a different number of skill pairs (Dmytro 3, Marko 2) to check the ordering.
+INSERT INTO users (id, university_id, faculty_id, email, first_name, last_name, academic_year, city, bio, terms_accepted_at)
+VALUES
+  ('60000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000003',
+   'demo.olha@students.example.test', 'Ольга', 'Гнатюк', 2, 'Київ', 'Граю на гітарі вісім років, хочу навчитися обробляти фото.', now()),
+  ('60000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000004',
+   'demo.andrii@students.example.test', 'Андрій', 'Коваль', 3, 'Київ', 'Дизайнер, працюю в Photoshop та Illustrator. Мрію про гітару.', now()),
+  ('60000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000004',
+   'demo.marko@students.example.test', 'Марко', 'Савчук', 4, 'Львів', 'Ретушую портрети, готуюся до IELTS.', now()),
+  ('60000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000003',
+   'demo.iryna@students.example.test', 'Ірина', 'Бондар', 3, 'Київ', 'Викладаю англійську, малюю інтерфейси у Figma.', now()),
+  ('60000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001',
+   'demo.dmytro@students.example.test', 'Дмитро', 'Мельник', 4, 'Київ', 'Бекенд на Go, трохи фронтенду.', now()),
+  ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002',
+   'demo.sofiia@students.example.test', 'Софія', 'Ткаченко', 1, 'Львів', 'Займаюся лише наживо, у Львові.', now()),
+  ('60000000-0000-0000-0000-000000000007', '10000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000004',
+   'demo.taras@students.example.test', 'Тарас', 'Лисенко', 2, 'Київ', 'Зустрічаюся лише офлайн у Києві.', now()),
+  ('60000000-0000-0000-0000-000000000008', '10000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000004',
+   'demo.nataliia@students.example.test', 'Наталія', 'Романенко', 3, 'Київ', 'Профіль прихований від пошуку.', now()),
+  ('60000000-0000-0000-0000-000000000009', '10000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000004',
+   'demo.viktor@students.example.test', 'Віктор', 'Павленко', 1, 'Київ', 'Ще не підтвердив пошту.', now()),
+  ('60000000-0000-0000-0000-000000000010', '10000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000004',
+   'demo.oleh@students.example.test', 'Олег', 'Кравець', 2, 'Київ', 'Заблокований Ольгою.', now()),
+  ('60000000-0000-0000-0000-000000000011', '10000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000004',
+   'demo.kateryna@students.example.test', 'Катерина', 'Шевчук', 4, 'Київ', 'Навчаю Photoshop, поки нічого не вивчаю.', now())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth_identities (user_id, provider, provider_subject, password_hash, password_changed_at)
+SELECT id, 'LOCAL', id::text, '$2a$12$jP.A1C2mRlD84H6bscBd0uD4vSUL7nckKTSQAkn3qWrriVWcmr8h6', now()
+FROM users WHERE id BETWEEN '60000000-0000-0000-0000-000000000001' AND '60000000-0000-0000-0000-000000000011'
+ON CONFLICT DO NOTHING;
+
+-- Viktor (09) keeps a pending verification; everyone else has a verified email.
+INSERT INTO user_verifications (user_id, type, identifier, status, verified_at)
+SELECT id, 'UNIVERSITY_EMAIL', email,
+  CASE WHEN id = '60000000-0000-0000-0000-000000000009' THEN 'PENDING' ELSE 'VERIFIED' END::verification_status,
+  CASE WHEN id = '60000000-0000-0000-0000-000000000009' THEN NULL ELSE now() END
+FROM users WHERE id BETWEEN '60000000-0000-0000-0000-000000000001' AND '60000000-0000-0000-0000-000000000011'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO user_lesson_formats (user_id, format)
+VALUES
+  ('60000000-0000-0000-0000-000000000001', 'ONLINE'),
+  ('60000000-0000-0000-0000-000000000001', 'OFFLINE'),
+  ('60000000-0000-0000-0000-000000000002', 'ONLINE'),
+  ('60000000-0000-0000-0000-000000000002', 'OFFLINE'),
+  ('60000000-0000-0000-0000-000000000003', 'ONLINE'),
+  ('60000000-0000-0000-0000-000000000004', 'ONLINE'),
+  ('60000000-0000-0000-0000-000000000005', 'ONLINE'),
+  ('60000000-0000-0000-0000-000000000006', 'OFFLINE'),
+  ('60000000-0000-0000-0000-000000000007', 'OFFLINE'),
+  ('60000000-0000-0000-0000-000000000008', 'ONLINE'),
+  ('60000000-0000-0000-0000-000000000009', 'ONLINE'),
+  ('60000000-0000-0000-0000-000000000010', 'ONLINE'),
+  ('60000000-0000-0000-0000-000000000011', 'ONLINE')
+ON CONFLICT DO NOTHING;
+
+-- Skills: 01 guitar, 02 Photoshop, 03 Figma, 04 Go, 05 Illustrator, 13 JavaScript, 14 English.
+INSERT INTO user_teaching_skills (user_id, skill_id, level)
+VALUES
+  ('60000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 'ADVANCED'),
+  ('60000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000002', 'ADVANCED'),
+  ('60000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000005', 'INTERMEDIATE'),
+  ('60000000-0000-0000-0000-000000000003', '30000000-0000-0000-0000-000000000002', 'INTERMEDIATE'),
+  ('60000000-0000-0000-0000-000000000004', '30000000-0000-0000-0000-000000000014', 'ADVANCED'),
+  ('60000000-0000-0000-0000-000000000004', '30000000-0000-0000-0000-000000000003', 'INTERMEDIATE'),
+  ('60000000-0000-0000-0000-000000000005', '30000000-0000-0000-0000-000000000004', 'ADVANCED'),
+  ('60000000-0000-0000-0000-000000000005', '30000000-0000-0000-0000-000000000013', 'INTERMEDIATE'),
+  ('60000000-0000-0000-0000-000000000006', '30000000-0000-0000-0000-000000000001', 'INTERMEDIATE'),
+  ('60000000-0000-0000-0000-000000000007', '30000000-0000-0000-0000-000000000002', 'BEGINNER'),
+  ('60000000-0000-0000-0000-000000000008', '30000000-0000-0000-0000-000000000002', 'ADVANCED'),
+  ('60000000-0000-0000-0000-000000000009', '30000000-0000-0000-0000-000000000002', 'INTERMEDIATE'),
+  ('60000000-0000-0000-0000-000000000010', '30000000-0000-0000-0000-000000000002', 'INTERMEDIATE'),
+  ('60000000-0000-0000-0000-000000000011', '30000000-0000-0000-0000-000000000002', 'ADVANCED')
+ON CONFLICT (user_id, skill_id) DO NOTHING;
+
+INSERT INTO user_learning_skills (user_id, skill_id, current_level)
+VALUES
+  ('60000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', 'BEGINNER'),
+  ('60000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000001', 'BEGINNER'),
+  ('60000000-0000-0000-0000-000000000003', '30000000-0000-0000-0000-000000000014', 'INTERMEDIATE'),
+  ('60000000-0000-0000-0000-000000000004', '30000000-0000-0000-0000-000000000002', 'BEGINNER'),
+  ('60000000-0000-0000-0000-000000000004', '30000000-0000-0000-0000-000000000004', 'BEGINNER'),
+  ('60000000-0000-0000-0000-000000000005', '30000000-0000-0000-0000-000000000003', 'BEGINNER'),
+  ('60000000-0000-0000-0000-000000000005', '30000000-0000-0000-0000-000000000014', 'INTERMEDIATE'),
+  ('60000000-0000-0000-0000-000000000006', '30000000-0000-0000-0000-000000000002', 'BEGINNER'),
+  ('60000000-0000-0000-0000-000000000007', '30000000-0000-0000-0000-000000000001', 'BEGINNER'),
+  ('60000000-0000-0000-0000-000000000008', '30000000-0000-0000-0000-000000000001', 'BEGINNER'),
+  ('60000000-0000-0000-0000-000000000009', '30000000-0000-0000-0000-000000000001', 'BEGINNER'),
+  ('60000000-0000-0000-0000-000000000010', '30000000-0000-0000-0000-000000000001', 'BEGINNER')
+ON CONFLICT (user_id, skill_id) DO NOTHING;
+
+INSERT INTO user_profile_settings (user_id, is_discoverable)
+VALUES ('60000000-0000-0000-0000-000000000008', false)
+ON CONFLICT (user_id) DO NOTHING;
+
+INSERT INTO user_blocks (blocker_id, blocked_id)
+VALUES ('60000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000010')
+ON CONFLICT DO NOTHING;

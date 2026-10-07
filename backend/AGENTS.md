@@ -10,7 +10,7 @@ Run these commands from `backend/` with Go 1.26 and PostgreSQL available:
 
 - `go test ./...` runs all unit tests and any enabled integration tests.
 - `go build ./...` verifies that both commands and internal packages compile.
-- `go run ./cmd/db check` verifies database connectivity; `status` shows migration state, `up` applies migrations, and `seed` inserts demo catalog data.
+- `go run ./cmd/db check` verifies database connectivity; `status` shows migration state, `up` applies migrations, and `seed` inserts demo catalog data and demo students.
 - `go run ./cmd/api` starts the API at `127.0.0.1:8080` unless `API_ADDR` sets another loopback address.
 
 Keep all local backend settings in `.env` and set `DATABASE_URL` before starting the API or database command. This is the only configuration file loaded; existing process environment variables take precedence. Use the values documented in `README.md` when creating it.
