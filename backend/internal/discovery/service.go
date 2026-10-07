@@ -24,7 +24,10 @@ var (
 	formats = []string{data.FormatOnline, data.FormatOffline}
 )
 
-var ErrInvalidPage = errors.New("page is out of range")
+var (
+	ErrInvalidPage     = errors.New("page is out of range")
+	ErrStudentNotFound = errors.New("student was not found or is not visible")
+)
 
 type Service struct {
 	profiles  data.IProfileData
@@ -95,4 +98,15 @@ func (s *Service) SearchStudents(ctx context.Context, userID string, filter data
 		return StudentPage{}, err
 	}
 	return StudentPage{Items: items, Page: page, Total: total}, nil
+}
+
+func (s *Service) StudentProfile(ctx context.Context, userID, studentID string) (data.StudentProfile, error) {
+	if !validate.UUID(studentID) {
+		return data.StudentProfile{}, ErrStudentNotFound
+	}
+	result, err := s.discovery.StudentProfile(ctx, userID, strings.ToLower(studentID))
+	if errors.Is(err, data.ErrNotFound) {
+		return data.StudentProfile{}, ErrStudentNotFound
+	}
+	return result, err
 }

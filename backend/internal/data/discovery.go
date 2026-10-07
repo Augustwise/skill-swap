@@ -2,7 +2,9 @@ package data
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -28,6 +30,7 @@ type Match struct {
 type IDiscoveryData interface {
 	MutualMatches(ctx context.Context, viewerID string, limit, offset int) ([]Match, int, error)
 	SearchStudents(ctx context.Context, viewerID string, filter StudentFilter, limit, offset int) ([]StudentCard, int, error)
+	StudentProfile(ctx context.Context, viewerID, studentID string) (StudentProfile, error)
 }
 
 var _ IDiscoveryData = (*Postgres)(nil)
@@ -183,3 +186,76 @@ func (p *Postgres) SearchStudents(ctx context.Context, viewerID string, filter S
 }
 
 var likeEscaper = strings.NewReplacer(`\`, `\`, `%`, `\%`, `_`, `\_`)
+
+type Review struct {
+	ID              string
+	AuthorID        string
+	AuthorFirstName string
+	AuthorLastName  string
+	Rating          int
+	Comment         string
+	CreatedAt       time.Time
+}
+
+type StudentProfile struct {
+	Profile
+	AverageRating float64
+	ReviewCount   int
+	// Reviews holds the latest reviews, newest first.
+	Reviews []Review
+	// Match is nil when the student is not a mutual match of the viewer.
+	Match *Match
+}
+
+const latestReviews = 20
+
+func (p *Postgres) StudentProfile(ctx context.Context, viewerID, studentID string) (StudentProfile, error) {
+	var visible bool
+	err := p.conn(ctx).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users c WHERE c.id = $2 AND `+visibleStudent+`)`,
+		viewerID, studentID).Scan(&visible)
+	if err != nil {
+		return StudentProfile{}, err
+	}
+	if !visible {
+		return StudentProfile{}, ErrNotFound
+	}
+	result := StudentProfile{Reviews: []Review{}}
+	if result.Profile, err = p.ProfileByUserID(ctx, studentID); err != nil {
+		return StudentProfile{}, err
+	}
+
+	rows, err := p.conn(ctx).Query(ctx, `SELECT r.id, r.author_id, a.first_name, a.last_name, r.rating,
+			COALESCE(r.comment, ''), r.created_at, avg(r.rating) OVER ()::float8, count(*) OVER ()
+		FROM exchange_reviews r
+		JOIN users a ON a.id = r.author_id
+		WHERE r.recipient_id = $1
+		ORDER BY r.created_at DESC, r.id
+		LIMIT $2`, studentID, latestReviews)
+	if err != nil {
+		return StudentProfile{}, err
+	}
+	result.Reviews, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Review, error) {
+		var r Review
+		err := row.Scan(&r.ID, &r.AuthorID, &r.AuthorFirstName, &r.AuthorLastName, &r.Rating, &r.Comment,
+			&r.CreatedAt, &result.AverageRating, &result.ReviewCount)
+		return r, err
+	})
+	if err != nil {
+		return StudentProfile{}, err
+	}
+
+	var match Match
+	err = p.conn(ctx).QueryRow(ctx, mutualMatches+`SELECT ARRAY(SELECT f.format::text `+usableFormat+` ORDER BY f.format),
+			`+matchedSkills("can_teach")+`, `+matchedSkills("wants_to_learn")+`
+		FROM matches c WHERE c.id = $2`, viewerID, studentID).Scan(&match.CommonFormats, &match.CanTeach, &match.WantsToLearn)
+	switch {
+	case err == nil:
+		s := result.Profile
+		match.UserID, match.FirstName, match.LastName, match.City = s.UserID, s.FirstName, s.LastName, s.City
+		match.UniversityID, match.UniversityName = s.UniversityID, s.UniversityName
+		result.Match = &match
+	case !errors.Is(err, pgx.ErrNoRows):
+		return StudentProfile{}, err
+	}
+	return result, nil
+}

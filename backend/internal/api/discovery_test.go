@@ -254,3 +254,59 @@ func TestSearchStudentsRejectsInvalidFilters(t *testing.T) {
 	}
 	assertProblem(t, send(t, e.handler, http.MethodGet, "/api/v1/students?page=0", "", olha), http.StatusBadRequest, "invalid_page")
 }
+
+func (e *discoveryEnv) studentProfile(t *testing.T, s *session, id string) studentProfileResponse {
+	t.Helper()
+	response := send(t, e.handler, http.MethodGet, "/api/v1/students/"+id, "", s)
+	expectStatus(t, response, http.StatusOK)
+	var body struct {
+		Student studentProfileResponse `json:"student"`
+	}
+	decodeJSON(t, response, &body)
+	return body.Student
+}
+
+func TestStudentProfile(t *testing.T) {
+	e := newDiscoveryEnv()
+	olha := e.student(t, "olha@students.example.test", `["ONLINE"]`, "Київ", datatest.GuitarSkillID, datatest.PhotoshopSkillID)
+	andrii := e.student(t, "andrii@students.example.test", `["ONLINE"]`, "Київ", datatest.PhotoshopSkillID, datatest.GuitarSkillID)
+	expectStatus(t, send(t, e.handler, http.MethodPatch, "/api/v1/me/profile",
+		`{"bio":"Дизайнер","course":3,"facultyId":"`+datatest.DemoFacultyID+`"}`, andrii), http.StatusOK)
+	marko := e.student(t, "marko@students.example.test", `["ONLINE"]`, "Львів", datatest.PhotoshopSkillID, "")
+	andriiID, markoID := e.meID(t, andrii), e.meID(t, marko)
+
+	got := e.studentProfile(t, olha, andriiID)
+	if got.ID != andriiID || got.Bio != "Дизайнер" || got.Course == nil || *got.Course != 3 || got.Faculty == nil ||
+		got.University.Name == "" || got.City != "Київ" || !slices.Equal(got.Formats, []string{"ONLINE"}) {
+		t.Fatalf("profile = %+v", got)
+	}
+	if len(got.TeachingSkills) != 1 || got.TeachingSkills[0].Level != "ADVANCED" || len(got.LearningSkills) != 1 {
+		t.Fatalf("skills: teaching %+v, learning %+v", got.TeachingSkills, got.LearningSkills)
+	}
+	if got.AverageRating != nil || got.ReviewCount != 0 || got.Reviews == nil || len(got.Reviews) != 0 {
+		t.Fatalf("reviews: average %v, count %d, items %v", got.AverageRating, got.ReviewCount, got.Reviews)
+	}
+	if got.Mutual == nil || got.Mutual.CanTeachYou[0].Name != "Photoshop" || got.Mutual.WantsToLearn[0].Name != "Гітара" ||
+		!slices.Equal(got.Mutual.CommonFormats, []string{"ONLINE"}) {
+		t.Fatalf("mutual = %+v", got.Mutual)
+	}
+	if got := e.studentProfile(t, olha, markoID); got.Mutual != nil {
+		t.Fatalf("one-sided interest is marked mutual: %+v", got.Mutual)
+	}
+
+	expectStatus(t, send(t, e.handler, http.MethodPost, "/api/v1/auth/register",
+		registerBody("pending@students.example.test", testPassword), nil), http.StatusCreated)
+	pending := login(t, e.handler, "pending@students.example.test", testPassword)
+	for name, id := range map[string]string{
+		"unverified student": e.meID(t, pending),
+		"the viewer":         e.meID(t, olha),
+		"unknown ID":         "40000000-0000-0000-0000-000000000999",
+		"not a UUID":         "andrii",
+	} {
+		t.Run(name, func(t *testing.T) {
+			assertProblem(t, send(t, e.handler, http.MethodGet, "/api/v1/students/"+id, "", olha), http.StatusNotFound, "student_not_found")
+		})
+	}
+	assertProblem(t, send(t, e.handler, http.MethodGet, "/api/v1/students/"+andriiID, "", pending), http.StatusForbidden, "email_not_verified")
+	assertProblem(t, send(t, e.handler, http.MethodGet, "/api/v1/students/"+andriiID, "", nil), http.StatusUnauthorized, "unauthenticated")
+}

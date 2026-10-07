@@ -111,7 +111,7 @@ func TestOpenAPIContract(t *testing.T) {
 		t.Fatalf("Content-Type = %q", got)
 	}
 	for _, fragment := range []string{"openapi: 3.0.3", "/universities:", "/skills:", "/auth/login:", "/auth/reset-password:",
-		"/universities/{universityId}/faculties:", "/me/profile:", "/me/teaching-skills/{skillId}:", "/me/learning-skills:", "/me/matches:", "/students:"} {
+		"/universities/{universityId}/faculties:", "/me/profile:", "/me/teaching-skills/{skillId}:", "/me/learning-skills:", "/me/matches:", "/students:", "/students/{userId}:"} {
 		if !strings.Contains(response.Body.String(), fragment) {
 			t.Fatalf("OpenAPI contract does not contain %q", fragment)
 		}

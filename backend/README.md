@@ -260,6 +260,14 @@ the demo data, Olha's search for `Photoshop` returns Andrii, Taras, Kateryna and
 while `Photoshop` with `level=INTERMEDIATE` returns only Marko. No results is an empty
 `items` array with `total: 0`; invalid filters return 422 `validation_failed`.
 
+`GET /api/v1/students/{userId}` opens another student's profile: university, faculty,
+course, city, description, formats, both skill lists with levels, `averageRating`,
+`reviewCount` and up to 20 newest `reviews`. Reviews come from finished exchanges, which
+later sprints add, so the demo students have none yet. `mutual` explains the match
+(`canTeachYou`, `wantsToLearn`, `commonFormats`) or is null for one-sided interest. A
+hidden, blocked, unverified or unknown student, and the user's own ID, return 404
+`student_not_found`.
+
 Discovery never shows the user themselves, hidden profiles, suspended or deleted
 accounts, unverified emails, or blocks in either direction. The PostgreSQL tests in
 `internal/data/discovery_test.go` check these rules on the demo students; the test that

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -141,6 +142,8 @@ func (a *API) discoveryError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &invalid):
 		validationProblem(w, invalid.Fields)
+	case errors.Is(err, discovery.ErrStudentNotFound):
+		problem(w, http.StatusNotFound, "student_not_found", "Student was not found")
 	case errors.Is(err, discovery.ErrInvalidPage):
 		problem(w, http.StatusBadRequest, "invalid_page", fmt.Sprintf("page must be a whole number from 1 to %d", discovery.MaxPage))
 	case errors.Is(err, data.ErrNotFound):
@@ -148,4 +151,81 @@ func (a *API) discoveryError(w http.ResponseWriter, err error) {
 	default:
 		a.queryError(w, err)
 	}
+}
+
+type reviewResponse struct {
+	ID        string    `json:"id"`
+	Author    person    `json:"author"`
+	Rating    int       `json:"rating"`
+	Comment   string    `json:"comment"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type person struct {
+	ID        string `json:"id"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+}
+
+type mutualDetails struct {
+	CanTeachYou   []userSkill `json:"canTeachYou"`
+	WantsToLearn  []userSkill `json:"wantsToLearn"`
+	CommonFormats []string    `json:"commonFormats"`
+}
+
+type studentProfileResponse struct {
+	ID             string           `json:"id"`
+	FirstName      string           `json:"firstName"`
+	LastName       string           `json:"lastName"`
+	University     reference        `json:"university"`
+	Faculty        *reference       `json:"faculty"`
+	Course         *int             `json:"course"`
+	City           string           `json:"city"`
+	Bio            string           `json:"bio"`
+	Formats        []string         `json:"formats"`
+	TeachingSkills []userSkill      `json:"teachingSkills"`
+	LearningSkills []userSkill      `json:"learningSkills"`
+	AverageRating  *float64         `json:"averageRating"`
+	ReviewCount    int              `json:"reviewCount"`
+	Reviews        []reviewResponse `json:"reviews"`
+	Mutual         *mutualDetails   `json:"mutual"`
+}
+
+func toStudentProfile(s data.StudentProfile) studentProfileResponse {
+	p := toProfile(s.Profile)
+	response := studentProfileResponse{
+		ID: p.ID, FirstName: p.FirstName, LastName: p.LastName, University: p.University, Faculty: p.Faculty,
+		Course: p.Course, City: p.City, Bio: p.Bio, Formats: p.Formats,
+		TeachingSkills: p.TeachingSkills, LearningSkills: p.LearningSkills,
+		ReviewCount: s.ReviewCount, Reviews: make([]reviewResponse, 0, len(s.Reviews)),
+	}
+	if s.ReviewCount > 0 {
+		average := math.Round(s.AverageRating*100) / 100
+		response.AverageRating = &average
+	}
+	for _, r := range s.Reviews {
+		response.Reviews = append(response.Reviews, reviewResponse{
+			ID: r.ID, Author: person{ID: r.AuthorID, FirstName: r.AuthorFirstName, LastName: r.AuthorLastName},
+			Rating: r.Rating, Comment: r.Comment, CreatedAt: r.CreatedAt,
+		})
+	}
+	if s.Match != nil {
+		response.Mutual = &mutualDetails{
+			CanTeachYou:   toUserSkills(s.Match.CanTeach),
+			WantsToLearn:  toUserSkills(s.Match.WantsToLearn),
+			CommonFormats: append([]string{}, s.Match.CommonFormats...),
+		}
+	}
+	return response
+}
+
+func (a *API) studentProfile(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
+	ctx, cancel := context.WithTimeout(r.Context(), discoveryTimeout)
+	defer cancel()
+	result, err := a.app.StudentProfile(ctx, current.ID, r.PathValue("userId"))
+	if err != nil {
+		a.discoveryError(w, err)
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{"student": toStudentProfile(result)})
 }

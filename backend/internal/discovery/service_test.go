@@ -30,6 +30,11 @@ func (r *recordingData) SearchStudents(_ context.Context, _ string, filter data.
 	return []data.StudentCard{}, 0, nil
 }
 
+func (r *recordingData) StudentProfile(context.Context, string, string) (data.StudentProfile, error) {
+	r.calls++
+	return data.StudentProfile{}, data.ErrNotFound
+}
+
 func newTestService(t *testing.T, eligible bool) (*Service, *recordingData, string) {
 	t.Helper()
 	ctx := context.Background()
@@ -128,5 +133,18 @@ func TestSearchStudentsRejectsInvalidFilters(t *testing.T) {
 	}
 	if search.calls != 0 {
 		t.Fatalf("calls = %d", search.calls)
+	}
+}
+
+func TestStudentProfileNotFound(t *testing.T) {
+	service, profiles, userID := newTestService(t, true)
+	if _, err := service.StudentProfile(context.Background(), userID, "not-a-uuid"); !errors.Is(err, ErrStudentNotFound) {
+		t.Fatalf("invalid ID: err = %v", err)
+	}
+	if profiles.calls != 0 {
+		t.Fatalf("calls = %d", profiles.calls)
+	}
+	if _, err := service.StudentProfile(context.Background(), userID, "60000000-0000-0000-0000-000000000099"); !errors.Is(err, ErrStudentNotFound) {
+		t.Fatalf("hidden student: err = %v", err)
 	}
 }

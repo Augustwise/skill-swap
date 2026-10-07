@@ -132,3 +132,22 @@ func usableFormats(viewer, student data.ProfileUpdate) []string {
 func cityKey(city string) string {
 	return strings.ToLower(strings.TrimSpace(city))
 }
+
+// The memory store has no reviews.
+func (m *Memory) StudentProfile(ctx context.Context, viewerID, studentID string) (data.StudentProfile, error) {
+	profile, err := m.ProfileByUserID(ctx, studentID)
+	if err != nil {
+		return data.StudentProfile{}, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	viewer, student := m.users[viewerID], m.users[studentID]
+	if viewer == nil || !visible(viewerID, studentID, student) {
+		return data.StudentProfile{}, data.ErrNotFound
+	}
+	result := data.StudentProfile{Profile: profile, Reviews: []data.Review{}}
+	if match, ok := m.matchWith(viewer, studentID, student); ok {
+		result.Match = &match
+	}
+	return result, nil
+}

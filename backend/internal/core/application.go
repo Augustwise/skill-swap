@@ -22,6 +22,7 @@ type IApplication interface {
 
 	MutualMatches(ctx context.Context, userID string, page int) (discovery.MatchPage, error)
 	SearchStudents(ctx context.Context, userID string, filter data.StudentFilter, page int) (discovery.StudentPage, error)
+	StudentProfile(ctx context.Context, userID, studentID string) (data.StudentProfile, error)
 }
 
 type Application struct {
@@ -77,4 +78,8 @@ func (a *Application) MutualMatches(ctx context.Context, userID string, page int
 
 func (a *Application) SearchStudents(ctx context.Context, userID string, filter data.StudentFilter, page int) (discovery.StudentPage, error) {
 	return a.discovery.SearchStudents(ctx, userID, filter, page)
+}
+
+func (a *Application) StudentProfile(ctx context.Context, userID, studentID string) (data.StudentProfile, error) {
+	return a.discovery.StudentProfile(ctx, userID, studentID)
 }

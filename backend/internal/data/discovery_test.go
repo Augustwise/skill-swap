@@ -301,3 +301,83 @@ func TestSearchStudentsOnDemoData(t *testing.T) {
 		t.Fatalf("page past the end = %v, total %d, err %v", cardIDs(page), total, err)
 	}
 }
+
+// Skipped unless TEST_DATABASE_URL points to a migrated, demo-seeded database.
+func TestStudentProfileOnDemoData(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	andrii, err := store.StudentProfile(ctx, demoOlha, demoAndrii)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if andrii.FirstName != "Андрій" || andrii.Bio == "" || andrii.FacultyName == "" || andrii.Course != 3 ||
+		len(andrii.TeachingSkills) != 2 || len(andrii.LearningSkills) != 1 || !slices.Equal(andrii.Formats, []string{"ONLINE", "OFFLINE"}) {
+		t.Fatalf("Andrii = %+v", andrii.Profile)
+	}
+	if andrii.Match == nil || !slices.Equal(skillIDs(andrii.Match.CanTeach), []string{photoshop}) ||
+		!slices.Equal(skillIDs(andrii.Match.WantsToLearn), []string{guitarSkill}) {
+		t.Fatalf("Andrii's match = %+v", andrii.Match)
+	}
+
+	marko, err := store.StudentProfile(ctx, demoOlha, demoMarko)
+	if err != nil || marko.Match != nil || marko.Reviews == nil {
+		t.Fatalf("Marko: match %+v, reviews %v, err %v", marko.Match, marko.Reviews, err)
+	}
+
+	for _, test := range []struct{ name, viewer, student string }{
+		{"hidden profile", demoOlha, "60000000-0000-0000-0000-000000000008"},
+		{"unverified email", demoOlha, "60000000-0000-0000-0000-000000000009"},
+		{"blocked by the viewer", demoOlha, demoOleh},
+		{"viewer blocked by the student", demoOleh, demoOlha},
+		{"the viewer", demoOlha, demoOlha},
+		{"no such user", demoOlha, "60000000-0000-0000-0000-000000000999"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := store.StudentProfile(ctx, test.viewer, test.student); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("err = %v, want ErrNotFound", err)
+			}
+		})
+	}
+}
+
+// Reviews need a finished exchange, which later sprints create; here the rows are
+// inserted directly inside a transaction that is rolled back.
+// Skipped unless TEST_DATABASE_URL is set.
+func TestStudentProfileReviews(t *testing.T) {
+	store := openTestStore(t)
+	rollback := errors.New("roll back test data")
+	err := store.WithinTx(context.Background(), func(ctx context.Context) error {
+		var exchangeID string
+		if err := store.conn(ctx).QueryRow(ctx, `INSERT INTO exchanges (user_a_id, user_b_id, status, total_sessions, format)
+			VALUES ($1, $2, 'COMPLETED', 2, 'ONLINE') RETURNING id`, demoIryna, demoMarko).Scan(&exchangeID); err != nil {
+			t.Fatal(err)
+		}
+		for _, review := range []struct {
+			author string
+			rating int
+			age    string
+		}{{demoIryna, 5, "2 days"}, {demoDmytro, 4, "1 day"}} {
+			if _, err := store.conn(ctx).Exec(ctx, `INSERT INTO exchange_reviews (exchange_id, author_id, recipient_id, rating, comment, created_at)
+				VALUES ($1, $2, $3, $4, 'Дуже корисно', now() - $5::interval)`,
+				exchangeID, review.author, demoMarko, review.rating, review.age); err != nil {
+				t.Fatal(err)
+			}
+		}
+		marko, err := store.StudentProfile(ctx, demoOlha, demoMarko)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if marko.ReviewCount != 2 || marko.AverageRating != 4.5 || len(marko.Reviews) != 2 {
+			t.Fatalf("count %d, average %v, reviews %+v", marko.ReviewCount, marko.AverageRating, marko.Reviews)
+		}
+		newest := marko.Reviews[0]
+		if newest.AuthorID != demoDmytro || newest.AuthorFirstName != "Дмитро" || newest.Rating != 4 || newest.Comment != "Дуже корисно" {
+			t.Fatalf("newest review = %+v", newest)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("WithinTx err = %v", err)
+	}
+}

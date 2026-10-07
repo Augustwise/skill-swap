@@ -70,6 +70,7 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	}))
 	mux.HandleFunc("/api/v1/me/matches", getOnly(a.withVerifiedUser(a.mutualMatches)))
 	mux.HandleFunc("/api/v1/students", getOnly(a.withVerifiedUser(a.searchStudents)))
+	mux.HandleFunc("/api/v1/students/{userId}", getOnly(a.withVerifiedUser(a.studentProfile)))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		problem(w, http.StatusNotFound, "not_found", "Resource was not found")
 	})

@@ -910,6 +910,52 @@ paths:
                     level: Level must be BEGINNER, INTERMEDIATE or ADVANCED
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
+  /students/{userId}:
+    get:
+      tags: [Discovery]
+      operationId: getStudentProfile
+      summary: Show another student's profile with skills, levels, formats and reviews (FR-05)
+      description: |
+        The same visibility rules as search apply; your own ID also returns 404 (use
+        `/me/profile`). `mutual` explains the match when the student is a mutual match,
+        otherwise it is null. `reviews` holds up to 20 newest reviews; `averageRating` is
+        null while there are none.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The student's profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [student]
+                properties:
+                  student:
+                    $ref: "#/components/schemas/StudentProfile"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: No visible student has this ID, or it is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: student_not_found
+                  message: Student was not found
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
 components:
   securitySchemes:
     sessionCookie:
@@ -1555,3 +1601,96 @@ components:
         total:
           type: integer
           description: Number of students on all pages.
+    Review:
+      type: object
+      required: [id, author, rating, comment, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        author:
+          type: object
+          required: [id, firstName, lastName]
+          properties:
+            id:
+              type: string
+              format: uuid
+            firstName:
+              type: string
+            lastName:
+              type: string
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          description: Plain text; empty string when there is no comment.
+        createdAt:
+          type: string
+          format: date-time
+    StudentProfile:
+      type: object
+      required: [id, firstName, lastName, university, faculty, course, city, bio, formats,
+        teachingSkills, learningSkills, averageRating, reviewCount, reviews, mutual]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        university:
+          $ref: "#/components/schemas/Reference"
+        faculty:
+          allOf:
+            - $ref: "#/components/schemas/Reference"
+          type: object
+          nullable: true
+        course:
+          type: integer
+          nullable: true
+        city:
+          type: string
+        bio:
+          type: string
+          description: Plain text; clients must display it without interpreting HTML.
+        formats:
+          type: array
+          items:
+            $ref: "#/components/schemas/LessonFormat"
+        teachingSkills:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserSkill"
+        learningSkills:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserSkill"
+        averageRating:
+          type: number
+          nullable: true
+        reviewCount:
+          type: integer
+        reviews:
+          type: array
+          items:
+            $ref: "#/components/schemas/Review"
+        mutual:
+          type: object
+          nullable: true
+          required: [canTeachYou, wantsToLearn, commonFormats]
+          properties:
+            canTeachYou:
+              type: array
+              items:
+                $ref: "#/components/schemas/UserSkill"
+            wantsToLearn:
+              type: array
+              items:
+                $ref: "#/components/schemas/UserSkill"
+            commonFormats:
+              type: array
+              items:
+                $ref: "#/components/schemas/LessonFormat"
