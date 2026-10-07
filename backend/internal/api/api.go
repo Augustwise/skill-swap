@@ -68,6 +68,7 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 		http.MethodPatch:  a.withVerifiedUser(a.updateSkillLevel(data.LearningList)),
 		http.MethodDelete: a.withVerifiedUser(a.removeSkill(data.LearningList)),
 	}))
+	mux.HandleFunc("/api/v1/me/matches", getOnly(a.withVerifiedUser(a.mutualMatches)))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		problem(w, http.StatusNotFound, "not_found", "Resource was not found")
 	})

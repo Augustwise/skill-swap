@@ -40,16 +40,6 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Sprint 4 (FR-04, FR-05): demo students for search and mutual matches.
--- Every account logs in with the password SkillSwapDemo2026 (local presentations only).
--- Who is who, as seen by Olha (demo.olha):
---   Andrii   guitar <-> Photoshop online: a mutual match (the FR-05 acceptance pair);
---   Taras    the same pair, offline only, same city (Kyiv): a mutual match;
---   Marko    teaches Photoshop but wants English: one-sided interest, not mutual;
---   Kateryna teaches Photoshop but has no learning skills: found by search, never mutual;
---   Nataliia hidden profile; Viktor unverified email; Oleh blocked by Olha: never shown to her.
--- Other cases: Sofiia matches Andrii and Taras by skills, but they share only the offline
--- format and live in different cities, so they are not mutual; Iryna has two matches with
--- a different number of skill pairs (Dmytro 3, Marko 2) to check the ordering.
 INSERT INTO users (id, university_id, faculty_id, email, first_name, last_name, academic_year, city, bio, terms_accepted_at)
 VALUES
   ('60000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000003',

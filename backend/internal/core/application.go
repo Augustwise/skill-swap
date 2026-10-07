@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"skillswap/backend/internal/data"
+	"skillswap/backend/internal/discovery"
 	"skillswap/backend/internal/profile"
 )
 
@@ -18,16 +19,19 @@ type IApplication interface {
 	AddSkill(ctx context.Context, userID string, list data.SkillList, skillID, level string) (data.Profile, error)
 	UpdateSkillLevel(ctx context.Context, userID string, list data.SkillList, skillID, level string) (data.Profile, error)
 	RemoveSkill(ctx context.Context, userID string, list data.SkillList, skillID string) (data.Profile, error)
+
+	MutualMatches(ctx context.Context, userID string, page int) (discovery.MatchPage, error)
 }
 
 type Application struct {
-	profiles *profile.Service
+	profiles  *profile.Service
+	discovery *discovery.Service
 }
 
 var _ IApplication = (*Application)(nil)
 
-func NewApplication(profiles *profile.Service) *Application {
-	return &Application{profiles: profiles}
+func NewApplication(profiles *profile.Service, discovery *discovery.Service) *Application {
+	return &Application{profiles: profiles, discovery: discovery}
 }
 
 func (a *Application) Universities(ctx context.Context) ([]data.University, error) {
@@ -64,4 +68,8 @@ func (a *Application) UpdateSkillLevel(ctx context.Context, userID string, list 
 
 func (a *Application) RemoveSkill(ctx context.Context, userID string, list data.SkillList, skillID string) (data.Profile, error) {
 	return a.profiles.RemoveSkill(ctx, userID, list, skillID)
+}
+
+func (a *Application) MutualMatches(ctx context.Context, userID string, page int) (discovery.MatchPage, error) {
+	return a.discovery.MutualMatches(ctx, userID, page)
 }

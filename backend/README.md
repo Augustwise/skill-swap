@@ -233,6 +233,21 @@ acceptance cases:
 different city, so she has no mutual matches. `demo.iryna` has two matches with a
 different number of skill pairs (Dmytro 3, Marko 2) to check the ordering.
 
+`GET /api/v1/me/matches?page=1` returns the signed-in user's mutual matches, 20 per page.
+It needs a session with a verified email, like the profile endpoints. Two students match
+when each teaches at least one catalog skill the other wants and they share a format;
+offline counts only in the same city (LR1 3.2). Each item explains the match:
+`canTeachYou` (their skills you want), `wantsToLearn` (your skills they want), and
+`commonFormats`. Students with more matching skills come first, then by name. The list
+is computed on every request, so skill changes apply at once. An incomplete own profile
+returns an empty list with `eligibleForMatching: false`; a page past the end returns an
+empty list with the real `total`.
+
+Discovery never shows the user themselves, hidden profiles, suspended or deleted
+accounts, unverified emails, or blocks in either direction. The PostgreSQL tests in
+`internal/data/discovery_test.go` check these rules on the demo students; the test that
+changes skills runs inside a transaction that is rolled back.
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for
