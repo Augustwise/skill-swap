@@ -3,7 +3,7 @@ info:
   title: Skill Swap API
   version: 1.0.0
   description: |
-    HTTP contract implemented by the Sprint 1-4 backend.
+    HTTP contract implemented by the Sprint 1-5 backend.
 
     Authentication (FR-01) uses an opaque server-side session stored in the HttpOnly
     `skillswap_session` cookie (SameSite=Lax, Path=/). Browsers should call the API through
@@ -23,6 +23,10 @@ info:
     show the signed-in user, hidden profiles, suspended or deleted accounts, students with
     an unverified email, or anyone blocked in either direction. Lists have 20 items per
     page and are computed on every request, so profile and skill changes apply at once.
+
+    Exchange requests (Sprint 5, FR-06 and FR-07) need a verified email. A request names
+    one skill each student teaches the other, the format, and the number and length of
+    sessions in each direction; both directions must add up to the same total time.
 servers:
   - url: http://127.0.0.1:8080/api/v1
     description: Local development
@@ -32,6 +36,7 @@ tags:
   - name: Auth
   - name: Profile
   - name: Discovery
+  - name: Exchange requests
 paths:
   /openapi.yaml:
     get:
@@ -956,6 +961,92 @@ paths:
                   message: Student was not found
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
+  /exchange-requests:
+    post:
+      tags: [Exchange requests]
+      operationId: createExchangeRequest
+      summary: Send an exchange request to another student (FR-06)
+      description: |
+        `teachSkillId` must be in your "I teach" list and in the recipient's "I learn" list;
+        `learnSkillId` must be in the recipient's "I teach" list and in your "I learn" list.
+        Both students must have `format`; OFFLINE also needs the same city. Only one request
+        for the same pair of skills can wait for an answer, whoever sent it.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateExchangeRequest"
+            example:
+              recipientId: 60000000-0000-0000-0000-000000000002
+              teachSkillId: 30000000-0000-0000-0000-000000000001
+              learnSkillId: 30000000-0000-0000-0000-000000000002
+              format: ONLINE
+              teachSessions: 2
+              teachDurationMinutes: 60
+              learnSessions: 2
+              learnDurationMinutes: 60
+              message: Привіт! Можу навчити акордів, хочу розібратися з шарами в Photoshop.
+      responses:
+        "201":
+          description: The request is created and waits for an answer
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: "#/components/schemas/ExchangeRequest"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: No visible student has `recipientId`, or one of you blocked the other
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: student_not_found
+                  message: Student was not found
+        "409":
+          description: |
+            The recipient does not accept requests (`requests_closed`), accepts them only from
+            their university (`same_university_only`), or a request for this pair of skills is
+            already pending in either direction (`duplicate_request`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: duplicate_request
+                  message: A request for these skills is already waiting for an answer
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: A field is invalid, a skill is not in the needed lists, or the format does not fit both students
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: validation_failed
+                  message: Some fields are invalid
+                  fields:
+                    learnSessions: Both directions must have the same total time
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
 components:
   securitySchemes:
     sessionCookie:
@@ -1694,3 +1785,109 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/LessonFormat"
+    CreateExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [recipientId, teachSkillId, learnSkillId, format, teachSessions, teachDurationMinutes,
+        learnSessions, learnDurationMinutes]
+      properties:
+        recipientId:
+          type: string
+          format: uuid
+        teachSkillId:
+          type: string
+          format: uuid
+          description: Catalog skill id that you teach the recipient.
+        learnSkillId:
+          type: string
+          format: uuid
+          description: Catalog skill id that the recipient teaches you; differs from `teachSkillId`.
+        format:
+          $ref: "#/components/schemas/LessonFormat"
+        teachSessions:
+          type: integer
+          minimum: 1
+          maximum: 20
+        teachDurationMinutes:
+          type: integer
+          minimum: 15
+          maximum: 240
+        learnSessions:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: "`learnSessions × learnDurationMinutes` must equal `teachSessions × teachDurationMinutes`."
+        learnDurationMinutes:
+          type: integer
+          minimum: 15
+          maximum: 240
+        message:
+          type: string
+          maxLength: 500
+          description: Plain text; spaces around it are trimmed and an empty message is stored as null.
+    RequestTerms:
+      type: object
+      description: One direction of the exchange with the students' current levels.
+      required: [skill, teacherLevel, learnerLevel, sessions, durationMinutes]
+      properties:
+        skill:
+          type: object
+          required: [skillId, categoryId, name]
+          properties:
+            skillId:
+              type: string
+              format: uuid
+            categoryId:
+              type: string
+              format: uuid
+            name:
+              type: string
+        teacherLevel:
+          $ref: "#/components/schemas/SkillLevel"
+        learnerLevel:
+          $ref: "#/components/schemas/SkillLevel"
+        sessions:
+          type: integer
+        durationMinutes:
+          type: integer
+    ExchangeRequest:
+      type: object
+      description: The same for both participants.
+      required: [id, status, format, totalSessions, message, requester, recipient, requesterTeaches,
+        recipientTeaches, exchangeId, createdAt, respondedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, ACCEPTED, DECLINED, WITHDRAWN]
+        format:
+          $ref: "#/components/schemas/LessonFormat"
+        totalSessions:
+          type: integer
+          description: Sessions in both directions.
+        message:
+          type: string
+          nullable: true
+          description: Plain text; clients must display it without interpreting HTML.
+        requester:
+          $ref: "#/components/schemas/StudentSummary"
+        recipient:
+          $ref: "#/components/schemas/StudentSummary"
+        requesterTeaches:
+          $ref: "#/components/schemas/RequestTerms"
+        recipientTeaches:
+          $ref: "#/components/schemas/RequestTerms"
+        exchangeId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The exchange created when the request is accepted.
+        createdAt:
+          type: string
+          format: date-time
+        respondedAt:
+          type: string
+          format: date-time
+          nullable: true

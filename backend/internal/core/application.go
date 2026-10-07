@@ -5,6 +5,7 @@ import (
 
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/discovery"
+	"skillswap/backend/internal/exchange"
 	"skillswap/backend/internal/profile"
 )
 
@@ -23,17 +24,20 @@ type IApplication interface {
 	MutualMatches(ctx context.Context, userID string, page int) (discovery.MatchPage, error)
 	SearchStudents(ctx context.Context, userID string, filter data.StudentFilter, page int) (discovery.StudentPage, error)
 	StudentProfile(ctx context.Context, userID, studentID string) (data.StudentProfile, error)
+
+	CreateRequest(ctx context.Context, userID string, request exchange.NewRequest) (data.ExchangeRequest, error)
 }
 
 type Application struct {
 	profiles  *profile.Service
 	discovery *discovery.Service
+	exchanges *exchange.Service
 }
 
 var _ IApplication = (*Application)(nil)
 
-func NewApplication(profiles *profile.Service, discovery *discovery.Service) *Application {
-	return &Application{profiles: profiles, discovery: discovery}
+func NewApplication(profiles *profile.Service, discovery *discovery.Service, exchanges *exchange.Service) *Application {
+	return &Application{profiles: profiles, discovery: discovery, exchanges: exchanges}
 }
 
 func (a *Application) Universities(ctx context.Context) ([]data.University, error) {
@@ -82,4 +86,8 @@ func (a *Application) SearchStudents(ctx context.Context, userID string, filter 
 
 func (a *Application) StudentProfile(ctx context.Context, userID, studentID string) (data.StudentProfile, error) {
 	return a.discovery.StudentProfile(ctx, userID, studentID)
+}
+
+func (a *Application) CreateRequest(ctx context.Context, userID string, request exchange.NewRequest) (data.ExchangeRequest, error) {
+	return a.exchanges.CreateRequest(ctx, userID, request)
 }
