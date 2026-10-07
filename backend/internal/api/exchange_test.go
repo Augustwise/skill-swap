@@ -111,3 +111,89 @@ func TestCreateRequestErrors(t *testing.T) {
 	assertProblem(t, send(t, e.handler, http.MethodPost, requestsPath,
 		requestBody(e.meID(t, olha), datatest.PhotoshopSkillID, datatest.GuitarSkillID), andrii), http.StatusConflict, "duplicate_request")
 }
+
+type requestPageResponse struct {
+	Items    []exchangeRequest `json:"items"`
+	Page     int               `json:"page"`
+	PageSize int               `json:"pageSize"`
+	Total    int               `json:"total"`
+}
+
+func (e *discoveryEnv) requests(t *testing.T, s *session, query string) requestPageResponse {
+	t.Helper()
+	response := send(t, e.handler, http.MethodGet, "/api/v1/me/exchange-requests"+query, "", s)
+	expectStatus(t, response, http.StatusOK)
+	var body requestPageResponse
+	decodeJSON(t, response, &body)
+	return body
+}
+
+func TestRequestLists(t *testing.T) {
+	e, olha, andrii, andriiID := newRequestEnv(t)
+	response := send(t, e.handler, http.MethodPost, requestsPath, requestBody(andriiID, datatest.GuitarSkillID, datatest.PhotoshopSkillID), olha)
+	expectStatus(t, response, http.StatusCreated)
+	var created struct {
+		Request exchangeRequest `json:"request"`
+	}
+	decodeJSON(t, response, &created)
+
+	sent := e.requests(t, olha, "?direction=outgoing")
+	if len(sent.Items) != 1 || sent.Items[0].ID != created.Request.ID || sent.Items[0].Recipient.ID != andriiID ||
+		sent.Page != 1 || sent.PageSize != 20 || sent.Total != 1 {
+		t.Fatalf("Olha's sent requests = %+v", sent)
+	}
+	if incoming := e.requests(t, andrii, "?direction=incoming&status=PENDING"); len(incoming.Items) != 1 || incoming.Total != 1 {
+		t.Fatalf("Andrii's incoming requests = %+v", incoming)
+	}
+	if declined := e.requests(t, andrii, "?direction=incoming&status=DECLINED"); len(declined.Items) != 0 || declined.Total != 0 {
+		t.Fatalf("Andrii's declined requests = %+v", declined)
+	}
+	// An empty page is an empty array, not null.
+	response = send(t, e.handler, http.MethodGet, "/api/v1/me/exchange-requests?direction=incoming&page=2", "", andrii)
+	expectStatus(t, response, http.StatusOK)
+	assertJSONEqual(t, response.Body.Bytes(), `{"items":[],"page":2,"pageSize":20,"total":1}`)
+
+	path := "/api/v1/me/exchange-requests"
+	assertProblem(t, send(t, e.handler, http.MethodGet, path+"?direction=incoming", "", nil), http.StatusUnauthorized, "unauthenticated")
+	assertFieldError(t, send(t, e.handler, http.MethodGet, path, "", olha), "direction")
+	assertFieldError(t, send(t, e.handler, http.MethodGet, path+"?direction=incoming&status=EXPIRED", "", olha), "status")
+	assertProblem(t, send(t, e.handler, http.MethodGet, path+"?direction=incoming&page=0", "", olha), http.StatusBadRequest, "invalid_page")
+	response = send(t, e.handler, http.MethodPost, path, "{}", olha)
+	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet {
+		t.Fatalf("POST status = %d, Allow = %q", response.Code, response.Header().Get("Allow"))
+	}
+}
+
+func TestRequestDetails(t *testing.T) {
+	e, olha, andrii, andriiID := newRequestEnv(t)
+	response := send(t, e.handler, http.MethodPost, requestsPath, requestBody(andriiID, datatest.GuitarSkillID, datatest.PhotoshopSkillID), olha)
+	expectStatus(t, response, http.StatusCreated)
+	var created struct {
+		Request exchangeRequest `json:"request"`
+	}
+	decodeJSON(t, response, &created)
+	path := requestsPath + "/" + created.Request.ID
+
+	for _, s := range []*session{olha, andrii} {
+		response := send(t, e.handler, http.MethodGet, path, "", s)
+		expectStatus(t, response, http.StatusOK)
+		var body struct {
+			Request exchangeRequest       `json:"request"`
+			History []requestStatusChange `json:"history"`
+		}
+		decodeJSON(t, response, &body)
+		if body.Request.ID != created.Request.ID || body.Request.Status != "PENDING" || len(body.History) != 1 {
+			t.Fatalf("details = %+v", body)
+		}
+		if h := body.History[0]; h.Status != "PENDING" || h.ChangedBy == nil || h.ChangedBy.ID != e.meID(t, olha) || h.CreatedAt.IsZero() {
+			t.Fatalf("history = %+v", h)
+		}
+	}
+
+	stranger := e.student(t, "marko@students.example.test", `["ONLINE"]`, "Київ", datatest.PhotoshopSkillID, datatest.GuitarSkillID)
+	assertProblem(t, send(t, e.handler, http.MethodGet, path, "", stranger), http.StatusNotFound, "request_not_found")
+	assertProblem(t, send(t, e.handler, http.MethodGet, requestsPath+"/70000000-0000-0000-0000-000000000999", "", olha),
+		http.StatusNotFound, "request_not_found")
+	assertProblem(t, send(t, e.handler, http.MethodGet, requestsPath+"/latest", "", olha), http.StatusNotFound, "request_not_found")
+	assertProblem(t, send(t, e.handler, http.MethodGet, path, "", nil), http.StatusUnauthorized, "unauthenticated")
+}

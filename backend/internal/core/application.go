@@ -26,6 +26,8 @@ type IApplication interface {
 	StudentProfile(ctx context.Context, userID, studentID string) (data.StudentProfile, error)
 
 	CreateRequest(ctx context.Context, userID string, request exchange.NewRequest) (data.ExchangeRequest, error)
+	Requests(ctx context.Context, userID string, filter data.RequestFilter, page int) (exchange.RequestPage, error)
+	RequestDetails(ctx context.Context, userID, requestID string) (exchange.RequestDetails, error)
 }
 
 type Application struct {
@@ -90,4 +92,12 @@ func (a *Application) StudentProfile(ctx context.Context, userID, studentID stri
 
 func (a *Application) CreateRequest(ctx context.Context, userID string, request exchange.NewRequest) (data.ExchangeRequest, error) {
 	return a.exchanges.CreateRequest(ctx, userID, request)
+}
+
+func (a *Application) Requests(ctx context.Context, userID string, filter data.RequestFilter, page int) (exchange.RequestPage, error) {
+	return a.exchanges.Requests(ctx, userID, filter, page)
+}
+
+func (a *Application) RequestDetails(ctx context.Context, userID, requestID string) (exchange.RequestDetails, error) {
+	return a.exchanges.RequestDetails(ctx, userID, requestID)
 }

@@ -332,6 +332,23 @@ With the demo data, Olha's request to Andrii succeeds, a second one returns
 `duplicate_request`, and her guitar ↔ Photoshop request to Taras does too because his
 request is pending. Iryna's request to Dmytro returns `requests_closed`.
 
+Two read-only routes show the requests to their participants. Both need a session
+with a verified email:
+
+- `GET /api/v1/me/exchange-requests?direction=incoming|outgoing&status=&page=` lists
+  the requests sent to you (`incoming`) or by you (`outgoing`), newest first, 20 per
+  page, as `{ items, page, pageSize, total }`. `status` is optional: `PENDING`,
+  `ACCEPTED`, `DECLINED` or `WITHDRAWN`. A missing or unknown `direction` or `status`
+  returns 422 `validation_failed`.
+- `GET /api/v1/exchange-requests/{requestId}` returns `{ request, history }`. Each
+  history item has `status`, `changedBy` (`{ id, firstName, lastName }` or null) and
+  `createdAt`, oldest first. Anyone except the requester and the recipient gets 404
+  `request_not_found`, the same as for an unknown ID.
+
+Participants keep seeing a request after the other student hides the profile or blocks
+them, so the history is not lost. With the demo data, Olha's incoming list and Taras's
+outgoing list show the Photoshop ↔ guitar request; Andrii gets 404 for it.
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for

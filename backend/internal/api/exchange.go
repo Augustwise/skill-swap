@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -97,6 +98,57 @@ func (a *API) createRequest(w http.ResponseWriter, r *http.Request, current data
 	respond(w, http.StatusCreated, map[string]any{"request": toExchangeRequest(created)})
 }
 
+type requestStatusChange struct {
+	Status    string    `json:"status"`
+	ChangedBy *person   `json:"changedBy"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func (a *API) listRequests(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
+	page, ok := pageParam(w, r)
+	if !ok {
+		return
+	}
+	query := r.URL.Query()
+	filter := data.RequestFilter{Direction: data.RequestDirection(query.Get("direction")), Status: query.Get("status")}
+	ctx, cancel := context.WithTimeout(r.Context(), exchangeTimeout)
+	defer cancel()
+	result, err := a.app.Requests(ctx, current.ID, filter, page)
+	if err != nil {
+		a.exchangeError(w, err)
+		return
+	}
+	items := make([]exchangeRequest, 0, len(result.Items))
+	for _, request := range result.Items {
+		items = append(items, toExchangeRequest(request))
+	}
+	respond(w, http.StatusOK, map[string]any{
+		"items":    items,
+		"page":     result.Page,
+		"pageSize": exchange.PageSize,
+		"total":    result.Total,
+	})
+}
+
+func (a *API) requestDetails(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
+	ctx, cancel := context.WithTimeout(r.Context(), exchangeTimeout)
+	defer cancel()
+	result, err := a.app.RequestDetails(ctx, current.ID, r.PathValue("requestId"))
+	if err != nil {
+		a.exchangeError(w, err)
+		return
+	}
+	history := make([]requestStatusChange, 0, len(result.History))
+	for _, c := range result.History {
+		change := requestStatusChange{Status: c.Status, CreatedAt: c.CreatedAt}
+		if c.ChangedByID != "" {
+			change.ChangedBy = &person{ID: c.ChangedByID, FirstName: c.ChangedByFirstName, LastName: c.ChangedByLastName}
+		}
+		history = append(history, change)
+	}
+	respond(w, http.StatusOK, map[string]any{"request": toExchangeRequest(result.Request), "history": history})
+}
+
 func (a *API) exchangeError(w http.ResponseWriter, err error) {
 	var invalid *profile.ValidationError
 	switch {
@@ -110,6 +162,10 @@ func (a *API) exchangeError(w http.ResponseWriter, err error) {
 		problem(w, http.StatusConflict, "same_university_only", "The student accepts requests only from their university")
 	case errors.Is(err, exchange.ErrDuplicateRequest):
 		problem(w, http.StatusConflict, "duplicate_request", "A request for these skills is already waiting for an answer")
+	case errors.Is(err, exchange.ErrRequestNotFound):
+		problem(w, http.StatusNotFound, "request_not_found", "Request was not found")
+	case errors.Is(err, exchange.ErrInvalidPage):
+		problem(w, http.StatusBadRequest, "invalid_page", fmt.Sprintf("page must be a whole number from 1 to %d", exchange.MaxPage))
 	default:
 		a.queryError(w, err)
 	}

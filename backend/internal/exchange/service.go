@@ -16,16 +16,25 @@ const (
 	MinDuration = 15
 	MaxDuration = 240
 
+	// PageSize is the number of requests on one page.
+	PageSize = 20
+	MaxPage  = 500
+
 	maxMessageLength = 500
 )
 
-var formats = []string{data.FormatOnline, data.FormatOffline}
+var (
+	formats  = []string{data.FormatOnline, data.FormatOffline}
+	statuses = []string{data.RequestPending, data.RequestAccepted, data.RequestDeclined, data.RequestWithdrawn}
+)
 
 var (
 	ErrStudentNotFound    = errors.New("student was not found or is not visible")
 	ErrRequestsClosed     = errors.New("student does not accept requests")
 	ErrSameUniversityOnly = errors.New("student accepts requests only from their university")
 	ErrDuplicateRequest   = errors.New("a pending request for this pair of skills already exists")
+	ErrInvalidPage        = errors.New("page is out of range")
+	ErrRequestNotFound    = errors.New("request was not found or the user does not take part in it")
 )
 
 type Service struct {
@@ -92,6 +101,60 @@ func (s *Service) CreateRequest(ctx context.Context, userID string, in NewReques
 		return err
 	})
 	return created, err
+}
+
+type RequestPage struct {
+	Items []data.ExchangeRequest
+	Page  int
+	Total int
+}
+
+func (s *Service) Requests(ctx context.Context, userID string, filter data.RequestFilter, page int) (RequestPage, error) {
+	if page < 1 || page > MaxPage {
+		return RequestPage{}, ErrInvalidPage
+	}
+	fields := map[string]string{}
+	if filter.Direction != data.Incoming && filter.Direction != data.Outgoing {
+		fields["direction"] = "Direction must be incoming or outgoing"
+	}
+	if filter.Status != "" && !slices.Contains(statuses, filter.Status) {
+		fields["status"] = "Status must be PENDING, ACCEPTED, DECLINED or WITHDRAWN"
+	}
+	if len(fields) > 0 {
+		return RequestPage{}, &profile.ValidationError{Fields: fields}
+	}
+	items, total, err := s.exchanges.UserRequests(ctx, userID, filter, PageSize, (page-1)*PageSize)
+	if err != nil {
+		return RequestPage{}, err
+	}
+	return RequestPage{Items: items, Page: page, Total: total}, nil
+}
+
+type RequestDetails struct {
+	Request data.ExchangeRequest
+	History []data.RequestStatusChange
+}
+
+// RequestDetails stays available to both participants even after one of them hides
+// the profile or blocks the other.
+func (s *Service) RequestDetails(ctx context.Context, userID, requestID string) (RequestDetails, error) {
+	if !validate.UUID(requestID) {
+		return RequestDetails{}, ErrRequestNotFound
+	}
+	request, err := s.exchanges.RequestByID(ctx, strings.ToLower(requestID))
+	switch {
+	case errors.Is(err, data.ErrNotFound):
+		return RequestDetails{}, ErrRequestNotFound
+	case err != nil:
+		return RequestDetails{}, err
+	case userID != request.Requester.UserID && userID != request.Recipient.UserID:
+		return RequestDetails{}, ErrRequestNotFound
+	}
+	history, err := s.exchanges.RequestHistory(ctx, request.ID)
+	if err != nil {
+		return RequestDetails{}, err
+	}
+	return RequestDetails{Request: request, History: history}, nil
 }
 
 func validRequest(userID string, in NewRequest) (data.NewRequest, error) {
