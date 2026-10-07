@@ -243,6 +243,23 @@ is computed on every request, so skill changes apply at once. An incomplete own 
 returns an empty list with `eligibleForMatching: false`; a page past the end returns an
 empty list with the real `total`.
 
+`GET /api/v1/students` searches students, 20 per page. All filters are optional and
+apply together:
+
+| Parameter | Meaning |
+| --- | --- |
+| `q` | part of an offered skill name or of the full name, case insensitive |
+| `categoryId`, `level` | an offered skill in this category and with this level; with a skill-name `q` it must be the same skill |
+| `format` | `ONLINE` or `OFFLINE`, one of the student's formats |
+| `mutual=true` | only mutual matches |
+| `page` | 1–500 |
+
+Only students who offer at least one skill are listed. Each item has the student card,
+all offered skills with levels, formats, and `mutual`; mutual matches come first. With
+the demo data, Olha's search for `Photoshop` returns Andrii, Taras, Kateryna and Marko,
+while `Photoshop` with `level=INTERMEDIATE` returns only Marko. No results is an empty
+`items` array with `total: 0`; invalid filters return 422 `validation_failed`.
+
 Discovery never shows the user themselves, hidden profiles, suspended or deleted
 accounts, unverified emails, or blocks in either direction. The PostgreSQL tests in
 `internal/data/discovery_test.go` check these rules on the demo students; the test that

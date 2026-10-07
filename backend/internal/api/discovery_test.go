@@ -160,3 +160,97 @@ func TestMutualMatchesPages(t *testing.T) {
 		})
 	}
 }
+
+type searchResponse struct {
+	Items    []studentCard `json:"items"`
+	Page     int           `json:"page"`
+	PageSize int           `json:"pageSize"`
+	Total    int           `json:"total"`
+}
+
+func (e *discoveryEnv) search(t *testing.T, s *session, query string) searchResponse {
+	t.Helper()
+	response := send(t, e.handler, http.MethodGet, "/api/v1/students"+query, "", s)
+	expectStatus(t, response, http.StatusOK)
+	var body searchResponse
+	decodeJSON(t, response, &body)
+	return body
+}
+
+func TestSearchStudentsRequiresVerifiedSession(t *testing.T) {
+	e := newDiscoveryEnv()
+	assertProblem(t, send(t, e.handler, http.MethodGet, "/api/v1/students?q=Photoshop", "", nil), http.StatusUnauthorized, "unauthenticated")
+	expectStatus(t, send(t, e.handler, http.MethodPost, "/api/v1/auth/register",
+		registerBody("pending@students.example.test", testPassword), nil), http.StatusCreated)
+	pending := login(t, e.handler, "pending@students.example.test", testPassword)
+	assertProblem(t, send(t, e.handler, http.MethodGet, "/api/v1/students", "", pending), http.StatusForbidden, "email_not_verified")
+}
+
+// FR-04 acceptance: "Photoshop" finds only students who offer it, filters apply
+// together, and an empty result is a normal empty page.
+func TestSearchStudents(t *testing.T) {
+	e := newDiscoveryEnv()
+	olha := e.student(t, "olha@students.example.test", `["ONLINE"]`, "Київ", datatest.GuitarSkillID, datatest.PhotoshopSkillID)
+	andrii := e.student(t, "andrii@students.example.test", `["ONLINE"]`, "Київ", datatest.PhotoshopSkillID, datatest.GuitarSkillID)
+	marko := e.student(t, "marko@students.example.test", `["ONLINE"]`, "Львів", datatest.PhotoshopSkillID, "")
+	expectStatus(t, send(t, e.handler, http.MethodPatch, "/api/v1/me/teaching-skills/"+datatest.PhotoshopSkillID,
+		`{"level":"BEGINNER"}`, marko), http.StatusOK)
+	sofiia := e.student(t, "sofiia@students.example.test", `["OFFLINE"]`, "Львів", datatest.GuitarSkillID, datatest.PhotoshopSkillID)
+	ids := map[string]string{e.meID(t, andrii): "andrii", e.meID(t, marko): "marko", e.meID(t, sofiia): "sofiia"}
+	names := func(body searchResponse) []string {
+		got := []string{}
+		for _, item := range body.Items {
+			got = append(got, ids[item.Student.ID])
+		}
+		return got
+	}
+
+	for _, test := range []struct {
+		query string
+		want  []string
+	}{
+		// Sofiia wants Photoshop but does not offer it; the mutual match comes first.
+		{"?q=Photoshop", []string{"andrii", "marko"}},
+		{"?q=photo&level=BEGINNER", []string{"marko"}},
+		{"?format=OFFLINE", []string{"sofiia"}},
+		{"?q=Photoshop&mutual=true", []string{"andrii"}},
+		{"?categoryId=20000000-0000-0000-0000-000000000001", []string{"sofiia"}},
+		{"?q=Скрипка", []string{}},
+	} {
+		t.Run(test.query, func(t *testing.T) {
+			got := e.search(t, olha, test.query)
+			if !slices.Equal(names(got), test.want) || got.Total != len(test.want) || got.Page != 1 || got.PageSize != discovery.PageSize {
+				t.Fatalf("search = %v (%+v), want %v", names(got), got, test.want)
+			}
+		})
+	}
+
+	got := e.search(t, olha, "?q=Photoshop")
+	andriiCard, markoCard := got.Items[0], got.Items[1]
+	if !andriiCard.Mutual || markoCard.Mutual {
+		t.Fatalf("mutual: Andrii %v, Marko %v", andriiCard.Mutual, markoCard.Mutual)
+	}
+	if len(markoCard.TeachingSkills) != 1 || markoCard.TeachingSkills[0].Level != "BEGINNER" ||
+		!slices.Equal(markoCard.Formats, []string{"ONLINE"}) || markoCard.Student.City != "Львів" {
+		t.Fatalf("Marko = %+v", markoCard)
+	}
+	if got.Items == nil || e.search(t, olha, "?q=Скрипка").Items == nil {
+		t.Fatal("items must be an array, not null")
+	}
+}
+
+func TestSearchStudentsRejectsInvalidFilters(t *testing.T) {
+	e := newDiscoveryEnv()
+	olha := e.student(t, "olha@students.example.test", `["ONLINE"]`, "Київ", datatest.GuitarSkillID, datatest.PhotoshopSkillID)
+	for query, field := range map[string]string{
+		"?level=EXPERT":     "level",
+		"?format=CAMPUS":    "format",
+		"?categoryId=music": "categoryId",
+		"?mutual=yes":       "mutual",
+	} {
+		t.Run(query, func(t *testing.T) {
+			assertFieldError(t, send(t, e.handler, http.MethodGet, "/api/v1/students"+query, "", olha), field)
+		})
+	}
+	assertProblem(t, send(t, e.handler, http.MethodGet, "/api/v1/students?page=0", "", olha), http.StatusBadRequest, "invalid_page")
+}

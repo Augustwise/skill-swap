@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,18 +15,21 @@ import (
 
 // Demo students
 const (
-	demoOlha    = "60000000-0000-0000-0000-000000000001"
-	demoAndrii  = "60000000-0000-0000-0000-000000000002"
-	demoMarko   = "60000000-0000-0000-0000-000000000003"
-	demoIryna   = "60000000-0000-0000-0000-000000000004"
-	demoDmytro  = "60000000-0000-0000-0000-000000000005"
-	demoSofiia  = "60000000-0000-0000-0000-000000000006"
-	demoTaras   = "60000000-0000-0000-0000-000000000007"
-	demoOleh    = "60000000-0000-0000-0000-000000000010"
-	typography  = "30000000-0000-0000-0000-000000000011"
-	branding    = "30000000-0000-0000-0000-000000000012"
-	guitarSkill = "30000000-0000-0000-0000-000000000001"
-	photoshop   = "30000000-0000-0000-0000-000000000002"
+	demoOlha     = "60000000-0000-0000-0000-000000000001"
+	demoAndrii   = "60000000-0000-0000-0000-000000000002"
+	demoMarko    = "60000000-0000-0000-0000-000000000003"
+	demoIryna    = "60000000-0000-0000-0000-000000000004"
+	demoDmytro   = "60000000-0000-0000-0000-000000000005"
+	demoSofiia   = "60000000-0000-0000-0000-000000000006"
+	demoTaras    = "60000000-0000-0000-0000-000000000007"
+	demoOleh     = "60000000-0000-0000-0000-000000000010"
+	demoKateryna = "60000000-0000-0000-0000-000000000011"
+	design       = "20000000-0000-0000-0000-000000000002"
+	music        = "20000000-0000-0000-0000-000000000001"
+	typography   = "30000000-0000-0000-0000-000000000011"
+	branding     = "30000000-0000-0000-0000-000000000012"
+	guitarSkill  = "30000000-0000-0000-0000-000000000001"
+	photoshop    = "30000000-0000-0000-0000-000000000002"
 )
 
 // openTestStore connects to TEST_DATABASE_URL or skips the test.
@@ -44,6 +48,12 @@ func openTestStore(t *testing.T) *Postgres {
 }
 
 // matchIDs returns the user IDs of the matches in order.
+// demoOnly keeps the demo students, so other users in a shared database do not
+// change the expected lists.
+func demoOnly(ids []string) []string {
+	return slices.DeleteFunc(ids, func(id string) bool { return !strings.HasPrefix(id, "60000000-") })
+}
+
 func matchIDs(matches []Match) []string {
 	ids := []string{}
 	for _, m := range matches {
@@ -89,7 +99,7 @@ func TestMutualMatchesOnDemoData(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := matchIDs(matches); !slices.Equal(got, test.want) || total != len(test.want) {
+			if got := demoOnly(matchIDs(matches)); !slices.Equal(got, test.want) || total != len(matches) {
 				t.Fatalf("matches = %v (total %d), want %v", got, total, test.want)
 			}
 		})
@@ -100,7 +110,15 @@ func TestMutualMatchesOnDemoData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	andrii, taras := matches[0], matches[1]
+	byID := func(id string) Match {
+		t.Helper()
+		i := slices.IndexFunc(matches, func(m Match) bool { return m.UserID == id })
+		if i < 0 {
+			t.Fatalf("%s is not in %v", id, matchIDs(matches))
+		}
+		return matches[i]
+	}
+	andrii, taras := byID(demoAndrii), byID(demoTaras)
 	if !slices.Equal(skillIDs(andrii.CanTeach), []string{photoshop}) || andrii.CanTeach[0].Level != "ADVANCED" {
 		t.Fatalf("Andrii can teach %+v", andrii.CanTeach)
 	}
@@ -114,14 +132,13 @@ func TestMutualMatchesOnDemoData(t *testing.T) {
 		t.Fatalf("Andrii = %+v", andrii)
 	}
 
-	// The second page of one-item pages holds Taras; a page past the end is empty
-	// but still reports the total.
+	// A page past the end is empty but still reports the total.
 	page, total, err := store.MutualMatches(ctx, demoOlha, 1, 1)
-	if err != nil || !slices.Equal(matchIDs(page), []string{demoTaras}) || total != 2 {
+	if err != nil || !slices.Equal(matchIDs(page), matchIDs(matches[1:2])) || total != len(matches) {
 		t.Fatalf("second page = %v, total %d, err %v", matchIDs(page), total, err)
 	}
-	page, total, err = store.MutualMatches(ctx, demoOlha, 20, 40)
-	if err != nil || len(page) != 0 || total != 2 {
+	page, total, err = store.MutualMatches(ctx, demoOlha, 20, 400)
+	if err != nil || len(page) != 0 || total != len(matches) {
 		t.Fatalf("page past the end = %v, total %d, err %v", matchIDs(page), total, err)
 	}
 }
@@ -202,5 +219,85 @@ func TestMutualMatchesFollowCurrentData(t *testing.T) {
 	})
 	if !errors.Is(err, rollback) {
 		t.Fatalf("WithinTx err = %v", err)
+	}
+}
+
+func cardIDs(cards []StudentCard) []string {
+	ids := []string{}
+	for _, c := range cards {
+		ids = append(ids, c.UserID)
+	}
+	return ids
+}
+
+// Skipped unless TEST_DATABASE_URL points to a migrated, demo-seeded database.
+func TestSearchStudentsOnDemoData(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	for _, test := range []struct {
+		name   string
+		viewer string
+		filter StudentFilter
+		want   []string
+	}{
+		// Mutual matches come first. Iryna and Sofiia only want Photoshop; Nataliia is
+		// hidden, Viktor unverified and Oleh blocked by Olha.
+		{"skill name", demoOlha, StudentFilter{Query: "Photoshop"}, []string{demoAndrii, demoTaras, demoKateryna, demoMarko}},
+		{"part of a skill name", demoOlha, StudentFilter{Query: "photo"}, []string{demoAndrii, demoTaras, demoKateryna, demoMarko}},
+		// Andrii teaches Photoshop at ADVANCED and Illustrator at INTERMEDIATE, so he does not fit.
+		{"skill and level on the same skill", demoOlha, StudentFilter{Query: "Photoshop", Level: "INTERMEDIATE"}, []string{demoMarko}},
+		{"category and level", demoOlha, StudentFilter{CategoryID: design, Level: "INTERMEDIATE"}, []string{demoAndrii, demoIryna, demoMarko}},
+		{"person's name", demoOlha, StudentFilter{Query: "коваль"}, []string{demoAndrii}},
+		{"name and another category", demoOlha, StudentFilter{Query: "Коваль", CategoryID: music}, []string{}},
+		{"format", demoOlha, StudentFilter{Format: FormatOffline}, []string{demoAndrii, demoTaras, demoSofiia}},
+		{"mutual only", demoOlha, StudentFilter{MutualOnly: true}, []string{demoAndrii, demoTaras}},
+		{"all filters together", demoOlha, StudentFilter{Query: "Photoshop", Format: FormatOffline, MutualOnly: true}, []string{demoAndrii, demoTaras}},
+		{"wildcards are plain text", demoOlha, StudentFilter{Query: "%"}, []string{}},
+		{"nothing found", demoOlha, StudentFilter{Query: "Скрипка"}, []string{}},
+		// Olha blocked Oleh, so he does not find her either.
+		{"block hides both ways", demoOleh, StudentFilter{Query: "Гітара"}, []string{demoSofiia}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cards, total, err := store.SearchStudents(ctx, test.viewer, test.filter, 20, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := demoOnly(cardIDs(cards)); !slices.Equal(got, test.want) || total != len(cards) {
+				t.Fatalf("students = %v (total %d), want %v", got, total, test.want)
+			}
+		})
+	}
+
+	cards, _, err := store.SearchStudents(ctx, demoOlha, StudentFilter{Query: "Photoshop"}, 20, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := func(id string) StudentCard {
+		t.Helper()
+		i := slices.IndexFunc(cards, func(c StudentCard) bool { return c.UserID == id })
+		if i < 0 {
+			t.Fatalf("%s is not in %v", id, cardIDs(cards))
+		}
+		return cards[i]
+	}
+	andrii, marko := byID(demoAndrii), byID(demoMarko)
+	if !andrii.Mutual || marko.Mutual {
+		t.Fatalf("mutual: Andrii %v, Marko %v", andrii.Mutual, marko.Mutual)
+	}
+	if got := skillIDs(andrii.TeachingSkills); len(got) != 2 || andrii.TeachingSkills[0].Name != "Illustrator" {
+		t.Fatalf("Andrii teaches %+v", andrii.TeachingSkills)
+	}
+	if !slices.Equal(andrii.Formats, []string{"ONLINE", "OFFLINE"}) || andrii.City != "Київ" || andrii.UniversityName == "" {
+		t.Fatalf("Andrii = %+v", andrii)
+	}
+
+	page, total, err := store.SearchStudents(ctx, demoOlha, StudentFilter{Query: "Photoshop"}, 2, 2)
+	if err != nil || !slices.Equal(cardIDs(page), cardIDs(cards[2:4])) || total != len(cards) {
+		t.Fatalf("second page = %v, total %d, err %v", cardIDs(page), total, err)
+	}
+	page, total, err = store.SearchStudents(ctx, demoOlha, StudentFilter{Query: "Photoshop"}, 20, 400)
+	if err != nil || len(page) != 0 || total != len(cards) {
+		t.Fatalf("page past the end = %v, total %d, err %v", cardIDs(page), total, err)
 	}
 }

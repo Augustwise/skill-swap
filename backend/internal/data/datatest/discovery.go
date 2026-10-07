@@ -24,17 +24,7 @@ func (m *Memory) MutualMatches(_ context.Context, viewerID string, limit, offset
 	}
 	var all []ranked
 	for id, c := range m.users {
-		if id == viewerID || !c.user.EmailVerified || c.user.Status != "ACTIVE" {
-			continue
-		}
-		match := data.Match{
-			UserID: id, FirstName: c.profile.FirstName, LastName: c.profile.LastName,
-			UniversityID: c.user.UniversityID, UniversityName: "Демонстраційний університет", City: c.profile.City,
-			CommonFormats: usableFormats(viewer.profile, c.profile),
-			CanTeach:      m.overlap(c.skills[data.TeachingList], viewer.skills[data.LearningList]),
-			WantsToLearn:  m.overlap(c.skills[data.LearningList], viewer.skills[data.TeachingList]),
-		}
-		if len(match.CommonFormats) > 0 && len(match.CanTeach) > 0 && len(match.WantsToLearn) > 0 {
+		if match, ok := m.matchWith(viewer, id, c); ok {
 			all = append(all, ranked{match: match, pairs: len(match.CanTeach) + len(match.WantsToLearn)})
 		}
 	}
@@ -49,6 +39,71 @@ func (m *Memory) MutualMatches(_ context.Context, viewerID string, limit, offset
 	return page, len(all), nil
 }
 
+func (m *Memory) SearchStudents(_ context.Context, viewerID string, filter data.StudentFilter, limit, offset int) ([]data.StudentCard, int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	viewer, ok := m.users[viewerID]
+	if !ok {
+		return []data.StudentCard{}, 0, nil
+	}
+	query := strings.ToLower(filter.Query)
+	var all []data.StudentCard
+	for id, c := range m.users {
+		if !visible(viewerID, id, c) || (filter.Format != "" && !slices.Contains(c.profile.Formats, filter.Format)) {
+			continue
+		}
+		nameFits := strings.Contains(strings.ToLower(c.profile.FirstName+" "+c.profile.LastName), query)
+		skillFits := false
+		for skillID, level := range c.skills[data.TeachingList] {
+			skill := m.skills[skillID]
+			if skill.active && (filter.CategoryID == "" || skill.skill.CategoryID == filter.CategoryID) &&
+				(filter.Level == "" || level == filter.Level) &&
+				(nameFits || strings.Contains(strings.ToLower(skill.skill.Name), query)) {
+				skillFits = true
+			}
+		}
+		_, mutual := m.matchWith(viewer, id, c)
+		if !skillFits || (filter.MutualOnly && !mutual) {
+			continue
+		}
+		all = append(all, data.StudentCard{
+			UserID: id, FirstName: c.profile.FirstName, LastName: c.profile.LastName,
+			UniversityID: c.user.UniversityID, UniversityName: "Демонстраційний університет", City: c.profile.City,
+			Formats: append([]string{}, c.profile.Formats...), TeachingSkills: m.userSkills(c, data.TeachingList),
+			Mutual: mutual,
+		})
+	}
+	slices.SortFunc(all, func(a, b data.StudentCard) int {
+		mutualFirst := func(card data.StudentCard) int {
+			if card.Mutual {
+				return 0
+			}
+			return 1
+		}
+		return cmp.Or(cmp.Compare(mutualFirst(a), mutualFirst(b)), cmp.Compare(a.FirstName, b.FirstName),
+			cmp.Compare(a.LastName, b.LastName), cmp.Compare(a.UserID, b.UserID))
+	})
+	return append([]data.StudentCard{}, all[min(offset, len(all)):min(offset+limit, len(all))]...), len(all), nil
+}
+
+// The memory store has no hidden profiles or blocks; the PostgreSQL tests cover them.
+func visible(viewerID, id string, c *account) bool {
+	return id != viewerID && c.user.EmailVerified && c.user.Status == "ACTIVE"
+}
+
+func (m *Memory) matchWith(viewer *account, id string, c *account) (data.Match, bool) {
+	if !visible(viewer.user.ID, id, c) {
+		return data.Match{}, false
+	}
+	match := data.Match{
+		UserID: id, FirstName: c.profile.FirstName, LastName: c.profile.LastName,
+		UniversityID: c.user.UniversityID, UniversityName: "Демонстраційний університет", City: c.profile.City,
+		CommonFormats: usableFormats(viewer.profile, c.profile),
+		CanTeach:      m.overlap(c.skills[data.TeachingList], viewer.skills[data.LearningList]),
+		WantsToLearn:  m.overlap(c.skills[data.LearningList], viewer.skills[data.TeachingList]),
+	}
+	return match, len(match.CommonFormats) > 0 && len(match.CanTeach) > 0 && len(match.WantsToLearn) > 0
+}
 
 func (m *Memory) overlap(student, viewer map[string]string) []data.UserSkill {
 	items := []data.UserSkill{}

@@ -3,22 +3,31 @@ package discovery
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
+	"skillswap/backend/internal/profile"
 )
 
-// recordingData returns no matches and remembers the requested page window.
+// recordingData returns no results and remembers the last request.
 type recordingData struct {
 	calls         int
 	limit, offset int
+	filter        data.StudentFilter
 }
 
 func (r *recordingData) MutualMatches(_ context.Context, _ string, limit, offset int) ([]data.Match, int, error) {
 	r.calls++
 	r.limit, r.offset = limit, offset
 	return []data.Match{}, 45, nil
+}
+
+func (r *recordingData) SearchStudents(_ context.Context, _ string, filter data.StudentFilter, limit, offset int) ([]data.StudentCard, int, error) {
+	r.calls++
+	r.filter, r.limit, r.offset = filter, limit, offset
+	return []data.StudentCard{}, 0, nil
 }
 
 func newTestService(t *testing.T, eligible bool) (*Service, *recordingData, string) {
@@ -82,5 +91,42 @@ func TestMutualMatchesRejectsInvalidPage(t *testing.T) {
 	}
 	if matches.calls != 0 {
 		t.Fatalf("calls = %d", matches.calls)
+	}
+}
+
+func TestSearchStudentsNormalizesFilter(t *testing.T) {
+	service, search, userID := newTestService(t, true)
+	filter := data.StudentFilter{Query: "  Photoshop ", CategoryID: "20000000-0000-0000-0000-00000000000A",
+		Level: "ADVANCED", Format: data.FormatOnline, MutualOnly: true}
+	result, err := service.SearchStudents(context.Background(), userID, filter, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := data.StudentFilter{Query: "Photoshop", CategoryID: "20000000-0000-0000-0000-00000000000a",
+		Level: "ADVANCED", Format: data.FormatOnline, MutualOnly: true}
+	if search.filter != want || search.limit != PageSize || search.offset != PageSize || result.Page != 2 {
+		t.Fatalf("filter = %+v, limit = %d, offset = %d, page = %d", search.filter, search.limit, search.offset, result.Page)
+	}
+}
+
+func TestSearchStudentsRejectsInvalidFilters(t *testing.T) {
+	service, search, userID := newTestService(t, true)
+	_, err := service.SearchStudents(context.Background(), userID, data.StudentFilter{
+		Query: strings.Repeat("я", 101), CategoryID: "design", Level: "EXPERT", Format: "CAMPUS",
+	}, 1)
+	var invalid *profile.ValidationError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("err = %v", err)
+	}
+	for _, field := range []string{"q", "categoryId", "level", "format"} {
+		if invalid.Fields[field] == "" {
+			t.Fatalf("missing %s error: %v", field, invalid.Fields)
+		}
+	}
+	if _, err := service.SearchStudents(context.Background(), userID, data.StudentFilter{}, 0); !errors.Is(err, ErrInvalidPage) {
+		t.Fatalf("page 0: err = %v", err)
+	}
+	if search.calls != 0 {
+		t.Fatalf("calls = %d", search.calls)
 	}
 }

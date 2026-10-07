@@ -21,6 +21,7 @@ type IApplication interface {
 	RemoveSkill(ctx context.Context, userID string, list data.SkillList, skillID string) (data.Profile, error)
 
 	MutualMatches(ctx context.Context, userID string, page int) (discovery.MatchPage, error)
+	SearchStudents(ctx context.Context, userID string, filter data.StudentFilter, page int) (discovery.StudentPage, error)
 }
 
 type Application struct {
@@ -72,4 +73,8 @@ func (a *Application) RemoveSkill(ctx context.Context, userID string, list data.
 
 func (a *Application) MutualMatches(ctx context.Context, userID string, page int) (discovery.MatchPage, error) {
 	return a.discovery.MutualMatches(ctx, userID, page)
+}
+
+func (a *Application) SearchStudents(ctx context.Context, userID string, filter data.StudentFilter, page int) (discovery.StudentPage, error) {
+	return a.discovery.SearchStudents(ctx, userID, filter, page)
 }
