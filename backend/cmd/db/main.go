@@ -78,6 +78,6 @@ func seed(ctx context.Context, databaseURL string) error {
 	if _, err := conn.Exec(ctx, string(script), pgx.QueryExecModeSimpleProtocol); err != nil {
 		return fmt.Errorf("demo seed failed: %w", err)
 	}
-	fmt.Println("Demo catalog seeded")
+	fmt.Println("Demo data seeded")
 	return nil
 }

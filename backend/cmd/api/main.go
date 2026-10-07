@@ -17,6 +17,7 @@ import (
 	"skillswap/backend/internal/config"
 	"skillswap/backend/internal/core"
 	"skillswap/backend/internal/data"
+	"skillswap/backend/internal/discovery"
 	"skillswap/backend/internal/mailer"
 	"skillswap/backend/internal/profile"
 )
@@ -46,7 +47,7 @@ func run(logger *slog.Logger) error {
 		FrontendOrigin:      cfg.FrontendURL,
 		AllowedEmailDomains: cfg.AllowedEmailDomains,
 	}, logger)
-	app := core.NewApplication(profile.NewService(store, store, store))
+	app := core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store))
 	server := &http.Server{
 		Addr:              cfg.APIAddr,
 		Handler:           api.New(app, access, store, api.Settings{FrontendOrigin: cfg.FrontendURL}, logger),

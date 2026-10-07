@@ -3,7 +3,7 @@ info:
   title: Skill Swap API
   version: 1.0.0
   description: |
-    HTTP contract implemented by the Sprint 1-3 backend.
+    HTTP contract implemented by the Sprint 1-4 backend.
 
     Authentication (FR-01) uses an opaque server-side session stored in the HttpOnly
     `skillswap_session` cookie (SameSite=Lax, Path=/). Browsers should call the API through
@@ -18,6 +18,11 @@ info:
     from the session, never from the path or the body, and must have a verified email.
     Unverified users receive 403 `email_not_verified`. Every successful change returns the
     whole updated profile, so the client can replace its copy.
+
+    Discovery endpoints (Sprint 4, FR-04 and FR-05) also need a verified email. They never
+    show the signed-in user, hidden profiles, suspended or deleted accounts, students with
+    an unverified email, or anyone blocked in either direction. Lists have 20 items per
+    page and are computed on every request, so profile and skill changes apply at once.
 servers:
   - url: http://127.0.0.1:8080/api/v1
     description: Local development
@@ -26,6 +31,7 @@ tags:
   - name: Catalog
   - name: Auth
   - name: Profile
+  - name: Discovery
 paths:
   /openapi.yaml:
     get:
@@ -752,6 +758,204 @@ paths:
           $ref: "#/components/responses/SkillNotInList"
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
+  /me/matches:
+    get:
+      tags: [Discovery]
+      operationId: listMutualMatches
+      summary: List the signed-in user's mutual matches (FR-05)
+      description: |
+        A student is a mutual match when each side teaches at least one catalog skill the
+        other wants to learn, and both accept a common lesson format; offline counts only
+        when both have the same city (LR1 3.2). Students with more matching skills (both
+        directions together) come first; ties are ordered by first name, last name and ID.
+        One-sided interest is not listed here. When the user's own profile is not eligible
+        for matching (FR-03), `items` is empty and `eligibleForMatching` is false.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: One page of mutual matches; an empty `items` array means none were found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchPage"
+              example:
+                items:
+                  - student:
+                      id: 60000000-0000-0000-0000-000000000002
+                      firstName: Андрій
+                      lastName: Коваль
+                      university:
+                        id: 10000000-0000-0000-0000-000000000001
+                        name: Демонстраційний університет
+                      city: Київ
+                    canTeachYou:
+                      - skillId: 30000000-0000-0000-0000-000000000002
+                        categoryId: 20000000-0000-0000-0000-000000000002
+                        name: Photoshop
+                        level: ADVANCED
+                    wantsToLearn:
+                      - skillId: 30000000-0000-0000-0000-000000000001
+                        categoryId: 20000000-0000-0000-0000-000000000001
+                        name: Гітара
+                        level: BEGINNER
+                    commonFormats: [ONLINE, OFFLINE]
+                page: 1
+                pageSize: 20
+                total: 1
+                eligibleForMatching: true
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /students:
+    get:
+      tags: [Discovery]
+      operationId: searchStudents
+      summary: Search students by an offered skill or a name (FR-04)
+      description: |
+        Returns visible students who offer at least one active skill. All filters apply
+        together. `q` matches a part of an offered skill name or of the full name, case
+        insensitive; `%` and `_` are plain characters. When `q` matches a skill name,
+        `categoryId` and `level` must fit that same skill. One-sided interest is listed too;
+        `mutual` marks students who are also mutual matches (see `/me/matches`), and they
+        come first, then the order is by first name, last name and ID. An empty `items`
+        array means nothing was found.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - name: categoryId
+          in: query
+          required: false
+          description: An offered skill must belong to this catalog category.
+          schema:
+            type: string
+            format: uuid
+        - name: level
+          in: query
+          required: false
+          description: An offered skill must have this self-assessed level.
+          schema:
+            $ref: "#/components/schemas/SkillLevel"
+        - name: format
+          in: query
+          required: false
+          description: The student must accept this lesson format.
+          schema:
+            $ref: "#/components/schemas/LessonFormat"
+        - name: mutual
+          in: query
+          required: false
+          description: When true, only mutual matches are returned.
+          schema:
+            type: boolean
+            default: false
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: One page of students
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentSearchPage"
+              example:
+                items:
+                  - student:
+                      id: 60000000-0000-0000-0000-000000000003
+                      firstName: Марко
+                      lastName: Савчук
+                      university:
+                        id: 10000000-0000-0000-0000-000000000001
+                        name: Демонстраційний університет
+                      city: Львів
+                    teachingSkills:
+                      - skillId: 30000000-0000-0000-0000-000000000002
+                        categoryId: 20000000-0000-0000-0000-000000000002
+                        name: Photoshop
+                        level: INTERMEDIATE
+                    formats: [ONLINE]
+                    mutual: false
+                page: 1
+                pageSize: 20
+                total: 1
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "422":
+          description: A filter is invalid; `fields` names q, categoryId, level, format or mutual
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: validation_failed
+                  message: Some fields are invalid
+                  fields:
+                    level: Level must be BEGINNER, INTERMEDIATE or ADVANCED
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /students/{userId}:
+    get:
+      tags: [Discovery]
+      operationId: getStudentProfile
+      summary: Show another student's profile with skills, levels, formats and reviews (FR-05)
+      description: |
+        The same visibility rules as search apply; your own ID also returns 404 (use
+        `/me/profile`). `mutual` explains the match when the student is a mutual match,
+        otherwise it is null. `reviews` holds up to 20 newest reviews; `averageRating` is
+        null while there are none.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The student's profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [student]
+                properties:
+                  student:
+                    $ref: "#/components/schemas/StudentProfile"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: No visible student has this ID, or it is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: student_not_found
+                  message: Student was not found
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
 components:
   securitySchemes:
     sessionCookie:
@@ -759,6 +963,16 @@ components:
       in: cookie
       name: skillswap_session
   parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 1-based page number; each page has 20 items.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 1
     CSRFToken:
       name: X-CSRF-Token
       in: header
@@ -821,6 +1035,16 @@ components:
               level: BEGINNER
           eligibleForMatching: true
   responses:
+    InvalidPage:
+      description: The page query parameter is not a whole number from 1 to 500
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: invalid_page
+              message: page must be a whole number from 1 to 500
     Profile:
       description: The current profile
       content:
@@ -1284,3 +1508,189 @@ components:
               description: Field-level messages, present only for validation_failed.
               additionalProperties:
                 type: string
+    StudentSummary:
+      type: object
+      description: Another student's public card; it has no email or account status.
+      required: [id, firstName, lastName, university, city]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        university:
+          $ref: "#/components/schemas/Reference"
+        city:
+          type: string
+          description: Empty string when not set.
+    MutualMatch:
+      type: object
+      required: [student, canTeachYou, wantsToLearn, commonFormats]
+      properties:
+        student:
+          $ref: "#/components/schemas/StudentSummary"
+        canTeachYou:
+          type: array
+          description: The student's teaching skills that you want to learn, with the student's level; ordered by name.
+          items:
+            $ref: "#/components/schemas/UserSkill"
+        wantsToLearn:
+          type: array
+          description: Your teaching skills that the student wants to learn, with the student's current level; ordered by name.
+          items:
+            $ref: "#/components/schemas/UserSkill"
+        commonFormats:
+          type: array
+          description: Formats you can use together; OFFLINE appears only when you share a city.
+          items:
+            $ref: "#/components/schemas/LessonFormat"
+    MatchPage:
+      type: object
+      required: [items, page, pageSize, total, eligibleForMatching]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MutualMatch"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          description: Number of matches on all pages.
+        eligibleForMatching:
+          type: boolean
+          description: False when your own profile lacks a skill list, a format, or a city for offline lessons.
+    StudentCard:
+      type: object
+      required: [student, teachingSkills, formats, mutual]
+      properties:
+        student:
+          $ref: "#/components/schemas/StudentSummary"
+        teachingSkills:
+          type: array
+          description: All skills the student offers, ordered by name.
+          items:
+            $ref: "#/components/schemas/UserSkill"
+        formats:
+          type: array
+          items:
+            $ref: "#/components/schemas/LessonFormat"
+        mutual:
+          type: boolean
+          description: True when the student is also your mutual match.
+    StudentSearchPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudentCard"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          description: Number of students on all pages.
+    Review:
+      type: object
+      required: [id, author, rating, comment, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        author:
+          type: object
+          required: [id, firstName, lastName]
+          properties:
+            id:
+              type: string
+              format: uuid
+            firstName:
+              type: string
+            lastName:
+              type: string
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          description: Plain text; empty string when there is no comment.
+        createdAt:
+          type: string
+          format: date-time
+    StudentProfile:
+      type: object
+      required: [id, firstName, lastName, university, faculty, course, city, bio, formats,
+        teachingSkills, learningSkills, averageRating, reviewCount, reviews, mutual]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        university:
+          $ref: "#/components/schemas/Reference"
+        faculty:
+          allOf:
+            - $ref: "#/components/schemas/Reference"
+          type: object
+          nullable: true
+        course:
+          type: integer
+          nullable: true
+        city:
+          type: string
+        bio:
+          type: string
+          description: Plain text; clients must display it without interpreting HTML.
+        formats:
+          type: array
+          items:
+            $ref: "#/components/schemas/LessonFormat"
+        teachingSkills:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserSkill"
+        learningSkills:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserSkill"
+        averageRating:
+          type: number
+          nullable: true
+        reviewCount:
+          type: integer
+        reviews:
+          type: array
+          items:
+            $ref: "#/components/schemas/Review"
+        mutual:
+          type: object
+          nullable: true
+          required: [canTeachYou, wantsToLearn, commonFormats]
+          properties:
+            canTeachYou:
+              type: array
+              items:
+                $ref: "#/components/schemas/UserSkill"
+            wantsToLearn:
+              type: array
+              items:
+                $ref: "#/components/schemas/UserSkill"
+            commonFormats:
+              type: array
+              items:
+                $ref: "#/components/schemas/LessonFormat"

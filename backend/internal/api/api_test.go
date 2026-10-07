@@ -19,6 +19,7 @@ import (
 	"skillswap/backend/internal/core"
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
+	"skillswap/backend/internal/discovery"
 	"skillswap/backend/internal/mailer"
 	"skillswap/backend/internal/mailer/mailertest"
 	"skillswap/backend/internal/profile"
@@ -77,7 +78,7 @@ func testHandler(app *fakeApp) http.Handler {
 func postgresHandler(pool *pgxpool.Pool, mail mailer.IMailer) http.Handler {
 	store := data.NewPostgres(pool)
 	access := auth.NewService(store, store, mail, testAuthConfig, discardLogger())
-	return New(core.NewApplication(profile.NewService(store, store, store)), access, store, testSettings, discardLogger())
+	return New(core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store)), access, store, testSettings, discardLogger())
 }
 
 func request(t *testing.T, handler http.Handler, method, target string) *httptest.ResponseRecorder {
@@ -110,7 +111,7 @@ func TestOpenAPIContract(t *testing.T) {
 		t.Fatalf("Content-Type = %q", got)
 	}
 	for _, fragment := range []string{"openapi: 3.0.3", "/universities:", "/skills:", "/auth/login:", "/auth/reset-password:",
-		"/universities/{universityId}/faculties:", "/me/profile:", "/me/teaching-skills/{skillId}:", "/me/learning-skills:"} {
+		"/universities/{universityId}/faculties:", "/me/profile:", "/me/teaching-skills/{skillId}:", "/me/learning-skills:", "/me/matches:", "/students:", "/students/{userId}:"} {
 		if !strings.Contains(response.Body.String(), fragment) {
 			t.Fatalf("OpenAPI contract does not contain %q", fragment)
 		}

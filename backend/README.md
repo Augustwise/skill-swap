@@ -202,6 +202,77 @@ go run ./cmd/db seed
 
 The demo seed adds faculties of the demo university and the skills shown in onboarding.
 
+## Search and mutual matches (FR-04, FR-05)
+
+Migration `00004_discovery.sql` enables the `pg_trgm` extension and adds indexes for
+searching by a part of a skill name or a person's name, plus a reverse index on
+`user_blocks` so a block hides profiles in both directions. Back up a shared database
+before applying it (NFR-04):
+
+```bash
+pg_dump --format=custom --file=../backups/skillswap-before-00004.dump "$DATABASE_URL"
+go run ./cmd/db up
+go run ./cmd/db seed
+```
+
+The seed also adds 11 demo students (`demo.<name>@students.example.test`) who sign in
+with the local-only password `SkillSwapDemo2026`. Sign in as `demo.olha` to check the
+acceptance cases:
+
+| Student | Case as seen by Olha |
+| --- | --- |
+| `demo.andrii` | guitar ↔ Photoshop online: a mutual match |
+| `demo.taras` | the same pair, offline only, both in Kyiv: a mutual match |
+| `demo.marko` | teaches Photoshop but wants English: one-sided, not mutual |
+| `demo.kateryna` | teaches Photoshop, no learning skills: found by search only |
+| `demo.nataliia` | hidden profile: never shown |
+| `demo.viktor` | unverified email: never shown |
+| `demo.oleh` | blocked by Olha: never shown to her |
+
+`demo.sofiia` shares skills with Andrii and Taras but only the offline format in a
+different city, so she has no mutual matches. `demo.iryna` has two matches with a
+different number of skill pairs (Dmytro 3, Marko 2) to check the ordering.
+
+`GET /api/v1/me/matches?page=1` returns the signed-in user's mutual matches, 20 per page.
+It needs a session with a verified email, like the profile endpoints. Two students match
+when each teaches at least one catalog skill the other wants and they share a format;
+offline counts only in the same city (LR1 3.2). Each item explains the match:
+`canTeachYou` (their skills you want), `wantsToLearn` (your skills they want), and
+`commonFormats`. Students with more matching skills come first, then by name. The list
+is computed on every request, so skill changes apply at once. An incomplete own profile
+returns an empty list with `eligibleForMatching: false`; a page past the end returns an
+empty list with the real `total`.
+
+`GET /api/v1/students` searches students, 20 per page. All filters are optional and
+apply together:
+
+| Parameter | Meaning |
+| --- | --- |
+| `q` | part of an offered skill name or of the full name, case insensitive |
+| `categoryId`, `level` | an offered skill in this category and with this level; with a skill-name `q` it must be the same skill |
+| `format` | `ONLINE` or `OFFLINE`, one of the student's formats |
+| `mutual=true` | only mutual matches |
+| `page` | 1–500 |
+
+Only students who offer at least one skill are listed. Each item has the student card,
+all offered skills with levels, formats, and `mutual`; mutual matches come first. With
+the demo data, Olha's search for `Photoshop` returns Andrii, Taras, Kateryna and Marko,
+while `Photoshop` with `level=INTERMEDIATE` returns only Marko. No results is an empty
+`items` array with `total: 0`; invalid filters return 422 `validation_failed`.
+
+`GET /api/v1/students/{userId}` opens another student's profile: university, faculty,
+course, city, description, formats, both skill lists with levels, `averageRating`,
+`reviewCount` and up to 20 newest `reviews`. Reviews come from finished exchanges, which
+later sprints add, so the demo students have none yet. `mutual` explains the match
+(`canTeachYou`, `wantsToLearn`, `commonFormats`) or is null for one-sided interest. A
+hidden, blocked, unverified or unknown student, and the user's own ID, return 404
+`student_not_found`.
+
+Discovery never shows the user themselves, hidden profiles, suspended or deleted
+accounts, unverified emails, or blocks in either direction. The PostgreSQL tests in
+`internal/data/discovery_test.go` check these rules on the demo students; the test that
+changes skills runs inside a transaction that is rolled back.
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for
