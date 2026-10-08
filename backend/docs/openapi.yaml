@@ -27,6 +27,8 @@ info:
     Exchange requests (Sprint 5, FR-06 and FR-07) need a verified email. A request names
     one skill each student teaches the other, the format, and the number and length of
     sessions in each direction; both directions must add up to the same total time.
+    Accepting a request starts an exchange whose terms are copied from the students'
+    profiles at that moment, so later profile changes do not alter it.
 servers:
   - url: http://127.0.0.1:8080/api/v1
     description: Local development
@@ -37,6 +39,7 @@ tags:
   - name: Profile
   - name: Discovery
   - name: Exchange requests
+  - name: Exchanges
 paths:
   /openapi.yaml:
     get:
@@ -1146,6 +1149,88 @@ paths:
                   message: Request was not found
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
+  /exchange-requests/{requestId}/accept:
+    post:
+      tags: [Exchange requests]
+      operationId: acceptExchangeRequest
+      summary: Accept a request sent to you and start the exchange (FR-07)
+      description: |
+        Only the recipient can accept a request, and only while it is `PENDING`. The request
+        becomes ACCEPTED and an ACTIVE exchange is created in the same transaction, with the
+        skill names and levels copied as they are now. Repeating the action, or two
+        acceptances at the same time, return 200 with the same exchange; a second exchange is
+        never created. The request has no body.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The accepted request and the exchange it started
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request, exchange]
+                properties:
+                  request:
+                    $ref: "#/components/schemas/ExchangeRequest"
+                  exchange:
+                    $ref: "#/components/schemas/Exchange"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: |
+            You are the requester and cannot accept (`action_not_allowed`), or the email is
+            unverified (`email_not_verified`), the CSRF token is invalid (`csrf_invalid`) or
+            the origin is foreign (`origin_forbidden`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: action_not_allowed
+                  message: This action is not available for your role in the request
+        "404":
+          description: No request has this ID, you do not take part in it, or the ID is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: request_not_found
+                  message: Request was not found
+        "409":
+          description: |
+            The request has already been declined or withdrawn (`request_not_pending`), or it
+            can no longer be accepted (`request_outdated`): one of the students blocked the
+            other, an account is suspended or deleted, or one of the four skills was removed
+            from a profile. An outdated request stays PENDING, so its author can withdraw it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                notPending:
+                  value:
+                    error:
+                      code: request_not_pending
+                      message: The request has already been answered
+                outdated:
+                  value:
+                    error:
+                      code: request_outdated
+                      message: "The request can no longer be accepted: a student or one of the skills is no longer available"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
   /exchange-requests/{requestId}/decline:
     post:
       tags: [Exchange requests]
@@ -1280,6 +1365,50 @@ paths:
                 error:
                   code: request_not_pending
                   message: The request has already been answered
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /exchanges/{exchangeId}:
+    get:
+      tags: [Exchanges]
+      operationId: getExchange
+      summary: Show the terms of an exchange (FR-07)
+      description: |
+        Only the two participants can see an exchange. The terms come from the snapshots
+        taken on acceptance.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: exchangeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The exchange
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exchange]
+                properties:
+                  exchange:
+                    $ref: "#/components/schemas/Exchange"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: No exchange has this ID, you do not take part in it, or the ID is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: exchange_not_found
+                  message: Exchange was not found
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
 components:
@@ -2065,7 +2194,9 @@ components:
       enum: [PENDING, ACCEPTED, DECLINED, WITHDRAWN]
     RequestTerms:
       type: object
-      description: One direction of the exchange with the students' current levels.
+      description: |
+        One direction of the exchange. In a request the levels are the students' current
+        ones; in an exchange the name and levels are those copied on acceptance.
       required: [skill, teacherLevel, learnerLevel, sessions, durationMinutes]
       properties:
         skill:
@@ -2128,6 +2259,47 @@ components:
           type: string
           format: date-time
           nullable: true
+    ExchangeStatus:
+      type: string
+      description: Every exchange starts ACTIVE; the other statuses come in later sprints.
+      enum: [PLANNED, ACTIVE, PAUSED, COMPLETED, CANCELLED]
+    Exchange:
+      type: object
+      description: |
+        The same for both participants. `requesterTeaches` and `recipientTeaches` hold the
+        skill name and levels copied on acceptance, not the current profile values.
+      required: [id, requestId, status, format, totalSessions, requester, recipient, requesterTeaches,
+        recipientTeaches, startedAt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The accepted request that started the exchange.
+        status:
+          $ref: "#/components/schemas/ExchangeStatus"
+        format:
+          $ref: "#/components/schemas/LessonFormat"
+        totalSessions:
+          type: integer
+        requester:
+          $ref: "#/components/schemas/StudentSummary"
+        recipient:
+          $ref: "#/components/schemas/StudentSummary"
+        requesterTeaches:
+          $ref: "#/components/schemas/RequestTerms"
+        recipientTeaches:
+          $ref: "#/components/schemas/RequestTerms"
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
     ExchangeRequestPage:
       type: object
       required: [items, page, pageSize, total]

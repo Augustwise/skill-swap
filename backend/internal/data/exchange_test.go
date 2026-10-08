@@ -359,3 +359,149 @@ func TestUpdateRequestStatusAgainstPostgres(t *testing.T) {
 		t.Fatalf("WithinTx err = %v", err)
 	}
 }
+
+// Runs inside a transaction that is rolled back.
+// Skipped unless TEST_DATABASE_URL points to a migrated, demo-seeded database.
+func TestCreateExchangeAgainstPostgres(t *testing.T) {
+	store := openTestStore(t)
+	rollback := errors.New("roll back test data")
+	err := store.WithinTx(context.Background(), func(ctx context.Context) error {
+		if err := store.UpdateRequestStatus(ctx, demoTarasToOlha, RequestAccepted, demoOlha); err != nil {
+			t.Fatal(err)
+		}
+		id, err := store.CreateExchange(ctx, demoTarasToOlha, demoOlha)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, err := store.ExchangeByID(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e.ID != id || e.RequestID != demoTarasToOlha || e.Status != ExchangeActive || e.Format != "OFFLINE" ||
+			e.TotalSessions != 4 || e.StartedAt == nil || e.Requester.UserID != demoTaras || e.Recipient.UserID != demoOlha ||
+			e.Recipient.UniversityName == "" {
+			t.Fatalf("exchange = %+v", e)
+		}
+		taras := RequestTerms{SkillID: photoshop, CategoryID: e.RequesterTeaches.CategoryID, Name: "Photoshop",
+			TeacherLevel: "BEGINNER", LearnerLevel: "BEGINNER", Sessions: 2, DurationMinutes: 60}
+		if e.RequesterTeaches != taras || e.RequesterTeaches.CategoryID == "" {
+			t.Fatalf("Taras teaches %+v", e.RequesterTeaches)
+		}
+		olha := e.RecipientTeaches
+		if olha.SkillID != guitarSkill || olha.Name != "Гітара" || olha.TeacherLevel != "ADVANCED" || olha.Sessions != 2 {
+			t.Fatalf("Olha teaches %+v", olha)
+		}
+		if r, err := store.RequestByID(ctx, demoTarasToOlha); err != nil || r.ExchangeID != id {
+			t.Fatalf("request exchange ID = %q, err %v", r.ExchangeID, err)
+		}
+		var history int
+		if err := store.conn(ctx).QueryRow(ctx, `SELECT count(*) FROM exchange_status_history
+			WHERE exchange_id = $1 AND status = 'ACTIVE' AND changed_by_user_id = $2`, id, demoOlha).Scan(&history); err != nil || history != 1 {
+			t.Fatalf("history rows = %d, err %v", history, err)
+		}
+
+		// The terms are snapshots: later profile changes do not reach the exchange.
+		if err := store.UpdateUserSkillLevel(ctx, TeachingList, demoOlha, guitarSkill, "BEGINNER"); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.RemoveUserSkill(ctx, TeachingList, demoTaras, photoshop); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.conn(ctx).Exec(ctx, `UPDATE skills SET name = 'Photoshop CC' WHERE id = $1`, photoshop); err != nil {
+			t.Fatal(err)
+		}
+		after, err := store.ExchangeByID(ctx, id)
+		if err != nil || after.RequesterTeaches != taras || after.RecipientTeaches != olha {
+			t.Fatalf("after profile changes = %+v, err %v", after, err)
+		}
+
+		if _, err := store.ExchangeByID(ctx, "80000000-0000-0000-0000-000000000999"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("unknown exchange: err = %v", err)
+		}
+		if _, err := store.CreateExchange(ctx, "70000000-0000-0000-0000-000000000999", demoOlha); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("exchange for an unknown request: err = %v", err)
+		}
+		// The last statement: the unique source request fails and aborts the transaction.
+		if _, err := store.CreateExchange(ctx, demoTarasToOlha, demoOlha); err == nil {
+			t.Fatal("a second exchange for the same request was created")
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("WithinTx err = %v", err)
+	}
+}
+
+// Skipped unless TEST_DATABASE_URL points to a migrated, demo-seeded database.
+func TestCreateExchangeRollsBack(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	failure := errors.New("fail after the exchange was created")
+	err := store.WithinTx(ctx, func(ctx context.Context) error {
+		if err := store.UpdateRequestStatus(ctx, demoTarasToOlha, RequestAccepted, demoOlha); err != nil {
+			return err
+		}
+		if _, err := store.CreateExchange(ctx, demoTarasToOlha, demoOlha); err != nil {
+			return err
+		}
+		return failure
+	})
+	if !errors.Is(err, failure) {
+		t.Fatalf("WithinTx err = %v", err)
+	}
+	r, err := store.RequestByID(ctx, demoTarasToOlha)
+	if err != nil || r.Status != RequestPending || r.ExchangeID != "" || r.RespondedAt != nil {
+		t.Fatalf("request after the rollback = %+v, err %v", r, err)
+	}
+	history, err := store.RequestHistory(ctx, demoTarasToOlha)
+	if err != nil || len(history) != 1 {
+		t.Fatalf("history after the rollback = %+v, err %v", history, err)
+	}
+}
+
+// Skipped unless TEST_DATABASE_URL points to a migrated, demo-seeded database.
+func TestRequestIsCurrentAgainstPostgres(t *testing.T) {
+	store := openTestStore(t)
+	for _, test := range []struct {
+		name   string
+		change string // run before the check, then rolled back
+		want   bool
+	}{
+		{"untouched", ``, true},
+		{"recipient blocked the requester", `INSERT INTO user_blocks (blocker_id, blocked_id)
+			VALUES ('` + demoOlha + `', '` + demoTaras + `')`, false},
+		{"requester blocked the recipient", `INSERT INTO user_blocks (blocker_id, blocked_id)
+			VALUES ('` + demoTaras + `', '` + demoOlha + `')`, false},
+		{"requester suspended", `UPDATE users SET account_status = 'SUSPENDED' WHERE id = '` + demoTaras + `'`, false},
+		{"recipient deleted", `UPDATE users SET deleted_at = now() WHERE id = '` + demoOlha + `'`, false},
+		{"requester stopped teaching", `UPDATE user_teaching_skills SET is_active = false
+			WHERE user_id = '` + demoTaras + `' AND skill_id = '` + photoshop + `'`, false},
+		{"recipient stopped learning", `UPDATE user_learning_skills SET is_active = false
+			WHERE user_id = '` + demoOlha + `' AND skill_id = '` + photoshop + `'`, false},
+		{"recipient stopped teaching", `UPDATE user_teaching_skills SET is_active = false
+			WHERE user_id = '` + demoOlha + `' AND skill_id = '` + guitarSkill + `'`, false},
+		{"requester stopped learning", `UPDATE user_learning_skills SET is_active = false
+			WHERE user_id = '` + demoTaras + `' AND skill_id = '` + guitarSkill + `'`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rollback := errors.New("roll back test data")
+			err := store.WithinTx(context.Background(), func(ctx context.Context) error {
+				if test.change != "" {
+					if _, err := store.conn(ctx).Exec(ctx, test.change); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if current, err := store.RequestIsCurrent(ctx, demoTarasToOlha); err != nil || current != test.want {
+					t.Fatalf("current = %v, err %v", current, err)
+				}
+				return rollback
+			})
+			if !errors.Is(err, rollback) {
+				t.Fatalf("WithinTx err = %v", err)
+			}
+		})
+	}
+	if current, err := store.RequestIsCurrent(context.Background(), "70000000-0000-0000-0000-000000000999"); err != nil || current {
+		t.Fatalf("unknown request: current = %v, err %v", current, err)
+	}
+}

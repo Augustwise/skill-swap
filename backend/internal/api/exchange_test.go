@@ -273,3 +273,88 @@ func TestAnswerRequestAccess(t *testing.T) {
 		t.Fatalf("GET status = %d, Allow = %q", response.Code, response.Header().Get("Allow"))
 	}
 }
+
+func TestAcceptRequest(t *testing.T) {
+	e, olha, andrii, andriiID := newRequestEnv(t)
+	response := send(t, e.handler, http.MethodPost, requestsPath, requestBody(andriiID, datatest.GuitarSkillID, datatest.PhotoshopSkillID), olha)
+	expectStatus(t, response, http.StatusCreated)
+	var created struct {
+		Request exchangeRequest `json:"request"`
+	}
+	decodeJSON(t, response, &created)
+	path := requestsPath + "/" + created.Request.ID + "/accept"
+
+	assertProblem(t, send(t, e.handler, http.MethodPost, path, "", nil), http.StatusUnauthorized, "unauthenticated")
+	assertProblem(t, send(t, e.handler, http.MethodPost, path, "", &session{cookie: andrii.cookie}), http.StatusForbidden, "csrf_invalid")
+	assertProblem(t, send(t, e.handler, http.MethodPost, path, "", olha), http.StatusForbidden, "action_not_allowed")
+
+	type acceptance struct {
+		Request  exchangeRequest  `json:"request"`
+		Exchange exchangeResponse `json:"exchange"`
+	}
+	accept := func() acceptance {
+		t.Helper()
+		response := send(t, e.handler, http.MethodPost, path, "", andrii)
+		expectStatus(t, response, http.StatusOK)
+		var body acceptance
+		decodeJSON(t, response, &body)
+		return body
+	}
+	first := accept()
+	r, x := first.Request, first.Exchange
+	if r.Status != "ACCEPTED" || r.RespondedAt == nil || r.ExchangeID == nil || *r.ExchangeID != x.ID {
+		t.Fatalf("request = %+v", r)
+	}
+	if x.ID == "" || x.RequestID == nil || *x.RequestID != r.ID || x.Status != "ACTIVE" || x.Format != "ONLINE" ||
+		x.TotalSessions != 3 || x.StartedAt == nil || x.Requester.ID != e.meID(t, olha) || x.Recipient.ID != andriiID ||
+		x.RequesterTeaches != created.Request.RequesterTeaches || x.RecipientTeaches != created.Request.RecipientTeaches {
+		t.Fatalf("exchange = %+v", x)
+	}
+	if again := accept(); again.Exchange.ID != x.ID {
+		t.Fatalf("accepted again: exchange %s, want %s", again.Exchange.ID, x.ID)
+	}
+
+	exchangePath := "/api/v1/exchanges/" + x.ID
+	for _, s := range []*session{olha, andrii} {
+		response := send(t, e.handler, http.MethodGet, exchangePath, "", s)
+		expectStatus(t, response, http.StatusOK)
+		var body struct {
+			Exchange exchangeResponse `json:"exchange"`
+		}
+		decodeJSON(t, response, &body)
+		if body.Exchange.ID != x.ID || body.Exchange.RequesterTeaches != x.RequesterTeaches {
+			t.Fatalf("exchange details = %+v", body.Exchange)
+		}
+	}
+	stranger := e.student(t, "marko@students.example.test", `["ONLINE"]`, "Київ", datatest.PhotoshopSkillID, datatest.GuitarSkillID)
+	assertProblem(t, send(t, e.handler, http.MethodGet, exchangePath, "", stranger), http.StatusNotFound, "exchange_not_found")
+	assertProblem(t, send(t, e.handler, http.MethodGet, "/api/v1/exchanges/latest", "", olha), http.StatusNotFound, "exchange_not_found")
+	assertProblem(t, send(t, e.handler, http.MethodGet, exchangePath, "", nil), http.StatusUnauthorized, "unauthenticated")
+	response = send(t, e.handler, http.MethodPost, exchangePath, "", olha)
+	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet {
+		t.Fatalf("POST status = %d, Allow = %q", response.Code, response.Header().Get("Allow"))
+	}
+}
+
+func TestAcceptRequestErrors(t *testing.T) {
+	e, olha, andrii, andriiID := newRequestEnv(t)
+	create := func() string {
+		t.Helper()
+		response := send(t, e.handler, http.MethodPost, requestsPath, requestBody(andriiID, datatest.GuitarSkillID, datatest.PhotoshopSkillID), olha)
+		expectStatus(t, response, http.StatusCreated)
+		var created struct {
+			Request exchangeRequest `json:"request"`
+		}
+		decodeJSON(t, response, &created)
+		return requestsPath + "/" + created.Request.ID
+	}
+
+	declined := create()
+	expectStatus(t, send(t, e.handler, http.MethodPost, declined+"/decline", "", andrii), http.StatusOK)
+	assertProblem(t, send(t, e.handler, http.MethodPost, declined+"/accept", "", andrii), http.StatusConflict, "request_not_pending")
+
+	outdated := create()
+	expectStatus(t, send(t, e.handler, http.MethodDelete, "/api/v1/me/teaching-skills/"+datatest.GuitarSkillID, "", olha), http.StatusOK)
+	assertProblem(t, send(t, e.handler, http.MethodPost, outdated+"/accept", "", andrii), http.StatusConflict, "request_outdated")
+	assertProblem(t, send(t, e.handler, http.MethodPost, requestsPath+"/latest/accept", "", andrii), http.StatusNotFound, "request_not_found")
+}

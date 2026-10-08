@@ -171,3 +171,54 @@ func (m *Memory) UpdateRequestStatus(_ context.Context, requestID, status, chang
 	m.history[requestID] = append(m.history[requestID], change)
 	return nil
 }
+
+// RequestIsCurrent has no blocks to check; the PostgreSQL tests cover them.
+func (m *Memory) RequestIsCurrent(_ context.Context, requestID string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.requests[requestID]
+	if !ok {
+		return false, nil
+	}
+	requester, recipient := m.users[r.Requester.UserID], m.users[r.Recipient.UserID]
+	if requester == nil || recipient == nil || requester.user.Status != "ACTIVE" || recipient.user.Status != "ACTIVE" {
+		return false, nil
+	}
+	_, ok1 := requester.skills[data.TeachingList][r.RequesterTeaches.SkillID]
+	_, ok2 := recipient.skills[data.LearningList][r.RequesterTeaches.SkillID]
+	_, ok3 := recipient.skills[data.TeachingList][r.RecipientTeaches.SkillID]
+	_, ok4 := requester.skills[data.LearningList][r.RecipientTeaches.SkillID]
+	return ok1 && ok2 && ok3 && ok4, nil
+}
+
+func (m *Memory) CreateExchange(_ context.Context, requestID, _ string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.requests[requestID]
+	if !ok {
+		return "", data.ErrNotFound
+	}
+	if r.ExchangeID != "" {
+		return "", fmt.Errorf("request %s already has an exchange", requestID)
+	}
+	id := fmt.Sprintf("80000000-0000-0000-0000-%012d", len(m.exchanges)+1)
+	now := time.Now().UTC()
+	m.exchanges[id] = &data.Exchange{
+		ID: id, RequestID: r.ID, Status: data.ExchangeActive, Format: r.Format, TotalSessions: r.TotalSessions,
+		Requester: r.Requester, Recipient: r.Recipient,
+		RequesterTeaches: r.RequesterTeaches, RecipientTeaches: r.RecipientTeaches,
+		StartedAt: &now, CreatedAt: now,
+	}
+	r.ExchangeID = id
+	return id, nil
+}
+
+func (m *Memory) ExchangeByID(_ context.Context, exchangeID string) (data.Exchange, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.exchanges[exchangeID]
+	if !ok {
+		return data.Exchange{}, data.ErrNotFound
+	}
+	return *e, nil
+}

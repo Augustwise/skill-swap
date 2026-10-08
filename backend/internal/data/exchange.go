@@ -14,6 +14,8 @@ const (
 	RequestAccepted  = "ACCEPTED"
 	RequestDeclined  = "DECLINED"
 	RequestWithdrawn = "WITHDRAWN"
+
+	ExchangeActive = "ACTIVE"
 )
 
 var ErrDuplicateRequest = errors.New("a pending request for this pair of skills already exists")
@@ -103,6 +105,22 @@ type RequestState struct {
 	Status      string
 }
 
+// Exchange terms come from the snapshots taken when the request was accepted, so later
+// profile changes do not alter them.
+type Exchange struct {
+	ID               string
+	RequestID        string
+	Status           string
+	Format           string
+	TotalSessions    int
+	Requester        RequestParty
+	Recipient        RequestParty
+	RequesterTeaches RequestTerms
+	RecipientTeaches RequestTerms
+	StartedAt        *time.Time
+	CreatedAt        time.Time
+}
+
 type IExchangeData interface {
 	RequestRecipient(ctx context.Context, senderID, recipientID string) (RequestRecipient, error)
 	CreateRequest(ctx context.Context, request NewRequest) (string, error)
@@ -111,6 +129,9 @@ type IExchangeData interface {
 	RequestHistory(ctx context.Context, requestID string) ([]RequestStatusChange, error)
 	LockRequest(ctx context.Context, requestID string) (RequestState, error)
 	UpdateRequestStatus(ctx context.Context, requestID, status, changedByID string) error
+	RequestIsCurrent(ctx context.Context, requestID string) (bool, error)
+	CreateExchange(ctx context.Context, requestID, acceptedByID string) (string, error)
+	ExchangeByID(ctx context.Context, exchangeID string) (Exchange, error)
 }
 
 var _ IExchangeData = (*Postgres)(nil)
@@ -281,4 +302,81 @@ func (p *Postgres) UpdateRequestStatus(ctx context.Context, requestID, status, c
 		return ErrNotFound
 	}
 	return nil
+}
+
+// RequestIsCurrent reports whether both students are still active, neither has blocked the
+// other and all four skill rows are still in their lists.
+func (p *Postgres) RequestIsCurrent(ctx context.Context, requestID string) (bool, error) {
+	var current bool
+	err := p.conn(ctx).QueryRow(ctx, `SELECT EXISTS (SELECT 1
+		FROM exchange_requests r
+		JOIN users rq ON rq.id = r.requester_id AND rq.deleted_at IS NULL AND rq.account_status = 'ACTIVE'
+		JOIN users rc ON rc.id = r.recipient_id AND rc.deleted_at IS NULL AND rc.account_status = 'ACTIVE'
+		JOIN user_teaching_skills rt ON rt.id = r.requester_teaching_skill_id AND rt.is_active
+		JOIN user_learning_skills cl ON cl.id = r.recipient_learning_skill_id AND cl.is_active
+		JOIN user_teaching_skills ct ON ct.id = r.recipient_teaching_skill_id AND ct.is_active
+		JOIN user_learning_skills rl ON rl.id = r.requester_learning_skill_id AND rl.is_active
+		WHERE r.id = $1 AND NOT EXISTS (SELECT 1 FROM user_blocks b
+			WHERE (b.blocker_id = rq.id AND b.blocked_id = rc.id) OR (b.blocker_id = rc.id AND b.blocked_id = rq.id)))`,
+		requestID).Scan(&current)
+	return current, err
+}
+
+// CreateExchange starts the exchange agreed in the request and copies the skill names and
+// levels as they are now.
+func (p *Postgres) CreateExchange(ctx context.Context, requestID, acceptedByID string) (string, error) {
+	var id string
+	err := p.conn(ctx).QueryRow(ctx, `WITH r AS (
+			SELECT * FROM exchange_requests WHERE id = $1
+		), created AS (
+			INSERT INTO exchanges (source_request_id, user_a_id, user_b_id, status, total_sessions, format, started_at)
+			SELECT id, requester_id, recipient_id, 'ACTIVE', total_sessions, format, now() FROM r
+			RETURNING id, created_at
+		), commitments AS (
+			INSERT INTO exchange_skill_commitments (exchange_id, teacher_id, learner_id, teaching_skill_id,
+				learning_skill_id, planned_sessions, duration_minutes, skill_name_snapshot,
+				teaching_level_snapshot, learning_level_snapshot)
+			SELECT created.id, t.user_id, l.user_id, t.id, l.id, x.sessions, x.duration, s.name, t.level, l.current_level
+			FROM created CROSS JOIN r
+			CROSS JOIN LATERAL (VALUES
+				(r.requester_teaching_skill_id, r.recipient_learning_skill_id, r.requester_sessions, r.requester_duration_minutes),
+				(r.recipient_teaching_skill_id, r.requester_learning_skill_id, r.recipient_sessions, r.recipient_duration_minutes)
+			) AS x (teaching_id, learning_id, sessions, duration)
+			JOIN user_teaching_skills t ON t.id = x.teaching_id
+			JOIN user_learning_skills l ON l.id = x.learning_id
+			JOIN skills s ON s.id = t.skill_id
+		)
+		INSERT INTO exchange_status_history (exchange_id, status, changed_by_user_id, created_at)
+		SELECT id, 'ACTIVE', $2, created_at FROM created
+		RETURNING exchange_id`, requestID, acceptedByID).Scan(&id)
+	if err != nil {
+		return "", notFound(err)
+	}
+	return id, nil
+}
+
+func commitmentTerms(teacher string) string {
+	return `(SELECT json_build_object('SkillID', s.id, 'CategoryID', s.category_id, 'Name', c.skill_name_snapshot,
+		'TeacherLevel', c.teaching_level_snapshot, 'LearnerLevel', c.learning_level_snapshot,
+		'Sessions', c.planned_sessions, 'DurationMinutes', c.duration_minutes)
+		FROM exchange_skill_commitments c
+		JOIN user_teaching_skills t ON t.id = c.teaching_skill_id
+		JOIN skills s ON s.id = t.skill_id
+		WHERE c.exchange_id = e.id AND c.teacher_id = ` + teacher + `)`
+}
+
+func (p *Postgres) ExchangeByID(ctx context.Context, exchangeID string) (Exchange, error) {
+	var e Exchange
+	err := p.conn(ctx).QueryRow(ctx, `SELECT e.id, COALESCE(e.source_request_id::text, ''), e.status::text,
+			e.format::text, e.total_sessions, `+requestParty("ua")+`, `+requestParty("ub")+`,
+			`+commitmentTerms("e.user_a_id")+`, `+commitmentTerms("e.user_b_id")+`, e.started_at, e.created_at
+		FROM exchanges e
+		JOIN users ua ON ua.id = e.user_a_id
+		JOIN users ub ON ub.id = e.user_b_id
+		WHERE e.id = $1`, exchangeID).Scan(&e.ID, &e.RequestID, &e.Status, &e.Format, &e.TotalSessions,
+		&e.Requester, &e.Recipient, &e.RequesterTeaches, &e.RecipientTeaches, &e.StartedAt, &e.CreatedAt)
+	if err != nil {
+		return Exchange{}, notFound(err)
+	}
+	return e, nil
 }
