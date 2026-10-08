@@ -37,6 +37,8 @@ var (
 	ErrRequestNotFound    = errors.New("request was not found or the user does not take part in it")
 	ErrActionNotAllowed   = errors.New("this action is not available for the user's role in the request")
 	ErrRequestNotPending  = errors.New("request has already been answered")
+	ErrRequestOutdated    = errors.New("request can no longer be accepted")
+	ErrExchangeNotFound   = errors.New("exchange was not found or the user does not take part in it")
 )
 
 type Service struct {
@@ -195,6 +197,64 @@ func (s *Service) answerRequest(ctx context.Context, userID, requestID string, a
 		return err
 	})
 	return answered, err
+}
+
+type Acceptance struct {
+	Request  data.ExchangeRequest
+	Exchange data.Exchange
+}
+
+// AcceptRequest returns the same exchange when the acceptance is repeated. A request that
+// is no longer current stays pending, so its author can still withdraw it.
+func (s *Service) AcceptRequest(ctx context.Context, userID, requestID string) (Acceptance, error) {
+	var accepted Acceptance
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		request, err := s.lockRequest(ctx, userID, requestID, recipient)
+		if err != nil {
+			return err
+		}
+		switch request.Status {
+		case data.RequestAccepted:
+		case data.RequestPending:
+			current, err := s.exchanges.RequestIsCurrent(ctx, request.ID)
+			if err != nil {
+				return err
+			}
+			if !current {
+				return ErrRequestOutdated
+			}
+			if err := s.exchanges.UpdateRequestStatus(ctx, request.ID, data.RequestAccepted, userID); err != nil {
+				return err
+			}
+			if _, err := s.exchanges.CreateExchange(ctx, request.ID, userID); err != nil {
+				return err
+			}
+		default:
+			return ErrRequestNotPending
+		}
+		if accepted.Request, err = s.exchanges.RequestByID(ctx, request.ID); err != nil {
+			return err
+		}
+		accepted.Exchange, err = s.exchanges.ExchangeByID(ctx, accepted.Request.ExchangeID)
+		return err
+	})
+	return accepted, err
+}
+
+func (s *Service) Exchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error) {
+	if !validate.UUID(exchangeID) {
+		return data.Exchange{}, ErrExchangeNotFound
+	}
+	exchange, err := s.exchanges.ExchangeByID(ctx, strings.ToLower(exchangeID))
+	switch {
+	case errors.Is(err, data.ErrNotFound):
+		return data.Exchange{}, ErrExchangeNotFound
+	case err != nil:
+		return data.Exchange{}, err
+	case userID != exchange.Requester.UserID && userID != exchange.Recipient.UserID:
+		return data.Exchange{}, ErrExchangeNotFound
+	}
+	return exchange, nil
 }
 
 // lockRequest must run inside a transaction: the row stays locked until it ends.

@@ -33,6 +33,7 @@ type Memory struct {
 	settings     map[string]requestSettings
 	requests     map[string]*data.ExchangeRequest
 	history      map[string][]data.RequestStatusChange
+	exchanges    map[string]*data.Exchange
 }
 
 type catalogSkill struct {
@@ -92,6 +93,7 @@ func NewMemory() *Memory {
 		settings:  map[string]requestSettings{},
 		requests:  map[string]*data.ExchangeRequest{},
 		history:   map[string][]data.RequestStatusChange{},
+		exchanges: map[string]*data.Exchange{},
 	}
 }
 

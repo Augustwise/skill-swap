@@ -164,6 +164,58 @@ func (a *API) answerRequest(answer answerFunc) userHandler {
 	}
 }
 
+type exchangeResponse struct {
+	ID               string         `json:"id"`
+	RequestID        *string        `json:"requestId"`
+	Status           string         `json:"status"`
+	Format           string         `json:"format"`
+	TotalSessions    int            `json:"totalSessions"`
+	Requester        studentSummary `json:"requester"`
+	Recipient        studentSummary `json:"recipient"`
+	RequesterTeaches requestTerms   `json:"requesterTeaches"`
+	RecipientTeaches requestTerms   `json:"recipientTeaches"`
+	StartedAt        *time.Time     `json:"startedAt"`
+	CreatedAt        time.Time      `json:"createdAt"`
+}
+
+func toExchange(e data.Exchange) exchangeResponse {
+	response := exchangeResponse{
+		ID: e.ID, Status: e.Status, Format: e.Format, TotalSessions: e.TotalSessions,
+		Requester: toRequestParty(e.Requester), Recipient: toRequestParty(e.Recipient),
+		RequesterTeaches: toRequestTerms(e.RequesterTeaches), RecipientTeaches: toRequestTerms(e.RecipientTeaches),
+		StartedAt: e.StartedAt, CreatedAt: e.CreatedAt,
+	}
+	if e.RequestID != "" {
+		response.RequestID = &e.RequestID
+	}
+	return response
+}
+
+func (a *API) acceptRequest(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
+	ctx, cancel := context.WithTimeout(r.Context(), exchangeTimeout)
+	defer cancel()
+	accepted, err := a.app.AcceptRequest(ctx, current.ID, r.PathValue("requestId"))
+	if err != nil {
+		a.exchangeError(w, err)
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{
+		"request":  toExchangeRequest(accepted.Request),
+		"exchange": toExchange(accepted.Exchange),
+	})
+}
+
+func (a *API) exchangeDetails(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
+	ctx, cancel := context.WithTimeout(r.Context(), exchangeTimeout)
+	defer cancel()
+	found, err := a.app.Exchange(ctx, current.ID, r.PathValue("exchangeId"))
+	if err != nil {
+		a.exchangeError(w, err)
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{"exchange": toExchange(found)})
+}
+
 func (a *API) exchangeError(w http.ResponseWriter, err error) {
 	var invalid *profile.ValidationError
 	switch {
@@ -183,6 +235,11 @@ func (a *API) exchangeError(w http.ResponseWriter, err error) {
 		problem(w, http.StatusForbidden, "action_not_allowed", "This action is not available for your role in the request")
 	case errors.Is(err, exchange.ErrRequestNotPending):
 		problem(w, http.StatusConflict, "request_not_pending", "The request has already been answered")
+	case errors.Is(err, exchange.ErrRequestOutdated):
+		problem(w, http.StatusConflict, "request_outdated",
+			"The request can no longer be accepted: a student or one of the skills is no longer available")
+	case errors.Is(err, exchange.ErrExchangeNotFound):
+		problem(w, http.StatusNotFound, "exchange_not_found", "Exchange was not found")
 	case errors.Is(err, exchange.ErrInvalidPage):
 		problem(w, http.StatusBadRequest, "invalid_page", fmt.Sprintf("page must be a whole number from 1 to %d", exchange.MaxPage))
 	default:

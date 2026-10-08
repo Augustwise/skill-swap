@@ -75,6 +75,8 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	mux.HandleFunc("/api/v1/exchange-requests/{requestId}", getOnly(a.withVerifiedUser(a.requestDetails)))
 	mux.HandleFunc("/api/v1/exchange-requests/{requestId}/decline", a.postOnly(a.withVerifiedUser(a.answerRequest(a.app.DeclineRequest))))
 	mux.HandleFunc("/api/v1/exchange-requests/{requestId}/withdraw", a.postOnly(a.withVerifiedUser(a.answerRequest(a.app.WithdrawRequest))))
+	mux.HandleFunc("/api/v1/exchange-requests/{requestId}/accept", a.postOnly(a.withVerifiedUser(a.acceptRequest)))
+	mux.HandleFunc("/api/v1/exchanges/{exchangeId}", getOnly(a.withVerifiedUser(a.exchangeDetails)))
 	mux.HandleFunc("/api/v1/me/exchange-requests", getOnly(a.withVerifiedUser(a.listRequests)))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		problem(w, http.StatusNotFound, "not_found", "Resource was not found")

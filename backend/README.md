@@ -372,6 +372,36 @@ can send a new request. With the demo data, Olha can decline Taras's request, an
 declining it again returns 200; Taras then gets `request_not_pending` when he tries to
 withdraw it.
 
+`POST /api/v1/exchange-requests/{requestId}/accept` lets the recipient accept a pending
+request. It has the same session, CSRF and origin rules and takes no body. In one
+transaction it locks the request, checks that it can still be accepted, sets
+`ACCEPTED`, `respondedAt` and a history item, and creates an `ACTIVE` exchange: the
+requester is `user_a`, the recipient `user_b`, with the request's format and
+`totalSessions`, two skill commitments and an `ACTIVE` exchange history item. Each
+commitment copies the skill name, the teacher's level, the learner's current level and
+the sessions and minutes, so later profile changes do not alter the exchange.
+
+The response is 200 with `{ request, exchange }`. Accepting again, or two acceptances at
+the same time, return the same exchange; `UNIQUE (source_request_id)` guards it in the
+database too.
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `request_not_found` | 404 | no request has this ID, or you do not take part in it |
+| `action_not_allowed` | 403 | the requester tries to accept |
+| `request_not_pending` | 409 | the request was declined or withdrawn |
+| `request_outdated` | 409 | one student blocked the other, an account is suspended or deleted, or one of the four skills was removed from a profile; the request stays pending and its author can withdraw it |
+
+`GET /api/v1/exchanges/{exchangeId}` returns `{ exchange }` with the terms from those
+copies. Only the two participants see it; anyone else, an unknown ID or a value that is
+not a UUID gets 404 `exchange_not_found`. The list of exchanges comes with FR-10.
+
+With the demo data, Olha can accept Taras's request and open the exchange. Do this only
+on your own database: the seed does not reset an answered demo request.
+`TestAcceptRequestConcurrentlyAgainstPostgres` commits its data, because two parallel
+acceptances need separate transactions; it creates its own students and deletes them
+afterwards.
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for

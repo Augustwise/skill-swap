@@ -469,3 +469,135 @@ func TestDeclinedRequestFreesSkillPair(t *testing.T) {
 		t.Fatalf("a new request after the decline: err = %v", err)
 	}
 }
+
+func TestAcceptRequest(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	created, err := f.service.CreateRequest(ctx, f.olha, f.request())
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := f.service.AcceptRequest(ctx, f.andrii, strings.ToUpper(created.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, e := accepted.Request, accepted.Exchange
+	if r.ID != created.ID || r.Status != data.RequestAccepted || r.RespondedAt == nil || r.ExchangeID == "" || r.ExchangeID != e.ID {
+		t.Fatalf("request = %+v", r)
+	}
+	if e.RequestID != created.ID || e.Status != data.ExchangeActive || e.Format != created.Format || e.TotalSessions != 3 ||
+		e.Requester.UserID != f.olha || e.Recipient.UserID != f.andrii || e.StartedAt == nil ||
+		e.RequesterTeaches != created.RequesterTeaches || e.RecipientTeaches != created.RecipientTeaches {
+		t.Fatalf("exchange = %+v", e)
+	}
+	history, _ := f.store.RequestHistory(ctx, created.ID)
+	if len(history) != 2 || history[1].Status != data.RequestAccepted || history[1].ChangedByID != f.andrii {
+		t.Fatalf("history = %+v", history)
+	}
+
+	// Accepting again, e.g. after a lost response, returns the same exchange.
+	again, err := f.service.AcceptRequest(ctx, f.andrii, created.ID)
+	if err != nil || again.Exchange.ID != e.ID || !again.Request.RespondedAt.Equal(*r.RespondedAt) {
+		t.Fatalf("accepted again = %+v, err %v", again, err)
+	}
+	if history, _ := f.store.RequestHistory(ctx, created.ID); len(history) != 2 {
+		t.Fatalf("history after the repeat = %+v", history)
+	}
+	if _, err := f.service.DeclineRequest(ctx, f.andrii, created.ID); !errors.Is(err, ErrRequestNotPending) {
+		t.Fatalf("decline an accepted request: err = %v", err)
+	}
+}
+
+func TestAcceptRequestErrors(t *testing.T) {
+	ctx := context.Background()
+	for _, test := range []struct {
+		name   string
+		byOlha bool
+		status string
+		want   error
+	}{
+		{"requester accepts", true, data.RequestPending, ErrActionNotAllowed},
+		{"declined request", false, data.RequestDeclined, ErrRequestNotPending},
+		{"withdrawn request", false, data.RequestWithdrawn, ErrRequestNotPending},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFixture(t)
+			created, err := f.service.CreateRequest(ctx, f.olha, f.request())
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.store.SetRequestStatus(created.ID, test.status)
+			user := f.andrii
+			if test.byOlha {
+				user = f.olha
+			}
+			if _, err := f.service.AcceptRequest(ctx, user, created.ID); !errors.Is(err, test.want) {
+				t.Fatalf("err = %v, want %v", err, test.want)
+			}
+			if r, _ := f.store.RequestByID(ctx, created.ID); r.Status != test.status || r.ExchangeID != "" {
+				t.Fatalf("request = %+v", r)
+			}
+		})
+	}
+
+	f := newFixture(t)
+	created, err := f.service.CreateRequest(ctx, f.olha, f.request())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stranger := f.student(t, "marko@students.example.test", datatest.DemoUniversityID, "Київ", []string{data.FormatOnline},
+		datatest.PhotoshopSkillID, datatest.GuitarSkillID)
+	for _, test := range []struct{ name, user, id string }{
+		{"not a participant", stranger, created.ID},
+		{"unknown request", f.andrii, "70000000-0000-0000-0000-000000000999"},
+		{"not a UUID", f.andrii, "request"},
+	} {
+		if _, err := f.service.AcceptRequest(ctx, test.user, test.id); !errors.Is(err, ErrRequestNotFound) {
+			t.Fatalf("%s: err = %v", test.name, err)
+		}
+	}
+
+	// An outdated request stays pending, so its author can still withdraw it.
+	if err := f.store.RemoveUserSkill(ctx, data.TeachingList, f.olha, datatest.GuitarSkillID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AcceptRequest(ctx, f.andrii, created.ID); !errors.Is(err, ErrRequestOutdated) {
+		t.Fatalf("a removed skill: err = %v", err)
+	}
+	if r, _ := f.store.RequestByID(ctx, created.ID); r.Status != data.RequestPending || r.ExchangeID != "" {
+		t.Fatalf("outdated request = %+v", r)
+	}
+	if _, err := f.service.WithdrawRequest(ctx, f.olha, created.ID); err != nil {
+		t.Fatalf("withdraw an outdated request: err = %v", err)
+	}
+}
+
+func TestExchange(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	created, err := f.service.CreateRequest(ctx, f.olha, f.request())
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := f.service.AcceptRequest(ctx, f.andrii, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, user := range []string{f.olha, f.andrii} {
+		e, err := f.service.Exchange(ctx, user, strings.ToUpper(accepted.Exchange.ID))
+		if err != nil || e.ID != accepted.Exchange.ID {
+			t.Fatalf("exchange = %+v, err %v", e, err)
+		}
+	}
+	stranger := f.student(t, "marko@students.example.test", datatest.DemoUniversityID, "Київ", []string{data.FormatOnline},
+		datatest.PhotoshopSkillID, datatest.GuitarSkillID)
+	for _, test := range []struct{ name, user, id string }{
+		{"not a participant", stranger, accepted.Exchange.ID},
+		{"unknown exchange", f.olha, "80000000-0000-0000-0000-000000000999"},
+		{"not a UUID", f.olha, "exchange"},
+	} {
+		if _, err := f.service.Exchange(ctx, test.user, test.id); !errors.Is(err, ErrExchangeNotFound) {
+			t.Fatalf("%s: err = %v", test.name, err)
+		}
+	}
+}

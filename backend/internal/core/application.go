@@ -30,6 +30,8 @@ type IApplication interface {
 	RequestDetails(ctx context.Context, userID, requestID string) (exchange.RequestDetails, error)
 	DeclineRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error)
 	WithdrawRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error)
+	AcceptRequest(ctx context.Context, userID, requestID string) (exchange.Acceptance, error)
+	Exchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error)
 }
 
 type Application struct {
@@ -110,4 +112,12 @@ func (a *Application) DeclineRequest(ctx context.Context, userID, requestID stri
 
 func (a *Application) WithdrawRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error) {
 	return a.exchanges.WithdrawRequest(ctx, userID, requestID)
+}
+
+func (a *Application) AcceptRequest(ctx context.Context, userID, requestID string) (exchange.Acceptance, error) {
+	return a.exchanges.AcceptRequest(ctx, userID, requestID)
+}
+
+func (a *Application) Exchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error) {
+	return a.exchanges.Exchange(ctx, userID, exchangeID)
 }
