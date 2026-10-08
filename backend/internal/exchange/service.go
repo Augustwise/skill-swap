@@ -35,6 +35,8 @@ var (
 	ErrDuplicateRequest   = errors.New("a pending request for this pair of skills already exists")
 	ErrInvalidPage        = errors.New("page is out of range")
 	ErrRequestNotFound    = errors.New("request was not found or the user does not take part in it")
+	ErrActionNotAllowed   = errors.New("this action is not available for the user's role in the request")
+	ErrRequestNotPending  = errors.New("request has already been answered")
 )
 
 type Service struct {
@@ -155,6 +157,63 @@ func (s *Service) RequestDetails(ctx context.Context, userID, requestID string) 
 		return RequestDetails{}, err
 	}
 	return RequestDetails{Request: request, History: history}, nil
+}
+
+type role int
+
+const (
+	requester role = iota
+	recipient
+)
+
+func (s *Service) DeclineRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error) {
+	return s.answerRequest(ctx, userID, requestID, recipient, data.RequestDeclined)
+}
+
+func (s *Service) WithdrawRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error) {
+	return s.answerRequest(ctx, userID, requestID, requester, data.RequestWithdrawn)
+}
+
+func (s *Service) answerRequest(ctx context.Context, userID, requestID string, actor role, status string) (data.ExchangeRequest, error) {
+	var answered data.ExchangeRequest
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		request, err := s.lockRequest(ctx, userID, requestID, actor)
+		if err != nil {
+			return err
+		}
+		switch request.Status {
+		case status:
+			// The same action repeated, e.g. after a lost response, changes nothing.
+		case data.RequestPending:
+			if err := s.exchanges.UpdateRequestStatus(ctx, request.ID, status, userID); err != nil {
+				return err
+			}
+		default:
+			return ErrRequestNotPending
+		}
+		answered, err = s.exchanges.RequestByID(ctx, request.ID)
+		return err
+	})
+	return answered, err
+}
+
+// lockRequest must run inside a transaction: the row stays locked until it ends.
+func (s *Service) lockRequest(ctx context.Context, userID, requestID string, actor role) (data.RequestState, error) {
+	if !validate.UUID(requestID) {
+		return data.RequestState{}, ErrRequestNotFound
+	}
+	request, err := s.exchanges.LockRequest(ctx, strings.ToLower(requestID))
+	switch {
+	case errors.Is(err, data.ErrNotFound):
+		return data.RequestState{}, ErrRequestNotFound
+	case err != nil:
+		return data.RequestState{}, err
+	case userID != request.RequesterID && userID != request.RecipientID:
+		return data.RequestState{}, ErrRequestNotFound
+	case actor == requester && userID != request.RequesterID, actor == recipient && userID != request.RecipientID:
+		return data.RequestState{}, ErrActionNotAllowed
+	}
+	return request, nil
 }
 
 func validRequest(userID string, in NewRequest) (data.NewRequest, error) {
