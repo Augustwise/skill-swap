@@ -298,6 +298,40 @@ The seed adds request cases to the demo students:
 
 Running the seed again does not reset a demo request that was already answered.
 
+`POST /api/v1/exchange-requests` sends a request. It needs a session with a verified
+email, the CSRF header and the frontend origin:
+
+```json
+{
+  "recipientId": "60000000-0000-0000-0000-000000000002",
+  "teachSkillId": "30000000-0000-0000-0000-000000000001",
+  "learnSkillId": "30000000-0000-0000-0000-000000000002",
+  "format": "ONLINE",
+  "teachSessions": 2, "teachDurationMinutes": 60,
+  "learnSessions": 2, "learnDurationMinutes": 60,
+  "message": "Привіт!"
+}
+```
+
+`teachSkillId` is the catalog skill you teach and `learnSkillId` the one the recipient
+teaches you. The response is 201 with `{ "request" }`: both students, both directions
+with the skill, the teacher's and learner's current levels, sessions and minutes, plus
+`totalSessions`, `status: "PENDING"`, `message` (or null) and `exchangeId: null`. The
+checks run in this order:
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `validation_failed` | 422 | not a UUID, your own ID, the same skill both ways, a format other than `ONLINE`/`OFFLINE`, 1–20 sessions and 15–240 minutes in each direction, a different total time in the two directions, a message over 500 characters |
+| `student_not_found` | 404 | the recipient is not visible in discovery, including blocks in either direction |
+| `requests_closed` | 409 | the recipient does not accept requests |
+| `same_university_only` | 409 | the recipient accepts requests only from their university |
+| `validation_failed` | 422 | `teachSkillId` is not in your "I teach" and their "I learn" lists, `learnSkillId` is not in their "I teach" and your "I learn" lists, or the format is not in both profiles (offline also needs the same city) |
+| `duplicate_request` | 409 | a request for the same pair of skills is pending in either direction |
+
+With the demo data, Olha's request to Andrii succeeds, a second one returns
+`duplicate_request`, and her guitar ↔ Photoshop request to Taras does too because his
+request is pending. Iryna's request to Dmytro returns `requests_closed`.
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for
