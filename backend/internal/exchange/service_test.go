@@ -3,6 +3,7 @@ package exchange
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -250,5 +251,114 @@ func TestCreateRequestDuplicate(t *testing.T) {
 	f.store.SetRequestStatus(first.ID, "DECLINED")
 	if _, err := f.service.CreateRequest(ctx, f.andrii, back); err != nil {
 		t.Fatalf("after the answer: err = %v", err)
+	}
+}
+
+func TestRequests(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	marko := f.student(t, "marko@students.example.test", datatest.DemoUniversityID, "Київ", []string{data.FormatOnline},
+		datatest.PhotoshopSkillID, datatest.GuitarSkillID)
+	toAndrii, err := f.service.CreateRequest(ctx, f.olha, f.request())
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := f.request()
+	in.RecipientID = marko
+	toMarko, err := f.service.CreateRequest(ctx, f.olha, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.store.SetRequestStatus(toAndrii.ID, data.RequestDeclined)
+
+	ids := func(user string, filter data.RequestFilter, page int) ([]string, int) {
+		t.Helper()
+		result, err := f.service.Requests(ctx, user, filter, page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []string
+		for _, r := range result.Items {
+			ids = append(ids, r.ID)
+		}
+		return ids, result.Total
+	}
+	outgoing := data.RequestFilter{Direction: data.Outgoing}
+	if got, total := ids(f.olha, outgoing, 1); !slices.Equal(got, []string{toMarko.ID, toAndrii.ID}) || total != 2 {
+		t.Fatalf("Olha's sent requests = %v, total %d", got, total)
+	}
+	if got, total := ids(f.olha, outgoing, 2); len(got) != 0 || total != 2 {
+		t.Fatalf("page 2 = %v, total %d", got, total)
+	}
+	if got, _ := ids(f.olha, data.RequestFilter{Direction: data.Incoming}, 1); len(got) != 0 {
+		t.Fatalf("Olha's incoming requests = %v", got)
+	}
+	incoming := data.RequestFilter{Direction: data.Incoming, Status: data.RequestDeclined}
+	if got, total := ids(f.andrii, incoming, 1); !slices.Equal(got, []string{toAndrii.ID}) || total != 1 {
+		t.Fatalf("Andrii's declined requests = %v, total %d", got, total)
+	}
+	incoming.Status = data.RequestPending
+	if got, _ := ids(f.andrii, incoming, 1); len(got) != 0 {
+		t.Fatalf("Andrii's pending requests = %v", got)
+	}
+	if got, _ := ids(marko, incoming, 1); !slices.Equal(got, []string{toMarko.ID}) {
+		t.Fatalf("Marko's pending requests = %v", got)
+	}
+}
+
+func TestRequestsValidation(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	for _, test := range []struct {
+		filter data.RequestFilter
+		field  string
+	}{
+		{data.RequestFilter{}, "direction"},
+		{data.RequestFilter{Direction: "sent"}, "direction"},
+		{data.RequestFilter{Direction: data.Incoming, Status: "EXPIRED"}, "status"},
+		{data.RequestFilter{Direction: data.Incoming, Status: "pending"}, "status"},
+	} {
+		_, err := f.service.Requests(ctx, f.olha, test.filter, 1)
+		if fields := fieldErrors(t, err); fields[test.field] == "" || len(fields) != 1 {
+			t.Fatalf("%+v: fields = %v, want only %s", test.filter, fields, test.field)
+		}
+	}
+	for _, page := range []int{0, MaxPage + 1} {
+		if _, err := f.service.Requests(ctx, f.olha, data.RequestFilter{Direction: data.Incoming}, page); !errors.Is(err, ErrInvalidPage) {
+			t.Fatalf("page %d: err = %v", page, err)
+		}
+	}
+}
+
+func TestRequestDetails(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	created, err := f.service.CreateRequest(ctx, f.olha, f.request())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, user := range []string{f.olha, f.andrii} {
+		details, err := f.service.RequestDetails(ctx, user, strings.ToUpper(created.ID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if details.Request.ID != created.ID || len(details.History) != 1 {
+			t.Fatalf("details = %+v", details)
+		}
+		if h := details.History[0]; h.Status != data.RequestPending || h.ChangedByID != f.olha || h.CreatedAt.IsZero() {
+			t.Fatalf("history = %+v", h)
+		}
+	}
+
+	stranger := f.student(t, "marko@students.example.test", datatest.DemoUniversityID, "Київ", []string{data.FormatOnline},
+		datatest.PhotoshopSkillID, datatest.GuitarSkillID)
+	for _, test := range []struct{ name, user, id string }{
+		{"not a participant", stranger, created.ID},
+		{"unknown request", f.olha, "70000000-0000-0000-0000-000000000999"},
+		{"not a UUID", f.olha, "request"},
+	} {
+		if _, err := f.service.RequestDetails(ctx, test.user, test.id); !errors.Is(err, ErrRequestNotFound) {
+			t.Fatalf("%s: err = %v", test.name, err)
+		}
 	}
 }

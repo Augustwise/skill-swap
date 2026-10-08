@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 )
@@ -189,6 +190,121 @@ func TestRequestRecipientScope(t *testing.T) {
 		}
 		if !recipient.AcceptsRequests || !recipient.SameUniversityOnly || recipient.UniversityID != universityID {
 			t.Fatalf("recipient = %+v", recipient)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("WithinTx err = %v", err)
+	}
+}
+
+// Runs inside a transaction that is rolled back.
+// Skipped unless TEST_DATABASE_URL points to a migrated, demo-seeded database.
+func TestUserRequestsAgainstPostgres(t *testing.T) {
+	store := openTestStore(t)
+	rollback := errors.New("roll back test data")
+	err := store.WithinTx(context.Background(), func(ctx context.Context) error {
+		id, err := store.CreateRequest(ctx, NewRequest{RequesterID: demoOlha, RecipientID: demoAndrii,
+			TeachSkillID: guitarSkill, LearnSkillID: photoshop, Format: FormatOnline,
+			TeachSessions: 1, TeachDurationMinutes: 60, LearnSessions: 1, LearnDurationMinutes: 60})
+		if err != nil {
+			t.Fatal(err)
+		}
+		list := func(userID string, filter RequestFilter, limit, offset int) ([]string, int) {
+			t.Helper()
+			requests, total, err := store.UserRequests(ctx, userID, filter, limit, offset)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids := make([]string, 0, len(requests))
+			for _, r := range requests {
+				ids = append(ids, r.ID)
+			}
+			return ids, total
+		}
+
+		// Requests made inside the transaction are the newest.
+		sent, total := list(demoOlha, RequestFilter{Direction: Outgoing}, 1, 0)
+		if !slices.Equal(sent, []string{id}) || total < 1 {
+			t.Fatalf("Olha's sent requests = %v, total %d", sent, total)
+		}
+		if past, pastTotal := list(demoOlha, RequestFilter{Direction: Outgoing}, 20, 400); len(past) != 0 || pastTotal != total {
+			t.Fatalf("past the end = %v, total %d, want %d", past, pastTotal, total)
+		}
+		if incoming, _ := list(demoOlha, RequestFilter{Direction: Incoming}, 20, 0); slices.Contains(incoming, id) ||
+			!slices.Contains(incoming, demoTarasToOlha) {
+			t.Fatalf("Olha's incoming requests = %v", incoming)
+		}
+		if sent, _ := list(demoTaras, RequestFilter{Direction: Outgoing}, 20, 0); !slices.Contains(sent, demoTarasToOlha) {
+			t.Fatalf("Taras's sent requests = %v", sent)
+		}
+		if incoming, _ := list(demoAndrii, RequestFilter{Direction: Incoming, Status: RequestPending}, 20, 0); !slices.Contains(incoming, id) {
+			t.Fatalf("Andrii's pending requests = %v", incoming)
+		}
+		if declined, _ := list(demoAndrii, RequestFilter{Direction: Incoming, Status: RequestDeclined}, 20, 0); slices.Contains(declined, id) {
+			t.Fatalf("Andrii's declined requests = %v", declined)
+		}
+		if _, err := store.conn(ctx).Exec(ctx, `UPDATE exchange_requests SET status = 'DECLINED', responded_at = now()
+			WHERE id = $1`, id); err != nil {
+			t.Fatal(err)
+		}
+		if declined, _ := list(demoAndrii, RequestFilter{Direction: Incoming, Status: RequestDeclined}, 20, 0); !slices.Contains(declined, id) {
+			t.Fatalf("Andrii's declined requests after the update = %v", declined)
+		}
+
+		// Participants keep their requests after a block or a hidden profile.
+		if _, err := store.conn(ctx).Exec(ctx, `INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2)
+			ON CONFLICT DO NOTHING`, demoAndrii, demoOlha); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.conn(ctx).Exec(ctx, `INSERT INTO user_profile_settings (user_id, is_discoverable) VALUES ($1, false)
+			ON CONFLICT (user_id) DO UPDATE SET is_discoverable = false`, demoAndrii); err != nil {
+			t.Fatal(err)
+		}
+		if sent, _ := list(demoOlha, RequestFilter{Direction: Outgoing}, 20, 0); !slices.Contains(sent, id) {
+			t.Fatalf("Olha's sent requests after the block = %v", sent)
+		}
+		if r, err := store.RequestByID(ctx, id); err != nil || r.Recipient.FirstName == "" {
+			t.Fatalf("request after the block = %+v, err %v", r, err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("WithinTx err = %v", err)
+	}
+}
+
+// Runs inside a transaction that is rolled back.
+// Skipped unless TEST_DATABASE_URL points to a migrated, demo-seeded database.
+func TestRequestHistoryAgainstPostgres(t *testing.T) {
+	store := openTestStore(t)
+	rollback := errors.New("roll back test data")
+	err := store.WithinTx(context.Background(), func(ctx context.Context) error {
+		id, err := store.CreateRequest(ctx, NewRequest{RequesterID: demoOlha, RecipientID: demoAndrii,
+			TeachSkillID: guitarSkill, LearnSkillID: photoshop, Format: FormatOnline,
+			TeachSessions: 1, TeachDurationMinutes: 60, LearnSessions: 1, LearnDurationMinutes: 60})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.conn(ctx).Exec(ctx, `INSERT INTO exchange_request_status_history (request_id, status, created_at)
+			VALUES ($1, 'WITHDRAWN', now() + interval '1 minute')`, id); err != nil {
+			t.Fatal(err)
+		}
+		history, err := store.RequestHistory(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(history) != 2 {
+			t.Fatalf("history = %+v", history)
+		}
+		if h := history[0]; h.Status != RequestPending || h.ChangedByID != demoOlha || h.ChangedByFirstName != "Ольга" || h.ChangedByLastName == "" {
+			t.Fatalf("first change = %+v", h)
+		}
+		if h := history[1]; h.Status != RequestWithdrawn || h.ChangedByID != "" || h.ChangedByFirstName != "" {
+			t.Fatalf("change without a user = %+v", h)
+		}
+		if empty, err := store.RequestHistory(ctx, "70000000-0000-0000-0000-000000000999"); err != nil || len(empty) != 0 {
+			t.Fatalf("unknown request history = %+v, err %v", empty, err)
 		}
 		return rollback
 	})

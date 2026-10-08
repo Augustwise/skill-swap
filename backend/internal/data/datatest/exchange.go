@@ -1,8 +1,10 @@
 package datatest
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"skillswap/backend/internal/data"
@@ -71,14 +73,17 @@ func (m *Memory) CreateRequest(_ context.Context, r data.NewRequest) (string, er
 		}
 	}
 	id := fmt.Sprintf("70000000-0000-0000-0000-%012d", len(m.requests)+1)
+	now := time.Now().UTC()
 	m.requests[id] = &data.ExchangeRequest{
 		ID: id, Status: data.RequestPending, Format: r.Format, TotalSessions: r.TeachSessions + r.LearnSessions,
 		Message:   r.Message,
 		Requester: m.party(requester), Recipient: m.party(recipient),
 		RequesterTeaches: m.terms(r.TeachSkillID, teacherLevel, learnerLevel, r.TeachSessions, r.TeachDurationMinutes),
 		RecipientTeaches: m.terms(r.LearnSkillID, recipientLevel, requesterLevel, r.LearnSessions, r.LearnDurationMinutes),
-		CreatedAt:        time.Now().UTC(),
+		CreatedAt:        now,
 	}
+	m.history[id] = []data.RequestStatusChange{{Status: data.RequestPending, ChangedByID: requester.user.ID,
+		ChangedByFirstName: requester.profile.FirstName, ChangedByLastName: requester.profile.LastName, CreatedAt: now}}
 	return id, nil
 }
 
@@ -111,4 +116,31 @@ func (m *Memory) RequestByID(_ context.Context, requestID string) (data.Exchange
 		return data.ExchangeRequest{}, data.ErrNotFound
 	}
 	return *r, nil
+}
+
+func (m *Memory) UserRequests(_ context.Context, userID string, filter data.RequestFilter, limit, offset int) ([]data.ExchangeRequest, int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var found []data.ExchangeRequest
+	for _, r := range m.requests {
+		owner := r.Requester.UserID
+		if filter.Direction == data.Incoming {
+			owner = r.Recipient.UserID
+		}
+		if owner == userID && (filter.Status == "" || r.Status == filter.Status) {
+			found = append(found, *r)
+		}
+	}
+	slices.SortFunc(found, func(a, b data.ExchangeRequest) int {
+		return cmp.Or(b.CreatedAt.Compare(a.CreatedAt), cmp.Compare(b.ID, a.ID))
+	})
+	total := len(found)
+	found = found[min(offset, total):min(offset+limit, total)]
+	return found, total, nil
+}
+
+func (m *Memory) RequestHistory(_ context.Context, requestID string) ([]data.RequestStatusChange, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.history[requestID]), nil
 }

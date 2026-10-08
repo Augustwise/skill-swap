@@ -1047,6 +1047,105 @@ paths:
                     learnSessions: Both directions must have the same total time
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
+  /me/exchange-requests:
+    get:
+      tags: [Exchange requests]
+      operationId: listExchangeRequests
+      summary: List your incoming or sent exchange requests (FR-07)
+      description: |
+        `incoming` lists requests sent to you, `outgoing` the ones you sent. Newest come first.
+        Requests stay in the list after the other student hides the profile or blocks you.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: direction
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [incoming, outgoing]
+        - name: status
+          in: query
+          required: false
+          description: Only requests with this status; all statuses when omitted.
+          schema:
+            $ref: "#/components/schemas/RequestStatus"
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: One page of requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExchangeRequestPage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "422":
+          description: "`direction` is missing or invalid, or `status` is unknown"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: validation_failed
+                  message: Some fields are invalid
+                  fields:
+                    direction: Direction must be incoming or outgoing
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /exchange-requests/{requestId}:
+    get:
+      tags: [Exchange requests]
+      operationId: getExchangeRequest
+      summary: Show an exchange request with its status history (FR-07)
+      description: |
+        Only the two participants can see a request; they keep access after a block or a
+        hidden profile.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The request and its status changes, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request, history]
+                properties:
+                  request:
+                    $ref: "#/components/schemas/ExchangeRequest"
+                  history:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RequestStatusChange"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: No request has this ID, you do not take part in it, or the ID is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: request_not_found
+                  message: Request was not found
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
 components:
   securitySchemes:
     sessionCookie:
@@ -1825,6 +1924,9 @@ components:
           type: string
           maxLength: 500
           description: Plain text; spaces around it are trimmed and an empty message is stored as null.
+    RequestStatus:
+      type: string
+      enum: [PENDING, ACCEPTED, DECLINED, WITHDRAWN]
     RequestTerms:
       type: object
       description: One direction of the exchange with the students' current levels.
@@ -1860,8 +1962,7 @@ components:
           type: string
           format: uuid
         status:
-          type: string
-          enum: [PENDING, ACCEPTED, DECLINED, WITHDRAWN]
+          $ref: "#/components/schemas/RequestStatus"
         format:
           $ref: "#/components/schemas/LessonFormat"
         totalSessions:
@@ -1891,3 +1992,42 @@ components:
           type: string
           format: date-time
           nullable: true
+    ExchangeRequestPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExchangeRequest"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          description: Number of requests on all pages.
+    RequestStatusChange:
+      type: object
+      required: [status, changedBy, createdAt]
+      properties:
+        status:
+          $ref: "#/components/schemas/RequestStatus"
+        changedBy:
+          type: object
+          nullable: true
+          description: The student who made the change; null when it was not made by a user.
+          required: [id, firstName, lastName]
+          properties:
+            id:
+              type: string
+              format: uuid
+            firstName:
+              type: string
+            lastName:
+              type: string
+        createdAt:
+          type: string
+          format: date-time

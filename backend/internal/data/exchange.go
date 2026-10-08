@@ -5,10 +5,16 @@ import (
 	"errors"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-const RequestPending = "PENDING"
+const (
+	RequestPending   = "PENDING"
+	RequestAccepted  = "ACCEPTED"
+	RequestDeclined  = "DECLINED"
+	RequestWithdrawn = "WITHDRAWN"
+)
 
 var ErrDuplicateRequest = errors.New("a pending request for this pair of skills already exists")
 
@@ -68,10 +74,33 @@ type ExchangeRequest struct {
 	RespondedAt      *time.Time
 }
 
+type RequestDirection string
+
+const (
+	Incoming RequestDirection = "incoming"
+	Outgoing RequestDirection = "outgoing"
+)
+
+type RequestFilter struct {
+	Direction RequestDirection
+	Status    string // empty for any status
+}
+
+type RequestStatusChange struct {
+	Status string
+	// ChangedBy fields are empty when the change was not made by a user.
+	ChangedByID        string
+	ChangedByFirstName string
+	ChangedByLastName  string
+	CreatedAt          time.Time
+}
+
 type IExchangeData interface {
 	RequestRecipient(ctx context.Context, senderID, recipientID string) (RequestRecipient, error)
 	CreateRequest(ctx context.Context, request NewRequest) (string, error)
 	RequestByID(ctx context.Context, requestID string) (ExchangeRequest, error)
+	UserRequests(ctx context.Context, userID string, filter RequestFilter, limit, offset int) ([]ExchangeRequest, int, error)
+	RequestHistory(ctx context.Context, requestID string) ([]RequestStatusChange, error)
 }
 
 var _ IExchangeData = (*Postgres)(nil)
@@ -141,23 +170,77 @@ func requestTerms(teaching, learning, sessions, duration string) string {
 		WHERE t.id = r.` + teaching + `)`
 }
 
-var requestSelect = `SELECT r.id, r.status::text, r.format::text, r.total_sessions, COALESCE(r.message, ''),
+var requestColumns = `r.id, r.status::text, r.format::text, r.total_sessions, COALESCE(r.message, ''),
 		` + requestParty("rq") + `, ` + requestParty("rc") + `,
 		` + requestTerms("requester_teaching_skill_id", "recipient_learning_skill_id", "requester_sessions", "requester_duration_minutes") + `,
 		` + requestTerms("recipient_teaching_skill_id", "requester_learning_skill_id", "recipient_sessions", "recipient_duration_minutes") + `,
 		COALESCE((SELECT e.id::text FROM exchanges e WHERE e.source_request_id = r.id), ''),
-		r.created_at, r.responded_at
+		r.created_at, r.responded_at`
+
+const requestFrom = `
 	FROM exchange_requests r
 	JOIN users rq ON rq.id = r.requester_id
 	JOIN users rc ON rc.id = r.recipient_id`
 
+var requestSelect = `SELECT ` + requestColumns + requestFrom
+
+func (r *ExchangeRequest) scanTargets(extra ...any) []any {
+	return append([]any{&r.ID, &r.Status, &r.Format, &r.TotalSessions, &r.Message, &r.Requester, &r.Recipient,
+		&r.RequesterTeaches, &r.RecipientTeaches, &r.ExchangeID, &r.CreatedAt, &r.RespondedAt}, extra...)
+}
+
 func (p *Postgres) RequestByID(ctx context.Context, requestID string) (ExchangeRequest, error) {
 	var r ExchangeRequest
-	err := p.conn(ctx).QueryRow(ctx, requestSelect+` WHERE r.id = $1`, requestID).Scan(
-		&r.ID, &r.Status, &r.Format, &r.TotalSessions, &r.Message, &r.Requester, &r.Recipient,
-		&r.RequesterTeaches, &r.RecipientTeaches, &r.ExchangeID, &r.CreatedAt, &r.RespondedAt)
-	if err != nil {
+	if err := p.conn(ctx).QueryRow(ctx, requestSelect+` WHERE r.id = $1`, requestID).Scan(r.scanTargets()...); err != nil {
 		return ExchangeRequest{}, notFound(err)
 	}
 	return r, nil
+}
+
+var requestOwner = map[RequestDirection]string{Incoming: "r.recipient_id", Outgoing: "r.requester_id"}
+
+func (p *Postgres) UserRequests(ctx context.Context, userID string, filter RequestFilter, limit, offset int) ([]ExchangeRequest, int, error) {
+	owner, ok := requestOwner[filter.Direction]
+	if !ok {
+		return nil, 0, errors.New("unknown request direction " + string(filter.Direction))
+	}
+	where := ` WHERE ` + owner + ` = $1 AND ($2 = '' OR r.status::text = $2)`
+	rows, err := p.conn(ctx).Query(ctx, `SELECT `+requestColumns+`, count(*) OVER ()`+requestFrom+where+`
+		ORDER BY r.created_at DESC, r.id DESC
+		LIMIT $3 OFFSET $4`, userID, filter.Status, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := 0
+	requests, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ExchangeRequest, error) {
+		var r ExchangeRequest
+		err := row.Scan(r.scanTargets(&total)...)
+		return r, err
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	// A page past the end has no rows to carry the total, so count separately.
+	if len(requests) == 0 && offset > 0 {
+		err = p.conn(ctx).QueryRow(ctx, `SELECT count(*) FROM exchange_requests r`+where,
+			userID, filter.Status).Scan(&total)
+	}
+	return requests, total, err
+}
+
+func (p *Postgres) RequestHistory(ctx context.Context, requestID string) ([]RequestStatusChange, error) {
+	rows, err := p.conn(ctx).Query(ctx, `SELECT h.status::text, COALESCE(u.id::text, ''),
+			COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), h.created_at
+		FROM exchange_request_status_history h
+		LEFT JOIN users u ON u.id = h.changed_by_user_id
+		WHERE h.request_id = $1
+		ORDER BY h.created_at, h.id`, requestID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (RequestStatusChange, error) {
+		var c RequestStatusChange
+		err := row.Scan(&c.Status, &c.ChangedByID, &c.ChangedByFirstName, &c.ChangedByLastName, &c.CreatedAt)
+		return c, err
+	})
 }

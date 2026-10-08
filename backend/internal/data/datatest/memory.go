@@ -32,6 +32,7 @@ type Memory struct {
 	throttles    map[string]*throttle
 	settings     map[string]requestSettings
 	requests     map[string]*data.ExchangeRequest
+	history      map[string][]data.RequestStatusChange
 }
 
 type catalogSkill struct {
@@ -90,6 +91,7 @@ func NewMemory() *Memory {
 		throttles: map[string]*throttle{},
 		settings:  map[string]requestSettings{},
 		requests:  map[string]*data.ExchangeRequest{},
+		history:   map[string][]data.RequestStatusChange{},
 	}
 }
 
