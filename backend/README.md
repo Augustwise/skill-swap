@@ -273,6 +273,31 @@ accounts, unverified emails, or blocks in either direction. The PostgreSQL tests
 `internal/data/discovery_test.go` check these rules on the demo students; the test that
 changes skills runs inside a transaction that is rolled back.
 
+## Exchange requests (FR-06, FR-07)
+
+Migration `00005_exchange_requests.sql` makes `exchange_requests.expires_at` optional:
+in the MVP a request waits until the recipient accepts or declines it or the author
+withdraws it. A partial unique index allows only one pending request for the same pair
+of skills between two students, in either direction. While Olha's "guitar ↔ Photoshop"
+request to Andrii is pending, Andrii cannot send the same pair back and should accept
+hers instead. Back up a shared database before applying it (NFR-04):
+
+```bash
+pg_dump --format=custom --file=../backups/skillswap-before-00005.dump "$DATABASE_URL"
+go run ./cmd/db up
+go run ./cmd/db seed
+```
+
+The seed adds request cases to the demo students:
+
+| Case | Where to see it |
+| --- | --- |
+| `demo.taras` → `demo.olha`: pending, Photoshop ↔ guitar, offline, 2 × 60 min each way | Olha's incoming and Taras's sent requests |
+| `demo.dmytro` does not accept new requests | a request from `demo.iryna` to Dmytro is refused |
+| `demo.andrii` has no requests yet | Olha sends him "guitar ↔ Photoshop" by hand |
+
+Running the seed again does not reset a demo request that was already answered.
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for
