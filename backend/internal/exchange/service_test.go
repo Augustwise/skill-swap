@@ -362,3 +362,110 @@ func TestRequestDetails(t *testing.T) {
 		}
 	}
 }
+
+func TestAnswerRequestMatrix(t *testing.T) {
+	type action func(s *Service, ctx context.Context, userID, requestID string) (data.ExchangeRequest, error)
+	decline, withdraw := (*Service).DeclineRequest, (*Service).WithdrawRequest
+	for _, test := range []struct {
+		name    string
+		byOlha  bool // Olha sent the request; Andrii received it
+		act     action
+		status  string
+		want    error
+		changed string // status after the action; empty when the action fails
+	}{
+		{"recipient declines a pending request", false, decline, data.RequestPending, nil, data.RequestDeclined},
+		{"recipient declines again", false, decline, data.RequestDeclined, nil, data.RequestDeclined},
+		{"recipient declines a withdrawn request", false, decline, data.RequestWithdrawn, ErrRequestNotPending, ""},
+		{"recipient declines an accepted request", false, decline, data.RequestAccepted, ErrRequestNotPending, ""},
+		{"requester declines", true, decline, data.RequestPending, ErrActionNotAllowed, ""},
+		{"requester withdraws a pending request", true, withdraw, data.RequestPending, nil, data.RequestWithdrawn},
+		{"requester withdraws again", true, withdraw, data.RequestWithdrawn, nil, data.RequestWithdrawn},
+		{"requester withdraws a declined request", true, withdraw, data.RequestDeclined, ErrRequestNotPending, ""},
+		{"requester withdraws an accepted request", true, withdraw, data.RequestAccepted, ErrRequestNotPending, ""},
+		{"recipient withdraws", false, withdraw, data.RequestPending, ErrActionNotAllowed, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			f := newFixture(t)
+			created, err := f.service.CreateRequest(ctx, f.olha, f.request())
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.store.SetRequestStatus(created.ID, test.status)
+			user := f.andrii
+			if test.byOlha {
+				user = f.olha
+			}
+			answered, err := test.act(f.service, ctx, user, strings.ToUpper(created.ID))
+			if !errors.Is(err, test.want) {
+				t.Fatalf("err = %v, want %v", err, test.want)
+			}
+			stored, _ := f.store.RequestByID(ctx, created.ID)
+			if test.want != nil {
+				if stored.Status != test.status {
+					t.Fatalf("status = %s, want it unchanged", stored.Status)
+				}
+				return
+			}
+			if answered.ID != created.ID || answered.Status != test.changed || stored.Status != test.changed {
+				t.Fatalf("answered = %+v, stored status %s", answered, stored.Status)
+			}
+			history, _ := f.store.RequestHistory(ctx, created.ID)
+			if test.status == test.changed {
+				// A repeated action adds no history and keeps the request as it was.
+				if len(history) != 1 || answered.RespondedAt != nil {
+					t.Fatalf("history = %+v, responded at %v", history, answered.RespondedAt)
+				}
+				return
+			}
+			if answered.RespondedAt == nil || len(history) != 2 {
+				t.Fatalf("responded at %v, history = %+v", answered.RespondedAt, history)
+			}
+			if h := history[1]; h.Status != test.changed || h.ChangedByID != user || h.ChangedByFirstName == "" {
+				t.Fatalf("last change = %+v", h)
+			}
+		})
+	}
+}
+
+func TestAnswerRequestNotFound(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	created, err := f.service.CreateRequest(ctx, f.olha, f.request())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stranger := f.student(t, "marko@students.example.test", datatest.DemoUniversityID, "Київ", []string{data.FormatOnline},
+		datatest.PhotoshopSkillID, datatest.GuitarSkillID)
+	for _, test := range []struct{ name, user, id string }{
+		{"not a participant", stranger, created.ID},
+		{"unknown request", f.andrii, "70000000-0000-0000-0000-000000000999"},
+		{"not a UUID", f.andrii, "request"},
+	} {
+		if _, err := f.service.DeclineRequest(ctx, test.user, test.id); !errors.Is(err, ErrRequestNotFound) {
+			t.Fatalf("decline, %s: err = %v", test.name, err)
+		}
+		if _, err := f.service.WithdrawRequest(ctx, test.user, test.id); !errors.Is(err, ErrRequestNotFound) {
+			t.Fatalf("withdraw, %s: err = %v", test.name, err)
+		}
+	}
+	if r, _ := f.store.RequestByID(ctx, created.ID); r.Status != data.RequestPending {
+		t.Fatalf("status = %s", r.Status)
+	}
+}
+
+func TestDeclinedRequestFreesSkillPair(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	created, err := f.service.CreateRequest(ctx, f.olha, f.request())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.DeclineRequest(ctx, f.andrii, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CreateRequest(ctx, f.olha, f.request()); err != nil {
+		t.Fatalf("a new request after the decline: err = %v", err)
+	}
+}

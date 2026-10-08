@@ -197,3 +197,79 @@ func TestRequestDetails(t *testing.T) {
 	assertProblem(t, send(t, e.handler, http.MethodGet, requestsPath+"/latest", "", olha), http.StatusNotFound, "request_not_found")
 	assertProblem(t, send(t, e.handler, http.MethodGet, path, "", nil), http.StatusUnauthorized, "unauthenticated")
 }
+
+func TestAnswerRequest(t *testing.T) {
+	e, olha, andrii, andriiID := newRequestEnv(t)
+	create := func() string {
+		t.Helper()
+		response := send(t, e.handler, http.MethodPost, requestsPath, requestBody(andriiID, datatest.GuitarSkillID, datatest.PhotoshopSkillID), olha)
+		expectStatus(t, response, http.StatusCreated)
+		var created struct {
+			Request exchangeRequest `json:"request"`
+		}
+		decodeJSON(t, response, &created)
+		return created.Request.ID
+	}
+	answer := func(s *session, path string) exchangeRequest {
+		t.Helper()
+		response := send(t, e.handler, http.MethodPost, path, "", s)
+		expectStatus(t, response, http.StatusOK)
+		var body struct {
+			Request exchangeRequest `json:"request"`
+		}
+		decodeJSON(t, response, &body)
+		return body.Request
+	}
+
+	declinePath := requestsPath + "/" + create() + "/decline"
+	assertProblem(t, send(t, e.handler, http.MethodPost, declinePath, "", olha), http.StatusForbidden, "action_not_allowed")
+	declined := answer(andrii, declinePath)
+	if declined.Status != "DECLINED" || declined.RespondedAt == nil {
+		t.Fatalf("declined = %+v", declined)
+	}
+	if again := answer(andrii, declinePath); again.Status != "DECLINED" || !again.RespondedAt.Equal(*declined.RespondedAt) {
+		t.Fatalf("declined again = %+v", again)
+	}
+	assertProblem(t, send(t, e.handler, http.MethodPost, strings.Replace(declinePath, "decline", "withdraw", 1), "", olha),
+		http.StatusConflict, "request_not_pending")
+
+	withdrawPath := requestsPath + "/" + create() + "/withdraw"
+	assertProblem(t, send(t, e.handler, http.MethodPost, withdrawPath, "", andrii), http.StatusForbidden, "action_not_allowed")
+	if withdrawn := answer(olha, withdrawPath); withdrawn.Status != "WITHDRAWN" || withdrawn.RespondedAt == nil {
+		t.Fatalf("withdrawn = %+v", withdrawn)
+	}
+	answer(olha, withdrawPath)
+	assertProblem(t, send(t, e.handler, http.MethodPost, strings.Replace(withdrawPath, "withdraw", "decline", 1), "", andrii),
+		http.StatusConflict, "request_not_pending")
+
+	response := send(t, e.handler, http.MethodGet, strings.TrimSuffix(withdrawPath, "/withdraw"), "", andrii)
+	expectStatus(t, response, http.StatusOK)
+	var details struct {
+		History []requestStatusChange `json:"history"`
+	}
+	decodeJSON(t, response, &details)
+	if len(details.History) != 2 || details.History[1].Status != "WITHDRAWN" || details.History[1].ChangedBy.ID != e.meID(t, olha) {
+		t.Fatalf("history = %+v", details.History)
+	}
+}
+
+func TestAnswerRequestAccess(t *testing.T) {
+	e, olha, andrii, andriiID := newRequestEnv(t)
+	response := send(t, e.handler, http.MethodPost, requestsPath, requestBody(andriiID, datatest.GuitarSkillID, datatest.PhotoshopSkillID), olha)
+	expectStatus(t, response, http.StatusCreated)
+	var created struct {
+		Request exchangeRequest `json:"request"`
+	}
+	decodeJSON(t, response, &created)
+	path := requestsPath + "/" + created.Request.ID + "/decline"
+
+	assertProblem(t, send(t, e.handler, http.MethodPost, path, "", nil), http.StatusUnauthorized, "unauthenticated")
+	assertProblem(t, send(t, e.handler, http.MethodPost, path, "", &session{cookie: andrii.cookie}), http.StatusForbidden, "csrf_invalid")
+	stranger := e.student(t, "marko@students.example.test", `["ONLINE"]`, "Київ", datatest.PhotoshopSkillID, datatest.GuitarSkillID)
+	assertProblem(t, send(t, e.handler, http.MethodPost, path, "", stranger), http.StatusNotFound, "request_not_found")
+	assertProblem(t, send(t, e.handler, http.MethodPost, requestsPath+"/latest/withdraw", "", olha), http.StatusNotFound, "request_not_found")
+	response = send(t, e.handler, http.MethodGet, path, "", andrii)
+	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodPost {
+		t.Fatalf("GET status = %d, Allow = %q", response.Code, response.Header().Get("Allow"))
+	}
+}

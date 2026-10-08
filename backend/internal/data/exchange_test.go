@@ -312,3 +312,50 @@ func TestRequestHistoryAgainstPostgres(t *testing.T) {
 		t.Fatalf("WithinTx err = %v", err)
 	}
 }
+
+// Runs inside a transaction that is rolled back.
+// Skipped unless TEST_DATABASE_URL points to a migrated, demo-seeded database.
+func TestUpdateRequestStatusAgainstPostgres(t *testing.T) {
+	store := openTestStore(t)
+	rollback := errors.New("roll back test data")
+	unknown := "70000000-0000-0000-0000-000000000999"
+	err := store.WithinTx(context.Background(), func(ctx context.Context) error {
+		state, err := store.LockRequest(ctx, demoTarasToOlha)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := RequestState{ID: demoTarasToOlha, RequesterID: demoTaras, RecipientID: demoOlha, Status: RequestPending}
+		if state != want {
+			t.Fatalf("state = %+v", state)
+		}
+		if err := store.UpdateRequestStatus(ctx, demoTarasToOlha, RequestDeclined, demoOlha); err != nil {
+			t.Fatal(err)
+		}
+		r, err := store.RequestByID(ctx, demoTarasToOlha)
+		if err != nil || r.Status != RequestDeclined || r.RespondedAt == nil {
+			t.Fatalf("request = %+v, err %v", r, err)
+		}
+		history, err := store.RequestHistory(ctx, demoTarasToOlha)
+		if err != nil || len(history) != 2 {
+			t.Fatalf("history = %+v, err %v", history, err)
+		}
+		last := history[0]
+		if last.Status != RequestDeclined {
+			last = history[1]
+		}
+		if last.Status != RequestDeclined || last.ChangedByID != demoOlha || !last.CreatedAt.Equal(*r.RespondedAt) {
+			t.Fatalf("decline in history = %+v", last)
+		}
+
+		if _, err := store.LockRequest(ctx, unknown); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("lock an unknown request: err = %v", err)
+		}
+		if err := store.UpdateRequestStatus(ctx, unknown, RequestDeclined, demoOlha); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("update an unknown request: err = %v", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("WithinTx err = %v", err)
+	}
+}

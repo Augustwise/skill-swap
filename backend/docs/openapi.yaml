@@ -1146,6 +1146,142 @@ paths:
                   message: Request was not found
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
+  /exchange-requests/{requestId}/decline:
+    post:
+      tags: [Exchange requests]
+      operationId: declineExchangeRequest
+      summary: Decline a request sent to you (FR-07)
+      description: |
+        Only the recipient can decline a request, and only while it is `PENDING`. Repeating
+        the action on a request that is already DECLINED returns 200 with the current
+        request and adds nothing to its history, so a retry after a lost response is safe.
+        The request has no body.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The request after the change
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: "#/components/schemas/ExchangeRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: |
+            You are the requester and cannot decline (`action_not_allowed`; the requester can
+            withdraw instead), or the email is unverified (`email_not_verified`), the
+            CSRF token is invalid (`csrf_invalid`) or the origin is foreign (`origin_forbidden`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: action_not_allowed
+                  message: This action is not available for your role in the request
+        "404":
+          description: No request has this ID, you do not take part in it, or the ID is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: request_not_found
+                  message: Request was not found
+        "409":
+          description: The request has already been accepted, declined or withdrawn
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: request_not_pending
+                  message: The request has already been answered
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /exchange-requests/{requestId}/withdraw:
+    post:
+      tags: [Exchange requests]
+      operationId: withdrawExchangeRequest
+      summary: Withdraw a request you sent (FR-07)
+      description: |
+        Only the requester can withdraw a request, and only while it is `PENDING`. Repeating
+        the action on a request that is already WITHDRAWN returns 200 with the current
+        request and adds nothing to its history, so a retry after a lost response is safe.
+        The request has no body.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The request after the change
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: "#/components/schemas/ExchangeRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: |
+            You are the recipient and cannot withdraw (`action_not_allowed`; the recipient can
+            decline instead), or the email is unverified (`email_not_verified`), the
+            CSRF token is invalid (`csrf_invalid`) or the origin is foreign (`origin_forbidden`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: action_not_allowed
+                  message: This action is not available for your role in the request
+        "404":
+          description: No request has this ID, you do not take part in it, or the ID is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: request_not_found
+                  message: Request was not found
+        "409":
+          description: The request has already been accepted, declined or withdrawn
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: request_not_pending
+                  message: The request has already been answered
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
 components:
   securitySchemes:
     sessionCookie:

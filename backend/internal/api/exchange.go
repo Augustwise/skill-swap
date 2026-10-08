@@ -149,6 +149,21 @@ func (a *API) requestDetails(w http.ResponseWriter, r *http.Request, current dat
 	respond(w, http.StatusOK, map[string]any{"request": toExchangeRequest(result.Request), "history": history})
 }
 
+type answerFunc func(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error)
+
+func (a *API) answerRequest(answer answerFunc) userHandler {
+	return func(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
+		ctx, cancel := context.WithTimeout(r.Context(), exchangeTimeout)
+		defer cancel()
+		answered, err := answer(ctx, current.ID, r.PathValue("requestId"))
+		if err != nil {
+			a.exchangeError(w, err)
+			return
+		}
+		respond(w, http.StatusOK, map[string]any{"request": toExchangeRequest(answered)})
+	}
+}
+
 func (a *API) exchangeError(w http.ResponseWriter, err error) {
 	var invalid *profile.ValidationError
 	switch {
@@ -164,6 +179,10 @@ func (a *API) exchangeError(w http.ResponseWriter, err error) {
 		problem(w, http.StatusConflict, "duplicate_request", "A request for these skills is already waiting for an answer")
 	case errors.Is(err, exchange.ErrRequestNotFound):
 		problem(w, http.StatusNotFound, "request_not_found", "Request was not found")
+	case errors.Is(err, exchange.ErrActionNotAllowed):
+		problem(w, http.StatusForbidden, "action_not_allowed", "This action is not available for your role in the request")
+	case errors.Is(err, exchange.ErrRequestNotPending):
+		problem(w, http.StatusConflict, "request_not_pending", "The request has already been answered")
 	case errors.Is(err, exchange.ErrInvalidPage):
 		problem(w, http.StatusBadRequest, "invalid_page", fmt.Sprintf("page must be a whole number from 1 to %d", exchange.MaxPage))
 	default:

@@ -144,3 +144,30 @@ func (m *Memory) RequestHistory(_ context.Context, requestID string) ([]data.Req
 	defer m.mu.Unlock()
 	return slices.Clone(m.history[requestID]), nil
 }
+
+func (m *Memory) LockRequest(_ context.Context, requestID string) (data.RequestState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.requests[requestID]
+	if !ok {
+		return data.RequestState{}, data.ErrNotFound
+	}
+	return data.RequestState{ID: r.ID, RequesterID: r.Requester.UserID, RecipientID: r.Recipient.UserID, Status: r.Status}, nil
+}
+
+func (m *Memory) UpdateRequestStatus(_ context.Context, requestID, status, changedByID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.requests[requestID]
+	if !ok {
+		return data.ErrNotFound
+	}
+	now := time.Now().UTC()
+	r.Status, r.RespondedAt = status, &now
+	change := data.RequestStatusChange{Status: status, ChangedByID: changedByID, CreatedAt: now}
+	if a, ok := m.users[changedByID]; ok {
+		change.ChangedByFirstName, change.ChangedByLastName = a.profile.FirstName, a.profile.LastName
+	}
+	m.history[requestID] = append(m.history[requestID], change)
+	return nil
+}

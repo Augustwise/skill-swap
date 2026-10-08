@@ -349,6 +349,29 @@ Participants keep seeing a request after the other student hides the profile or 
 them, so the history is not lost. With the demo data, Olha's incoming list and Taras's
 outgoing list show the Photoshop ↔ guitar request; Andrii gets 404 for it.
 
+Two routes answer a pending request. Both need a session with a verified email, the
+CSRF header and the frontend origin, and take no body:
+
+- `POST /api/v1/exchange-requests/{requestId}/decline` — only the recipient.
+- `POST /api/v1/exchange-requests/{requestId}/withdraw` — only the requester.
+
+Each locks the request row, sets the new status and `respondedAt`, and adds one history
+item with the student who made the change, all in one transaction. The response is 200
+with `{ "request" }`. Repeating the same action on a request that already has that
+status returns 200 with the request as it is and adds no history, so a retry after a
+lost response is safe.
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `request_not_found` | 404 | no request has this ID, or you do not take part in it |
+| `action_not_allowed` | 403 | you take part in the request but in the other role, e.g. the requester declines |
+| `request_not_pending` | 409 | the request was already accepted, declined or withdrawn in another way |
+
+A declined or withdrawn request no longer blocks the pair of skills, so either student
+can send a new request. With the demo data, Olha can decline Taras's request, and
+declining it again returns 200; Taras then gets `request_not_pending` when he tries to
+withdraw it.
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for

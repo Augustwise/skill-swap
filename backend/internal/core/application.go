@@ -28,6 +28,8 @@ type IApplication interface {
 	CreateRequest(ctx context.Context, userID string, request exchange.NewRequest) (data.ExchangeRequest, error)
 	Requests(ctx context.Context, userID string, filter data.RequestFilter, page int) (exchange.RequestPage, error)
 	RequestDetails(ctx context.Context, userID, requestID string) (exchange.RequestDetails, error)
+	DeclineRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error)
+	WithdrawRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error)
 }
 
 type Application struct {
@@ -100,4 +102,12 @@ func (a *Application) Requests(ctx context.Context, userID string, filter data.R
 
 func (a *Application) RequestDetails(ctx context.Context, userID, requestID string) (exchange.RequestDetails, error) {
 	return a.exchanges.RequestDetails(ctx, userID, requestID)
+}
+
+func (a *Application) DeclineRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error) {
+	return a.exchanges.DeclineRequest(ctx, userID, requestID)
+}
+
+func (a *Application) WithdrawRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error) {
+	return a.exchanges.WithdrawRequest(ctx, userID, requestID)
 }

@@ -95,12 +95,22 @@ type RequestStatusChange struct {
 	CreatedAt          time.Time
 }
 
+// RequestState is the part of a request that decides who may change its status.
+type RequestState struct {
+	ID          string
+	RequesterID string
+	RecipientID string
+	Status      string
+}
+
 type IExchangeData interface {
 	RequestRecipient(ctx context.Context, senderID, recipientID string) (RequestRecipient, error)
 	CreateRequest(ctx context.Context, request NewRequest) (string, error)
 	RequestByID(ctx context.Context, requestID string) (ExchangeRequest, error)
 	UserRequests(ctx context.Context, userID string, filter RequestFilter, limit, offset int) ([]ExchangeRequest, int, error)
 	RequestHistory(ctx context.Context, requestID string) ([]RequestStatusChange, error)
+	LockRequest(ctx context.Context, requestID string) (RequestState, error)
+	UpdateRequestStatus(ctx context.Context, requestID, status, changedByID string) error
 }
 
 var _ IExchangeData = (*Postgres)(nil)
@@ -243,4 +253,32 @@ func (p *Postgres) RequestHistory(ctx context.Context, requestID string) ([]Requ
 		err := row.Scan(&c.Status, &c.ChangedByID, &c.ChangedByFirstName, &c.ChangedByLastName, &c.CreatedAt)
 		return c, err
 	})
+}
+
+// LockRequest holds the request row until the surrounding transaction ends.
+func (p *Postgres) LockRequest(ctx context.Context, requestID string) (RequestState, error) {
+	var r RequestState
+	err := p.conn(ctx).QueryRow(ctx, `SELECT id, requester_id, recipient_id, status::text
+		FROM exchange_requests WHERE id = $1 FOR UPDATE`, requestID).Scan(&r.ID, &r.RequesterID, &r.RecipientID, &r.Status)
+	if err != nil {
+		return RequestState{}, notFound(err)
+	}
+	return r, nil
+}
+
+func (p *Postgres) UpdateRequestStatus(ctx context.Context, requestID, status, changedByID string) error {
+	tag, err := p.conn(ctx).Exec(ctx, `WITH updated AS (
+			UPDATE exchange_requests SET status = $2::exchange_request_status, responded_at = now()
+			WHERE id = $1
+			RETURNING id, status, responded_at
+		)
+		INSERT INTO exchange_request_status_history (request_id, status, changed_by_user_id, created_at)
+		SELECT id, status, $3, responded_at FROM updated`, requestID, status, changedByID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
