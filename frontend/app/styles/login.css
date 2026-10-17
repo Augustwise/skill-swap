@@ -28,6 +28,22 @@
   cursor: pointer;
 }
 
+.login-form__back:disabled,
+.login-form__options > button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.auth-status-label {
+  align-self: flex-start;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .login-form__options > button {
   padding: 0;
 }

@@ -34,3 +34,48 @@ added plus deleted lines, including documentation.
 Run `npm run lint`, `npm run format:check` and `npm run build` from `frontend/`.
 Run `go test ./...` from `backend/` for integration regression coverage. Database
 tests skip unless a prepared local `TEST_DATABASE_URL` is configured.
+
+## Acceptance checks completed on October 18, 2026
+
+Browser scenarios used the real Go HTTP/auth/profile services with disposable
+in-memory repositories and local Mailpit. Fault injection and forced token expiry
+were restricted to the temporary QA process. No application database was changed.
+
+| Scenario                                         | Observed result                                                                        |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Empty registration                               | Field descriptions explain errors; focus moves to the first invalid field.             |
+| Short Unicode password                           | Six emoji are rejected; minimum length counts code points, maximum counts UTF-8 bytes. |
+| University API unavailable                       | Submit stays disabled; retry loads the catalog when the API recovers.                  |
+| Normalized duplicate email                       | Existing account is rejected and the email field receives focus.                       |
+| SMTP unavailable on registration                 | Account creation succeeds; the screen explains how to resend after login.              |
+| SMTP available                                   | Verification and recovery messages arrive in Mailpit.                                  |
+| Incorrect login                                  | Credentials are rejected without leaving the form.                                     |
+| Unverified login                                 | Browser opens verification; server session survives reload.                            |
+| Verified login                                   | Browser opens onboarding; `/main` remains an allowlisted destination.                  |
+| Logout                                           | Server session is revoked; opening `/main` requires login again.                       |
+| Password confirmation mismatch                   | Password reset stays on the form with linked field errors.                             |
+| Password reset                                   | New password works, old password fails and the old browser session ends.               |
+| Reused reset link                                | Reset is rejected; the action opens `/login?mode=recovery`.                            |
+| Missing/malformed reset token                    | No password form is rendered; recovery is offered directly.                            |
+| Successful verification then failed session read | Retry preserves the successful result after the API recovers.                          |
+| Reused/expired verification link                 | Link is rejected; signed-in users can request a fresh message.                         |
+| Repeated verification message                    | Fresh CSRF is fetched; a 30-second button cooldown prevents rapid repeat clicks.       |
+| Logout before verification                       | User can leave the unverified account without entering protected pages.                |
+| Token-bearing pages                              | Consumed tokens leave the URL; metadata disables indexing and referrer disclosure.     |
+| Desktop/mobile                                   | Checked at 1440 × 900 and 390 × 844; registration has no horizontal overflow.          |
+
+All five branch checkpoints pass ESLint, Prettier, a production build and
+`go test ./...`. Focused runtime assertions also cover API 204/429 responses,
+non-JSON failures, cookie/CSRF options, Unicode limits and redirect allowlisting.
+Screenshots are under `docs/sprint2/` at the repository root and linked in the PRs.
+
+PostgreSQL integration tests were skipped because no separate local
+`TEST_DATABASE_URL` was configured. Browser scenarios verify UI/API integration;
+they do not replace a database-backed persistence test. Server auth tests cover
+cookie persistence, token expiry/reuse, bcrypt validation and session revocation.
+
+To repeat the full persistence check with PostgreSQL, start the normal local
+stack from the root README, use a new disposable email matching a configured
+university domain, complete registration in the browser, open the Mailpit link,
+log in, reload, log out, request a reset, and verify that the previous password
+and previously issued session no longer work.
