@@ -188,16 +188,10 @@ export function Dashboard() {
           )}
         </nav>
         <div className="dashboard-sidebar__footer">
-          <button
-            className="dashboard-nav-item"
-            type="button"
-            onClick={() => setModal({ title: "Налаштування" })}
-            aria-haspopup="dialog"
-            aria-label="Налаштування"
-          >
+          <Link className="dashboard-nav-item" href="/profile" aria-label="Мій профіль">
             <Icon name="settings" />
-            <span>Налаштування</span>
-          </button>
+            <span>Мій профіль</span>
+          </Link>
           <button
             className="dashboard-nav-item"
             type="button"
@@ -239,14 +233,14 @@ export function Dashboard() {
           >
             <Icon name="bell" />
           </a>
-          <div className="dashboard-user">
+          <Link className="dashboard-user" href="/profile" aria-label="Мій профіль">
             <DashboardAvatar initials={initials || "СС"} />
             <div className="dashboard-user__identity">
               <p title={name}>{name}</p>
               <span title={university}>{university}</span>
             </div>
             <Icon name="chevron-down" />
-          </div>
+          </Link>
         </header>
         <main className="dashboard-content" id="dashboard-content" tabIndex={-1}>
           <section className="dashboard-hero" aria-labelledby="dashboard-greeting">
@@ -259,7 +253,7 @@ export function Dashboard() {
               </h2>
               <p>Додай навички у своєму профілі, щоб підготуватися до обміну знаннями.</p>
             </div>
-            <Link className="dashboard-hero__action" href="/onboarding">
+            <Link className="dashboard-hero__action" href="/profile">
               Заповнити профіль
               <Icon name="arrow-right" />
             </Link>
