@@ -22,18 +22,22 @@ export function ProfileShell({
   profile,
   csrfToken,
   children,
+  hasUnsavedChanges,
 }: {
   profile: Profile;
   csrfToken: string;
   children: ReactNode;
+  hasUnsavedChanges: boolean;
 }) {
   const router = useRouter();
   const [modal, setModal] = useState("");
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState(false);
   const logoutPending = useRef(false);
+  const canLeave = () =>
+    !hasUnsavedChanges || window.confirm("Є незбережені зміни. Залишити сторінку без збереження?");
   async function logout() {
-    if (logoutPending.current) return;
+    if (logoutPending.current || !canLeave()) return;
     logoutPending.current = true;
     setPending(true);
     setNotice("");
@@ -47,7 +51,23 @@ export function ProfileShell({
     }
   }
   return (
-    <div className="dashboard-shell profile-shell">
+    <div
+      className="dashboard-shell profile-shell"
+      onClickCapture={(event) => {
+        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+        const href = link?.getAttribute("href");
+        if (
+          href &&
+          !href.startsWith("#") &&
+          new URL(href, window.location.href).pathname !== window.location.pathname &&
+          !canLeave()
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
+    >
       <a className="dashboard-skip" href="#profile-content">
         До вмісту
       </a>

@@ -27,3 +27,32 @@ availability schedules and security settings from Figma are outside FR-02–FR-0
 Before every push: `npm test`, `npm run lint`, `npm run format:check`,
 `npm run build` in `frontend/`, and `go test ./...` in `backend/`.
 Database integration tests require a prepared local `TEST_DATABASE_URL`.
+
+## Profile acceptance
+
+- Register, verify the email in Mailpit and finish onboarding. Open `/profile`
+  from the dashboard: names, university, faculty, course, city, bio and both skill
+  lists must match the saved data. Reload and sign in again to verify persistence.
+- Change personal fields, save, reload, then cancel another edit. Invalid names,
+  a description over 600 Unicode characters and offline lessons without a city
+  must show field explanations. At least one lesson format is required.
+- Add a catalog skill to each list, change its level and remove it. A duplicate
+  is unavailable in the same list; the same skill may appear in both lists.
+- Test catalog failure/retry, an empty search, failed writes and an expired
+  session. Drafts survive errors and section switches; duplicate submits are
+  blocked. CSRF rejection refreshes the session once before retrying the write.
+- Check 390px mobile and 1440px desktop layouts, keyboard focus, form labels,
+  status announcements and the warning before leaving an unsaved form.
+
+Automated coverage: `npm test` exercises validation, Unicode boundaries, CSRF,
+request payloads, endpoint routing and failed writes. Headless Edge acceptance
+checks use API fixtures for editing, skill CRUD, formats, recovery and responsive
+layouts. They do not replace a live PostgreSQL/Mailpit registration-to-login run.
+Review screenshots in `public/review/` contain fixture data only.
+
+The final stack also passed a browser run against the real Go HTTP handlers,
+using the existing `datatest.Memory` store and captured test email: registration,
+verification, onboarding, profile editing, skill CRUD, logout and fresh login.
+That run found and fixed the login destination for `/profile`. PostgreSQL and
+Mailpit delivery remain environment-dependent checks; no configured database
+was modified for these acceptance runs.

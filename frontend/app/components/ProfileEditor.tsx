@@ -9,10 +9,12 @@ export function ProfileEditor({
   profile,
   csrfToken,
   onSaved,
+  onDirtyChange,
 }: {
   profile: Profile;
   csrfToken: string;
   onSaved: (profile: Profile) => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const initial = (): ProfileDraft => ({ ...profileFields(profile), formats: profile.formats });
   const [draft, setDraft] = useState(initial);
@@ -25,6 +27,8 @@ export function ProfileEditor({
   const [expired, setExpired] = useState(false);
   const saving = useRef(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial());
+
+  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -59,12 +63,17 @@ export function ProfileEditor({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving.current) return;
+    const form = event.currentTarget;
+    const focusError = () =>
+      window.requestAnimationFrame(() =>
+        form.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(),
+      );
     const invalid = validateProfile(draft);
     setErrors(invalid);
     setNotice("");
     if (Object.keys(invalid).length) {
       setNotice("Перевір виділені поля перед збереженням.");
-      (event.currentTarget.elements.namedItem(Object.keys(invalid)[0]) as HTMLElement)?.focus();
+      focusError();
       return;
     }
     saving.current = true;
@@ -76,6 +85,7 @@ export function ProfileEditor({
       setNotice("Зміни збережено.");
     } catch (error) {
       setErrors(profileErrors(error));
+      focusError();
       setExpired(error instanceof AuthError && error.status === 401);
       setNotice(
         error instanceof AuthError && error.status === 422
@@ -124,6 +134,7 @@ export function ProfileEditor({
           <legend className="sr-only">Особисті дані та опис</legend>
           <OnboardingProfile
             embedded
+            cityRequired={draft.formats.includes("OFFLINE")}
             values={draft}
             university={profile.university.name}
             faculties={faculties}
@@ -131,6 +142,49 @@ export function ProfileEditor({
             onChange={change}
           />
         </fieldset>
+      </section>
+      <section className="account-card">
+        <h2 id="profile-formats-title">Формат занять</h2>
+        <p className="profile-hint">
+          Обери один або обидва формати. Для офлайн-занять вкажи місто.
+        </p>
+        <fieldset
+          className="profile-fields profile-formats"
+          disabled={pending || expired}
+          aria-labelledby="profile-formats-title"
+        >
+          {[
+            ["ONLINE", "Онлайн"],
+            ["OFFLINE", "Офлайн"],
+          ].map(([value, label]) => (
+            <label className="profile-format" key={value}>
+              <input
+                type="checkbox"
+                name="formats"
+                value={value}
+                checked={draft.formats.includes(value)}
+                aria-invalid={Boolean(errors.formats)}
+                aria-describedby={errors.formats ? "profile-formats-error" : undefined}
+                onChange={(event) => {
+                  setDraft((current) => ({
+                    ...current,
+                    formats: ["ONLINE", "OFFLINE"].filter((format) =>
+                      format === value ? event.target.checked : current.formats.includes(format),
+                    ),
+                  }));
+                  setErrors((current) => ({ ...current, formats: "", city: "" }));
+                  setNotice("");
+                }}
+              />
+              {label}
+            </label>
+          ))}
+        </fieldset>
+        {errors.formats && (
+          <p className="register-field__error" id="profile-formats-error" role="alert">
+            {errors.formats}
+          </p>
+        )}
       </section>
       <div className="account-card profile-save-bar">
         <p role="status" aria-live="polite">

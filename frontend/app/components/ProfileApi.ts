@@ -1,4 +1,4 @@
-import { AuthError, authRequest } from "./AuthApi";
+import { AuthError, authRequest, type AuthSession } from "./AuthApi";
 import type { Profile, ProfileFields, SkillLevel } from "./OnboardingApi";
 
 export type SkillList = "teaching" | "learning";
@@ -57,8 +57,18 @@ export function profileErrors(error: unknown) {
     : {};
 }
 
+async function profileWrite(path: string, options: RequestInit, csrfToken: string) {
+  try {
+    return await authRequest<{ profile: Profile }>(path, options, csrfToken);
+  } catch (error) {
+    if (!(error instanceof AuthError) || error.code !== "csrf_invalid") throw error;
+    const session = await authRequest<AuthSession>("auth/me");
+    return authRequest<{ profile: Profile }>(path, options, session.csrfToken);
+  }
+}
+
 export async function saveProfile(draft: ProfileDraft, csrfToken: string) {
-  const { profile } = await authRequest<{ profile: Profile }>(
+  const { profile } = await profileWrite(
     "me/profile",
     {
       method: "PATCH",
@@ -85,7 +95,7 @@ export async function changeProfileSkill(
   level?: SkillLevel,
 ) {
   const path = `me/${list}-skills${method === "POST" ? "" : `/${encodeURIComponent(skillId)}`}`;
-  const { profile } = await authRequest<{ profile: Profile }>(
+  const { profile } = await profileWrite(
     path,
     {
       method,
