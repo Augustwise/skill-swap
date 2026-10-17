@@ -32,6 +32,85 @@
   gap: 22px;
   min-width: 0;
 }
+.profile-sections[hidden] {
+  display: none;
+}
+.profile-skill-rows {
+  display: grid;
+  gap: 14px;
+}
+.profile-skill-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #edf0f7;
+  border-radius: 14px;
+  background: #fcfcfe;
+}
+.profile-skill-row strong {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  font-weight: 600;
+}
+.profile-skill-row select {
+  width: 140px;
+  height: 36px;
+}
+.profile-skill-icon {
+  display: grid;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  background: #ffe9f3;
+}
+.profile-skill-row--learn .profile-skill-icon {
+  background: #e4f2ff;
+}
+.profile-remove-skill {
+  padding: 8px;
+  border: 1px solid #f7dcdd;
+  border-radius: 8px;
+  background: white;
+  color: #a32126;
+  font-size: 12px;
+}
+.profile-add-button,
+.profile-add-skill {
+  padding: 14px;
+  border: 1px dashed #c9bcff;
+  border-radius: 12px;
+  background: #faf9ff;
+  color: var(--purple-dark);
+  font-size: 13px;
+}
+.profile-add-skill .profile-fields {
+  display: grid;
+  gap: 16px;
+}
+.profile-add-skill__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+@media (max-width: 700px) {
+  .profile-skill-row {
+    flex-wrap: wrap;
+  }
+  .profile-skill-row strong {
+    flex-basis: calc(100% - 50px);
+  }
+  .profile-skill-row select {
+    width: 100%;
+  }
+  .profile-add-skill__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .account-card {
   display: grid;
   gap: 16px;
