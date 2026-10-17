@@ -7,11 +7,9 @@ import (
 	"testing"
 
 	"skillswap/backend/internal/auth"
-	"skillswap/backend/internal/core"
 	"skillswap/backend/internal/data/datatest"
 	"skillswap/backend/internal/discovery"
 	"skillswap/backend/internal/mailer/mailertest"
-	"skillswap/backend/internal/profile"
 )
 
 // discoveryEnv is the API on an in-memory store, with the mail recorder needed to
@@ -19,14 +17,15 @@ import (
 type discoveryEnv struct {
 	handler http.Handler
 	mail    *mailertest.Recorder
+	store   *datatest.Memory
 }
 
 func newDiscoveryEnv() *discoveryEnv {
 	store := datatest.NewMemory()
 	mail := &mailertest.Recorder{}
 	access := auth.NewService(store, store, mail, testAuthConfig, discardLogger())
-	app := core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store))
-	return &discoveryEnv{handler: New(app, access, &fakeApp{}, testSettings, discardLogger()), mail: mail}
+	app := memoryApp(store)
+	return &discoveryEnv{handler: New(app, access, &fakeApp{}, testSettings, discardLogger()), mail: mail, store: store}
 }
 
 // student registers and verifies a user, then fills the profile: the formats JSON

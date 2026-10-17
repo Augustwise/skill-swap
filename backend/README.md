@@ -273,6 +273,135 @@ accounts, unverified emails, or blocks in either direction. The PostgreSQL tests
 `internal/data/discovery_test.go` check these rules on the demo students; the test that
 changes skills runs inside a transaction that is rolled back.
 
+## Exchange requests (FR-06, FR-07)
+
+Migration `00005_exchange_requests.sql` makes `exchange_requests.expires_at` optional:
+in the MVP a request waits until the recipient accepts or declines it or the author
+withdraws it. A partial unique index allows only one pending request for the same pair
+of skills between two students, in either direction. While Olha's "guitar ↔ Photoshop"
+request to Andrii is pending, Andrii cannot send the same pair back and should accept
+hers instead. Back up a shared database before applying it (NFR-04):
+
+```bash
+pg_dump --format=custom --file=../backups/skillswap-before-00005.dump "$DATABASE_URL"
+go run ./cmd/db up
+go run ./cmd/db seed
+```
+
+The seed adds request cases to the demo students:
+
+| Case | Where to see it |
+| --- | --- |
+| `demo.taras` → `demo.olha`: pending, Photoshop ↔ guitar, offline, 2 × 60 min each way | Olha's incoming and Taras's sent requests |
+| `demo.dmytro` does not accept new requests | a request from `demo.iryna` to Dmytro is refused |
+| `demo.andrii` has no requests yet | Olha sends him "guitar ↔ Photoshop" by hand |
+
+Running the seed again does not reset a demo request that was already answered.
+
+`POST /api/v1/exchange-requests` sends a request. It needs a session with a verified
+email, the CSRF header and the frontend origin:
+
+```json
+{
+  "recipientId": "60000000-0000-0000-0000-000000000002",
+  "teachSkillId": "30000000-0000-0000-0000-000000000001",
+  "learnSkillId": "30000000-0000-0000-0000-000000000002",
+  "format": "ONLINE",
+  "teachSessions": 2, "teachDurationMinutes": 60,
+  "learnSessions": 2, "learnDurationMinutes": 60,
+  "message": "Привіт!"
+}
+```
+
+`teachSkillId` is the catalog skill you teach and `learnSkillId` the one the recipient
+teaches you. The response is 201 with `{ "request" }`: both students, both directions
+with the skill, the teacher's and learner's current levels, sessions and minutes, plus
+`totalSessions`, `status: "PENDING"`, `message` (or null) and `exchangeId: null`. The
+checks run in this order:
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `validation_failed` | 422 | not a UUID, your own ID, the same skill both ways, a format other than `ONLINE`/`OFFLINE`, 1–20 sessions and 15–240 minutes in each direction, a different total time in the two directions, a message over 500 characters |
+| `student_not_found` | 404 | the recipient is not visible in discovery, including blocks in either direction |
+| `requests_closed` | 409 | the recipient does not accept requests |
+| `same_university_only` | 409 | the recipient accepts requests only from their university |
+| `validation_failed` | 422 | `teachSkillId` is not in your "I teach" and their "I learn" lists, `learnSkillId` is not in their "I teach" and your "I learn" lists, or the format is not in both profiles (offline also needs the same city) |
+| `duplicate_request` | 409 | a request for the same pair of skills is pending in either direction |
+
+With the demo data, Olha's request to Andrii succeeds, a second one returns
+`duplicate_request`, and her guitar ↔ Photoshop request to Taras does too because his
+request is pending. Iryna's request to Dmytro returns `requests_closed`.
+
+Two read-only routes show the requests to their participants. Both need a session
+with a verified email:
+
+- `GET /api/v1/me/exchange-requests?direction=incoming|outgoing&status=&page=` lists
+  the requests sent to you (`incoming`) or by you (`outgoing`), newest first, 20 per
+  page, as `{ items, page, pageSize, total }`. `status` is optional: `PENDING`,
+  `ACCEPTED`, `DECLINED` or `WITHDRAWN`. A missing or unknown `direction` or `status`
+  returns 422 `validation_failed`.
+- `GET /api/v1/exchange-requests/{requestId}` returns `{ request, history }`. Each
+  history item has `status`, `changedBy` (`{ id, firstName, lastName }` or null) and
+  `createdAt`, oldest first. Anyone except the requester and the recipient gets 404
+  `request_not_found`, the same as for an unknown ID.
+
+Participants keep seeing a request after the other student hides the profile or blocks
+them, so the history is not lost. With the demo data, Olha's incoming list and Taras's
+outgoing list show the Photoshop ↔ guitar request; Andrii gets 404 for it.
+
+Two routes answer a pending request. Both need a session with a verified email, the
+CSRF header and the frontend origin, and take no body:
+
+- `POST /api/v1/exchange-requests/{requestId}/decline` — only the recipient.
+- `POST /api/v1/exchange-requests/{requestId}/withdraw` — only the requester.
+
+Each locks the request row, sets the new status and `respondedAt`, and adds one history
+item with the student who made the change, all in one transaction. The response is 200
+with `{ "request" }`. Repeating the same action on a request that already has that
+status returns 200 with the request as it is and adds no history, so a retry after a
+lost response is safe.
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `request_not_found` | 404 | no request has this ID, or you do not take part in it |
+| `action_not_allowed` | 403 | you take part in the request but in the other role, e.g. the requester declines |
+| `request_not_pending` | 409 | the request was already accepted, declined or withdrawn in another way |
+
+A declined or withdrawn request no longer blocks the pair of skills, so either student
+can send a new request. With the demo data, Olha can decline Taras's request, and
+declining it again returns 200; Taras then gets `request_not_pending` when he tries to
+withdraw it.
+
+`POST /api/v1/exchange-requests/{requestId}/accept` lets the recipient accept a pending
+request. It has the same session, CSRF and origin rules and takes no body. In one
+transaction it locks the request, checks that it can still be accepted, sets
+`ACCEPTED`, `respondedAt` and a history item, and creates an `ACTIVE` exchange: the
+requester is `user_a`, the recipient `user_b`, with the request's format and
+`totalSessions`, two skill commitments and an `ACTIVE` exchange history item. Each
+commitment copies the skill name, the teacher's level, the learner's current level and
+the sessions and minutes, so later profile changes do not alter the exchange.
+
+The response is 200 with `{ request, exchange }`. Accepting again, or two acceptances at
+the same time, return the same exchange; `UNIQUE (source_request_id)` guards it in the
+database too.
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `request_not_found` | 404 | no request has this ID, or you do not take part in it |
+| `action_not_allowed` | 403 | the requester tries to accept |
+| `request_not_pending` | 409 | the request was declined or withdrawn |
+| `request_outdated` | 409 | one student blocked the other, an account is suspended or deleted, or one of the four skills was removed from a profile; the request stays pending and its author can withdraw it |
+
+`GET /api/v1/exchanges/{exchangeId}` returns `{ exchange }` with the terms from those
+copies. Only the two participants see it; anyone else, an unknown ID or a value that is
+not a UUID gets 404 `exchange_not_found`. The list of exchanges comes with FR-10.
+
+With the demo data, Olha can accept Taras's request and open the exchange. Do this only
+on your own database: the seed does not reset an answered demo request.
+`TestAcceptRequestConcurrentlyAgainstPostgres` commits its data, because two parallel
+acceptances need separate transactions; it creates its own students and deletes them
+afterwards.
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for

@@ -30,6 +30,10 @@ type Memory struct {
 	sessions     map[string]*session
 	tokens       map[string]*token
 	throttles    map[string]*throttle
+	settings     map[string]requestSettings
+	requests     map[string]*data.ExchangeRequest
+	history      map[string][]data.RequestStatusChange
+	exchanges    map[string]*data.Exchange
 }
 
 type catalogSkill struct {
@@ -86,6 +90,10 @@ func NewMemory() *Memory {
 		sessions:  map[string]*session{},
 		tokens:    map[string]*token{},
 		throttles: map[string]*throttle{},
+		settings:  map[string]requestSettings{},
+		requests:  map[string]*data.ExchangeRequest{},
+		history:   map[string][]data.RequestStatusChange{},
+		exchanges: map[string]*data.Exchange{},
 	}
 }
 

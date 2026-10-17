@@ -13,11 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"skillswap/backend/internal/auth"
-	"skillswap/backend/internal/core"
 	"skillswap/backend/internal/data/datatest"
-	"skillswap/backend/internal/discovery"
 	"skillswap/backend/internal/mailer/mailertest"
-	"skillswap/backend/internal/profile"
 )
 
 // Paths for the demo skills, used by several tests below.
@@ -33,7 +30,7 @@ func newProfileHandler(t *testing.T) (http.Handler, *session) {
 	store := datatest.NewMemory()
 	mail := &mailertest.Recorder{}
 	access := auth.NewService(store, store, mail, testAuthConfig, discardLogger())
-	app := core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store))
+	app := memoryApp(store)
 	handler := New(app, access, &fakeApp{}, testSettings, discardLogger())
 	send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody("a@students.example.test", testPassword), nil)
 	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/verify-email",
@@ -94,7 +91,7 @@ func TestProfileRequiresVerifiedEmail(t *testing.T) {
 	store := datatest.NewMemory()
 	mail := &mailertest.Recorder{}
 	access := auth.NewService(store, store, mail, testAuthConfig, discardLogger())
-	app := core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store))
+	app := memoryApp(store)
 	handler := New(app, access, &fakeApp{}, testSettings, discardLogger())
 	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/register",
 		registerBody("pending@students.example.test", testPassword), nil), http.StatusCreated)

@@ -5,6 +5,7 @@ import (
 
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/discovery"
+	"skillswap/backend/internal/exchange"
 	"skillswap/backend/internal/profile"
 )
 
@@ -23,17 +24,26 @@ type IApplication interface {
 	MutualMatches(ctx context.Context, userID string, page int) (discovery.MatchPage, error)
 	SearchStudents(ctx context.Context, userID string, filter data.StudentFilter, page int) (discovery.StudentPage, error)
 	StudentProfile(ctx context.Context, userID, studentID string) (data.StudentProfile, error)
+
+	CreateRequest(ctx context.Context, userID string, request exchange.NewRequest) (data.ExchangeRequest, error)
+	Requests(ctx context.Context, userID string, filter data.RequestFilter, page int) (exchange.RequestPage, error)
+	RequestDetails(ctx context.Context, userID, requestID string) (exchange.RequestDetails, error)
+	DeclineRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error)
+	WithdrawRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error)
+	AcceptRequest(ctx context.Context, userID, requestID string) (exchange.Acceptance, error)
+	Exchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error)
 }
 
 type Application struct {
 	profiles  *profile.Service
 	discovery *discovery.Service
+	exchanges *exchange.Service
 }
 
 var _ IApplication = (*Application)(nil)
 
-func NewApplication(profiles *profile.Service, discovery *discovery.Service) *Application {
-	return &Application{profiles: profiles, discovery: discovery}
+func NewApplication(profiles *profile.Service, discovery *discovery.Service, exchanges *exchange.Service) *Application {
+	return &Application{profiles: profiles, discovery: discovery, exchanges: exchanges}
 }
 
 func (a *Application) Universities(ctx context.Context) ([]data.University, error) {
@@ -82,4 +92,32 @@ func (a *Application) SearchStudents(ctx context.Context, userID string, filter 
 
 func (a *Application) StudentProfile(ctx context.Context, userID, studentID string) (data.StudentProfile, error) {
 	return a.discovery.StudentProfile(ctx, userID, studentID)
+}
+
+func (a *Application) CreateRequest(ctx context.Context, userID string, request exchange.NewRequest) (data.ExchangeRequest, error) {
+	return a.exchanges.CreateRequest(ctx, userID, request)
+}
+
+func (a *Application) Requests(ctx context.Context, userID string, filter data.RequestFilter, page int) (exchange.RequestPage, error) {
+	return a.exchanges.Requests(ctx, userID, filter, page)
+}
+
+func (a *Application) RequestDetails(ctx context.Context, userID, requestID string) (exchange.RequestDetails, error) {
+	return a.exchanges.RequestDetails(ctx, userID, requestID)
+}
+
+func (a *Application) DeclineRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error) {
+	return a.exchanges.DeclineRequest(ctx, userID, requestID)
+}
+
+func (a *Application) WithdrawRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error) {
+	return a.exchanges.WithdrawRequest(ctx, userID, requestID)
+}
+
+func (a *Application) AcceptRequest(ctx context.Context, userID, requestID string) (exchange.Acceptance, error) {
+	return a.exchanges.AcceptRequest(ctx, userID, requestID)
+}
+
+func (a *Application) Exchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error) {
+	return a.exchanges.Exchange(ctx, userID, exchangeID)
 }
