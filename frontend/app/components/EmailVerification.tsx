@@ -3,51 +3,63 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { OnboardingError, onboardingRequest, type AuthSession } from "./OnboardingApi";
+import { AuthError, authRequest, requestError, type AuthSession } from "./AuthApi";
 
 type Status = "loading" | "waiting" | "login" | "verified" | "invalid" | "error";
 
-export function EmailVerification() {
+export function EmailVerification({
+  token = "",
+  invalidToken = false,
+}: {
+  token?: string;
+  invalidToken?: boolean;
+}) {
   const router = useRouter();
   const [status, setStatus] = useState<Status>("loading");
   const [session, setSession] = useState<AuthSession | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [pending, setPending] = useState(false);
+  const [action, setAction] = useState<"resend" | "logout" | null>(null);
+  const [cooldown, setCooldown] = useState(0);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const verification = useRef<Promise<unknown> | null>(null);
   const resending = useRef(false);
+  const confirmed = useRef(false);
+  const invalid = useRef(invalidToken);
+  const pending = action !== null;
+
+  useEffect(() => {
+    if (!cooldown) return;
+    const timer = window.setTimeout(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
 
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
-      const token = new URLSearchParams(window.location.search).get("token");
-      let confirmed = false;
-      let invalid = false;
-      if (token) {
-        verification.current ??= onboardingRequest("auth/verify-email", {
+      if (token && !confirmed.current && !invalid.current) {
+        verification.current ??= authRequest("auth/verify-email", {
           method: "POST",
           body: JSON.stringify({ token }),
         });
         try {
           await verification.current;
-          confirmed = true;
+          confirmed.current = true;
         } catch (error) {
           if (controller.signal.aborted) return;
-          if (!(error instanceof OnboardingError) || error.code !== "invalid_token") {
+          if (!(error instanceof AuthError) || error.code !== "invalid_token") {
             verification.current = null;
             setStatus("error");
             return;
           }
-          invalid = true;
+          invalid.current = true;
         }
         if (controller.signal.aborted) return;
-        const url = new URL(window.location.href);
-        url.searchParams.delete("token");
-        window.history.replaceState(null, "", url.pathname + url.search);
+        window.history.replaceState(null, "", "/verify-email");
       }
+      if (invalidToken) window.history.replaceState(null, "", "/verify-email");
       try {
-        const current = await onboardingRequest<AuthSession>("auth/me", {
+        const current = await authRequest<AuthSession>("auth/me", {
           signal: controller.signal,
           cache: "no-store",
         });
@@ -57,15 +69,15 @@ export function EmailVerification() {
           return;
         }
         setSession(current);
-        setStatus(invalid ? "invalid" : "waiting");
+        setStatus(invalid.current ? "invalid" : "waiting");
       } catch (error) {
         if (controller.signal.aborted) return;
         setSession(null);
         setStatus(
-          error instanceof OnboardingError && error.status === 401
-            ? confirmed
+          error instanceof AuthError && error.status === 401
+            ? confirmed.current
               ? "verified"
-              : invalid
+              : invalid.current
                 ? "invalid"
                 : "login"
             : "error",
@@ -74,7 +86,7 @@ export function EmailVerification() {
     }
     void load();
     return () => controller.abort();
-  }, [attempt, router]);
+  }, [attempt, router, token, invalidToken]);
 
   function checkVerification() {
     setStatus("loading");
@@ -84,27 +96,52 @@ export function EmailVerification() {
   }
 
   async function resend() {
-    if (!session || resending.current) return;
+    if (!session || resending.current || cooldown) return;
     resending.current = true;
-    setPending(true);
+    setAction("resend");
     setError("");
     setNotice("");
     try {
-      await onboardingRequest("auth/resend-verification", { method: "POST" }, session.csrfToken);
+      const current = await authRequest<AuthSession>("auth/me");
+      setSession(current);
+      if (current.user.emailVerified) {
+        router.replace("/onboarding");
+        return;
+      }
+      await authRequest("auth/resend-verification", { method: "POST" }, current.csrfToken);
       setStatus("waiting");
+      setCooldown(30);
       setNotice("Лист надіслано повторно. Перевір вхідні та папку «Спам».");
     } catch (error) {
-      if (error instanceof OnboardingError && error.code === "email_already_verified") {
+      if (error instanceof AuthError && error.code === "email_already_verified") {
         checkVerification();
-      } else if (error instanceof OnboardingError && error.status === 401) {
+      } else if (error instanceof AuthError && error.status === 401) {
         setSession(null);
         setStatus("login");
       } else {
-        setError("Не вдалося надіслати лист. Спробуй ще раз пізніше.");
+        setError(requestError(error));
       }
     } finally {
       resending.current = false;
-      setPending(false);
+      setAction(null);
+    }
+  }
+
+  async function logout() {
+    if (resending.current) return;
+    resending.current = true;
+    setAction("logout");
+    setError("");
+    try {
+      const current = await authRequest<AuthSession>("auth/me");
+      await authRequest("auth/logout", { method: "POST" }, current.csrfToken);
+      router.replace("/login");
+    } catch (error) {
+      if (error instanceof AuthError && error.status === 401) router.replace("/login");
+      else setError(requestError(error));
+    } finally {
+      resending.current = false;
+      setAction(null);
     }
   }
 
@@ -121,6 +158,7 @@ export function EmailVerification() {
 
   return (
     <div className="register-form register-success" aria-busy={status === "loading" || pending}>
+      <span className="auth-status-label">Підтвердження акаунта</span>
       <h1 id="verification-title">{title}</h1>
       <p role="status">
         {status === "loading"
@@ -156,10 +194,14 @@ export function EmailVerification() {
           <button
             className="login-form__back"
             type="button"
-            disabled={pending}
+            disabled={pending || cooldown > 0}
             onClick={() => void resend()}
           >
-            {pending ? "Надсилаємо лист…" : "Надіслати лист повторно"}
+            {action === "resend"
+              ? "Надсилаємо лист…"
+              : cooldown
+                ? `Повторно через ${cooldown} с.`
+                : "Надіслати лист повторно"}
           </button>
         </>
       )}
@@ -168,10 +210,21 @@ export function EmailVerification() {
           Спробувати ще раз
         </button>
       )}
-      {status !== "loading" && (
-        <p className="register-form__login">
-          <Link href="/login?next=/onboarding">Перейти до входу</Link>
-        </p>
+      {session && status !== "loading" && status !== "error" ? (
+        <button
+          className="login-form__back"
+          type="button"
+          disabled={pending}
+          onClick={() => void logout()}
+        >
+          {action === "logout" ? "Виходимо…" : "Вийти з акаунта"}
+        </button>
+      ) : (
+        status !== "loading" && (
+          <p className="register-form__login">
+            <Link href="/login?next=/onboarding">Перейти до входу</Link>
+          </p>
+        )
       )}
     </div>
   );
