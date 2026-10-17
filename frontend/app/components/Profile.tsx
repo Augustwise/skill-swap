@@ -4,10 +4,11 @@ import Link from "next/link";
 import { Logo } from "./Logo";
 import { ProfileShell } from "./ProfileShell";
 import { ProfileSummary } from "./ProfileSummary";
+import { ProfileEditor } from "./ProfileEditor";
 import { useProfile } from "./useProfile";
 
 export function Profile() {
-  const { profile, session, status, retry } = useProfile();
+  const { profile, session, status, retry, setProfile } = useProfile();
   if (status !== "ready" || !profile || !session) {
     return (
       <main className="dashboard-message-page">
@@ -55,31 +56,7 @@ export function Profile() {
       </nav>
       <div className="profile-columns">
         <div className="profile-sections" id="profile-about">
-          <section className="account-card">
-            <h2>Основна інформація</h2>
-            <p className="profile-hint">Дані з реєстрації та онбордингу</p>
-            <dl className="profile-details">
-              {[
-                ["Ім’я", profile.firstName],
-                ["Прізвище", profile.lastName],
-                ["Університет", profile.university.name],
-                ["Факультет", profile.faculty?.name],
-                ["Курс", profile.course && `${profile.course} курс`],
-                ["Місто", profile.city],
-              ].map(([label, value]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value || "Не вказано"}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-          <section className="account-card">
-            <h2>Про себе</h2>
-            <p className="profile-biography">
-              {profile.bio || "Розкажи про свої інтереси та досвід навчання."}
-            </p>
-          </section>
+          <ProfileEditor profile={profile} csrfToken={session.csrfToken} onSaved={setProfile} />
           <section className="account-card">
             <h2>Пошта університету</h2>
             <p className="profile-email">{session.user.email}</p>
