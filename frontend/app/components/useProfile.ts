@@ -18,6 +18,7 @@ export function useProfile() {
     async function load() {
       try {
         const current = await authRequest<AuthSession>("auth/me", { signal });
+        if (signal.aborted) return;
         if (!current.user.emailVerified) {
           router.replace("/verify-email");
           return;

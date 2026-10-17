@@ -224,6 +224,82 @@
   line-height: 18px;
 }
 
+.account-menu {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+}
+
+.account-menu__trigger {
+  padding-block: 4px;
+  padding-right: 4px;
+  border-block: 0;
+  border-right: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.account-menu__trigger:hover,
+.account-menu__trigger[aria-expanded="true"] {
+  background: var(--purple-soft);
+}
+
+.dashboard-user__identity .account-menu__name {
+  margin-top: 0;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.account-menu__panel {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 224px;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 12px 32px rgb(22 15 65 / 12%);
+}
+
+.account-menu__panel :is(a, button) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 14px;
+  text-align: left;
+}
+
+.account-menu__panel :is(a:hover, button:enabled:hover, [aria-current="page"]) {
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+}
+
+.account-menu__panel button:disabled {
+  opacity: 0.6;
+}
+
+.dashboard-user.account-menu__trigger > .dashboard-icon {
+  display: block;
+  transition: transform 150ms ease;
+}
+
+.account-menu__trigger[aria-expanded="true"] > .dashboard-icon {
+  transform: rotate(180deg);
+}
+
 .dashboard-user__identity span {
   margin-top: 1px;
   color: var(--muted);
