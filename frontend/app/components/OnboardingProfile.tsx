@@ -8,6 +8,7 @@ export function OnboardingProfile({
   errors,
   onChange,
   embedded = false,
+  cityRequired = false,
 }: {
   values: ProfileFields;
   university: string;
@@ -15,6 +16,7 @@ export function OnboardingProfile({
   errors: Record<string, string>;
   onChange: (field: keyof ProfileFields, value: string) => void;
   embedded?: boolean;
+  cityRequired?: boolean;
 }) {
   function textField(field: "firstName" | "lastName" | "city", label: string, placeholder: string) {
     return (
@@ -33,7 +35,7 @@ export function OnboardingProfile({
                 : "family-name"
           }
           maxLength={100}
-          required={field !== "city"}
+          required={field !== "city" || cityRequired}
           aria-invalid={Boolean(errors[field])}
           aria-describedby={errors[field] ? `onboarding-${field}-error` : undefined}
           onChange={(event) => onChange(field, event.target.value)}
@@ -126,7 +128,7 @@ export function OnboardingProfile({
             )}
           </label>
         </div>
-        {textField("city", "Місто · необов’язково", "Наприклад, Київ")}
+        {textField("city", cityRequired ? "Місто *" : "Місто · необов’язково", "Наприклад, Київ")}
         <label className="register-field">
           <span id="onboarding-bio-label">
             Про мене <span className="onboarding-optional">· необов’язково</span>
