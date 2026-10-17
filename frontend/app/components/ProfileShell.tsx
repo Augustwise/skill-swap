@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { authRequest, requestError } from "./AuthApi";
-import { DashboardAvatar } from "./DashboardCards";
+import { AccountMenu } from "./AccountMenu";
 import { DashboardIcon as Icon, type DashboardIconName } from "./DashboardIcon";
 import { DashboardModal } from "./DashboardModal";
 import { Logo } from "./Logo";
@@ -98,6 +98,7 @@ export function ProfileShell({
             className="dashboard-nav-item dashboard-nav-item--active"
             href="/profile"
             aria-current="page"
+            aria-label="Мій профіль"
           >
             <Image src="/figma/profile/settings.svg" alt="" width={20} height={20} />
             <span>Мій профіль</span>
@@ -107,6 +108,7 @@ export function ProfileShell({
             type="button"
             disabled={pending}
             onClick={() => void logout()}
+            aria-label={pending ? "Виходимо…" : "Вийти"}
           >
             <Icon name="logout" />
             <span>{pending ? "Виходимо…" : "Вийти"}</span>
@@ -124,21 +126,7 @@ export function ProfileShell({
             <h1>Мій профіль</h1>
             <p>Дані, які бачать студенти у твоєму профілі</p>
           </div>
-          <Link
-            className="dashboard-user profile-topbar-user"
-            href="/profile"
-            aria-label="Мій профіль"
-          >
-            <DashboardAvatar
-              initials={`${profile.firstName.charAt(0)}${profile.lastName.charAt(0)}`}
-            />
-            <div className="dashboard-user__identity">
-              <p>
-                {profile.firstName} {profile.lastName}
-              </p>
-              <span>{profile.university.name}</span>
-            </div>
-          </Link>
+          <AccountMenu profile={profile} pending={pending} onLogout={() => void logout()} />
         </header>
         <main className="dashboard-content" id="profile-content" tabIndex={-1}>
           {children}

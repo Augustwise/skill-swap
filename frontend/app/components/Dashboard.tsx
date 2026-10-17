@@ -1,20 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Logo } from "./Logo";
-import {
-  OnboardingError,
-  onboardingRequest,
-  type AuthSession,
-  type Profile,
-} from "./OnboardingApi";
+import { AccountMenu } from "./AccountMenu";
+import { useProfile } from "./useProfile";
 import type { DashboardMatch } from "./DashboardData";
 import { DashboardIcon as Icon, type DashboardIconName } from "./DashboardIcon";
 import { DashboardModal, type DashboardModalContent } from "./DashboardModal";
 import {
-  DashboardAvatar,
   DashboardExchanges,
   DashboardEmptyState,
   DashboardMatchCard,
@@ -38,44 +33,12 @@ const availableMatches: DashboardMatch[] = [];
 
 export function Dashboard() {
   const router = useRouter();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "login" | "error">("loading");
-  const [attempt, setAttempt] = useState(0);
-  const [csrfToken, setCsrfToken] = useState("");
+  const { profile, session, status, retry } = useProfile();
   const [query, setQuery] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
   const logoutPending = useRef(false);
   const [notice, setNotice] = useState("");
   const [modal, setModal] = useState<DashboardModalContent | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    async function load() {
-      try {
-        const session = await onboardingRequest<AuthSession>("auth/me", {
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) return;
-        if (!session.user.emailVerified) {
-          router.replace("/verify-email");
-          return;
-        }
-        const data = await onboardingRequest<{ profile: Profile }>("me/profile", {
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) return;
-        setCsrfToken(session.csrfToken);
-        setProfile(data.profile);
-        setStatus("ready");
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setStatus(error instanceof OnboardingError && error.status === 401 ? "login" : "error");
-        }
-      }
-    }
-    void load();
-    return () => controller.abort();
-  }, [attempt, router]);
 
   async function logout() {
     if (logoutPending.current) return;
@@ -86,7 +49,8 @@ export function Dashboard() {
       const response = await fetch("/api/v1/auth/logout", {
         method: "POST",
         credentials: "same-origin",
-        headers: { "X-CSRF-Token": csrfToken },
+        headers: { "X-CSRF-Token": session?.csrfToken ?? "" },
+        signal: AbortSignal.timeout(15000),
       });
       if (!response.ok && response.status !== 401) throw new Error("Logout failed");
       router.replace("/login");
@@ -125,10 +89,7 @@ export function Dashboard() {
             <button
               className="dashboard-button dashboard-button--primary"
               type="button"
-              onClick={() => {
-                setStatus("loading");
-                setAttempt((value) => value + 1);
-              }}
+              onClick={retry}
             >
               Спробувати ще раз
             </button>
@@ -138,11 +99,6 @@ export function Dashboard() {
     );
   }
 
-  const initials = `${profile.firstName.charAt(0)}${profile.lastName.charAt(0)}`.toLocaleUpperCase(
-    "uk",
-  );
-  const name = `${profile.firstName} ${profile.lastName}`.trim();
-  const university = `${profile.university.name}${profile.course ? ` · ${profile.course} курс` : ""}`;
   const search = query.trim().toLocaleLowerCase("uk");
   const matches = availableMatches.filter((match) =>
     [match.name, match.university, ...match.teaching, ...match.learning].some((value) =>
@@ -233,14 +189,7 @@ export function Dashboard() {
           >
             <Icon name="bell" />
           </a>
-          <Link className="dashboard-user" href="/profile" aria-label="Мій профіль">
-            <DashboardAvatar initials={initials || "СС"} />
-            <div className="dashboard-user__identity">
-              <p title={name}>{name}</p>
-              <span title={university}>{university}</span>
-            </div>
-            <Icon name="chevron-down" />
-          </Link>
+          <AccountMenu profile={profile} pending={loggingOut} onLogout={() => void logout()} />
         </header>
         <main className="dashboard-content" id="dashboard-content" tabIndex={-1}>
           <section className="dashboard-hero" aria-labelledby="dashboard-greeting">

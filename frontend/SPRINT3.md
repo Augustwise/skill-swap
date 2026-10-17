@@ -56,3 +56,13 @@ verification, onboarding, profile editing, skill CRUD, logout and fresh login.
 That run found and fixed the login destination for `/profile`. PostgreSQL and
 Mailpit delivery remain environment-dependent checks; no configured database
 was modified for these acceptance runs.
+
+# Перевірка переходів до профілю
+
+Після онбордингу відкривається `/main`. Кнопка «Заповнити профіль» і пункт
+«Мій профіль» ведуть на `/profile`. Кнопка біля імені відкриває меню акаунта
+на головній та у профілі. Меню закривається повторним натисканням, кліком поза ним,
+клавішею Escape або виходом фокуса; пункти доступні клавішею Tab.
+
+Для локальної перевірки потрібна гілка з усіма частинами профілю. Злиття stacked PR
+у його батьківську гілку саме по собі не переносить зміни до `main`.
