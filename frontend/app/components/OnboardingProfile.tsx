@@ -7,12 +7,14 @@ export function OnboardingProfile({
   faculties,
   errors,
   onChange,
+  embedded = false,
 }: {
   values: ProfileFields;
   university: string;
   faculties: Reference[];
   errors: Record<string, string>;
   onChange: (field: keyof ProfileFields, value: string) => void;
+  embedded?: boolean;
 }) {
   function textField(field: "firstName" | "lastName" | "city", label: string, placeholder: string) {
     return (
@@ -47,7 +49,7 @@ export function OnboardingProfile({
 
   return (
     <>
-      <div className="onboarding-intro">
+      <div className="onboarding-intro" hidden={embedded}>
         <h1 id="onboarding-title" tabIndex={-1}>
           Розкажи про себе
         </h1>
@@ -133,10 +135,11 @@ export function OnboardingProfile({
             name="bio"
             aria-labelledby="onboarding-bio-label"
             value={values.bio}
-            maxLength={600}
             rows={4}
             placeholder="Розкажи про свої інтереси та досвід обміну навичками…"
-            onChange={(event) => onChange("bio", event.target.value)}
+            onChange={(event) =>
+              onChange("bio", Array.from(event.target.value).slice(0, 600).join(""))
+            }
             aria-invalid={Boolean(errors.bio)}
             aria-describedby="onboarding-bio-hint"
           />
@@ -144,7 +147,7 @@ export function OnboardingProfile({
             id="onboarding-bio-hint"
             className={errors.bio ? "register-field__error" : "onboarding-field-hint"}
           >
-            {errors.bio || `${values.bio.length} / 600 символів`}
+            {errors.bio || `${Array.from(values.bio).length} / 600 символів`}
           </small>
         </label>
       </div>
