@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"skillswap/backend/internal/communication"
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
 	"skillswap/backend/internal/profile"
@@ -14,6 +15,7 @@ import (
 
 type fixture struct {
 	service *Service
+	comm    *communication.Service
 	store   *datatest.Memory
 	olha    string
 	andrii  string
@@ -45,7 +47,8 @@ func (f *fixture) student(t *testing.T, email, universityID, city string, format
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	store := datatest.NewMemory()
-	f := &fixture{service: NewService(store, store, store), store: store}
+	comm := communication.NewService(store, store, store)
+	f := &fixture{service: NewService(store, store, store, comm), comm: comm, store: store}
 	both := []string{data.FormatOnline, data.FormatOffline}
 	f.olha = f.student(t, "olha@students.example.test", datatest.DemoUniversityID, "Київ", both,
 		datatest.GuitarSkillID, datatest.PhotoshopSkillID)
@@ -93,6 +96,14 @@ func TestCreateRequest(t *testing.T) {
 	}
 	if got := created.RecipientTeaches; got.SkillID != datatest.PhotoshopSkillID || got.Sessions != 1 || got.DurationMinutes != 120 {
 		t.Fatalf("recipient teaches %+v", got)
+	}
+	conv, err := f.comm.RequestConversation(context.Background(), f.olha, created.ID)
+	if err != nil || conv.RequestID != created.ID || conv.Type != data.ConversationRequest {
+		t.Fatalf("request conversation = %+v, err %v", conv, err)
+	}
+	notifs, err := f.comm.Notifications(context.Background(), f.andrii, true, 1)
+	if err != nil || notifs.Total != 1 || notifs.Items[0].EventType != data.EventExchangeRequest || notifs.Items[0].RequestID != created.ID {
+		t.Fatalf("recipient notifications = %+v, err %v", notifs, err)
 	}
 }
 
@@ -505,6 +516,14 @@ func TestAcceptRequest(t *testing.T) {
 	}
 	if _, err := f.service.DeclineRequest(ctx, f.andrii, created.ID); !errors.Is(err, ErrRequestNotPending) {
 		t.Fatalf("decline an accepted request: err = %v", err)
+	}
+	conv, err := f.comm.ExchangeConversation(ctx, f.olha, e.ID)
+	if err != nil || conv.ExchangeID != e.ID || conv.RequestID != created.ID || conv.Type != data.ConversationExchange {
+		t.Fatalf("exchange conversation = %+v, err %v", conv, err)
+	}
+	notifs, err := f.comm.Notifications(ctx, f.olha, true, 1)
+	if err != nil || notifs.Total != 1 || notifs.Items[0].EventType != data.EventRequestResponse || notifs.Items[0].ExchangeID != e.ID {
+		t.Fatalf("requester notifications = %+v, err %v", notifs, err)
 	}
 }
 

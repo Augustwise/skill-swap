@@ -76,8 +76,20 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	mux.HandleFunc("/api/v1/exchange-requests/{requestId}/decline", a.postOnly(a.withVerifiedUser(a.answerRequest(a.app.DeclineRequest))))
 	mux.HandleFunc("/api/v1/exchange-requests/{requestId}/withdraw", a.postOnly(a.withVerifiedUser(a.answerRequest(a.app.WithdrawRequest))))
 	mux.HandleFunc("/api/v1/exchange-requests/{requestId}/accept", a.postOnly(a.withVerifiedUser(a.acceptRequest)))
+	mux.HandleFunc("/api/v1/exchange-requests/{requestId}/conversation", getOnly(a.withVerifiedUser(a.requestConversation)))
 	mux.HandleFunc("/api/v1/exchanges/{exchangeId}", getOnly(a.withVerifiedUser(a.exchangeDetails)))
+	mux.HandleFunc("/api/v1/exchanges/{exchangeId}/conversation", getOnly(a.withVerifiedUser(a.exchangeConversation)))
 	mux.HandleFunc("/api/v1/me/exchange-requests", getOnly(a.withVerifiedUser(a.listRequests)))
+	mux.HandleFunc("/api/v1/me/conversations", getOnly(a.withVerifiedUser(a.listConversations)))
+	mux.HandleFunc("/api/v1/conversations/{conversationId}", getOnly(a.withVerifiedUser(a.conversationDetails)))
+	mux.HandleFunc("/api/v1/conversations/{conversationId}/messages", a.methods(map[string]http.HandlerFunc{
+		http.MethodGet:  a.withVerifiedUser(a.listMessages),
+		http.MethodPost: a.withVerifiedUser(a.sendMessage),
+	}))
+	mux.HandleFunc("/api/v1/conversations/{conversationId}/read", a.postOnly(a.withVerifiedUser(a.markConversationRead)))
+	mux.HandleFunc("/api/v1/me/notifications", getOnly(a.withVerifiedUser(a.listNotifications)))
+	mux.HandleFunc("/api/v1/me/notifications/{notificationId}/read", a.postOnly(a.withVerifiedUser(a.markNotificationRead)))
+	mux.HandleFunc("/api/v1/me/notifications/read-all", a.postOnly(a.withVerifiedUser(a.markAllNotificationsRead)))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		problem(w, http.StatusNotFound, "not_found", "Resource was not found")
 	})

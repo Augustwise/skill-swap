@@ -17,20 +17,23 @@ skill-swap/
 │   ├── public/              # Icons and static design assets
 │   └── package.json         # Scripts and frontend dependencies
 ├── backend/
-│   ├── cmd/api/             # API entry point and dependency wiring
-│   ├── cmd/db/              # Connection checks, migrations, and demo seeding
-│   ├── cmd/mailtest/        # Local SMTP smoke test
-│   ├── internal/api/        # HTTP routes, DTOs, middleware, and errors
-│   ├── internal/auth/       # Registration, sessions, and verification
-│   ├── internal/core/       # Application facade and IApplication contract
-│   ├── internal/profile/    # Profile and skill-list business rules
-│   ├── internal/data/       # Repository interfaces and PostgreSQL adapter
-│   ├── internal/mailer/     # IMailer contract and SMTP adapter
-│   ├── internal/config/     # Configuration loading and validation
-│   ├── internal/validate/   # Shared input validation
-│   ├── migrations/          # Versioned Goose SQL migrations
-│   ├── seeds/               # Repeatable demo data
-│   └── docs/                # OpenAPI specification
+│   ├── cmd/api/                 # API entry point and dependency wiring
+│   ├── cmd/db/                  # Connection checks, migrations, and demo seeding
+│   ├── cmd/mailtest/            # Local SMTP smoke test
+│   ├── internal/api/            # HTTP routes, DTOs, middleware, and errors
+│   ├── internal/auth/           # Registration, sessions, and verification
+│   ├── internal/core/           # Application facade and IApplication contract
+│   ├── internal/profile/        # Profile and skill-list business rules
+│   ├── internal/discovery/      # Student search, candidate profile, and mutual matches
+│   ├── internal/exchange/       # Exchange requests, decisions, and active exchanges
+│   ├── internal/communication/  # Private text chat and in-app notifications
+│   ├── internal/data/           # Repository interfaces and PostgreSQL adapter
+│   ├── internal/mailer/         # IMailer contract and SMTP adapter
+│   ├── internal/config/         # Configuration loading and validation
+│   ├── internal/validate/       # Shared input validation
+│   ├── migrations/              # Versioned Goose SQL migrations
+│   ├── seeds/                   # Repeatable demo data
+│   └── docs/                    # OpenAPI specification
 ├── scripts/dev.mjs          # Local process runner
 ├── .gitignore               # Local configuration and generated-file exclusions
 └── README.md
@@ -54,23 +57,27 @@ classes and interfaces in the design.
 | --- | --- |
 | `api.API` | HTTP routing, request parsing, responses, and access checks; `api.New` builds the handler. |
 | `auth.Service` | Registration, login, email verification, password reset, and session management. |
-| `core.Application` / `IApplication` | Application entry point; `Profile`, `UpdateProfile`, `AddSkill`, and catalog queries. |
+| `core.Application` / `IApplication` | Application entry point; coordinates profile, discovery, exchange, and communication services. |
 | `profile.Service` | Profile validation, teaching/learning lists, and `EligibleForMatching`. |
+| `discovery.Service` | Student search with filters, candidate profiles, and `MutualMatches`. |
+| `exchange.Service` | Exchange requests, decisions (`AcceptRequest`, `DeclineRequest`, `WithdrawRequest`), and exchanges. |
+| `communication.Service` | Private conversations, chat messages, 5-second polling (`Messages`), and in-app `Notifications`. |
 | `data.Postgres` | SQL repositories and `WithinTx` transaction boundaries. |
 | `mailer.SMTP` / `IMailer` | Sending verification and reset messages through `Send`. |
 | React form components | `RegistrationForm`, `LoginForm`, `ResetPasswordForm`, and `Onboarding`. |
 
 ### SOLID in the implementation
 
-- **Single responsibility:** HTTP handling, authentication, profile rules, storage,
-  and email delivery live in separate packages.
+- **Single responsibility:** HTTP handling, authentication, profile rules, discovery,
+  exchanges, communication, storage, and email delivery live in separate packages.
 - **Open/closed:** services can receive another storage or mail implementation through
   their existing interfaces without rewriting their business rules.
 - **Liskov substitution:** PostgreSQL and in-memory repositories implement the same
   contracts, allowing service tests to substitute a test double. The substitutes must
   preserve the contract's results and error semantics.
-- **Interface segregation:** `IAuthData`, `ICatalogData`, `IProfileData`, `ITransaction`,
-  and `IMailer` expose separate responsibilities.
+- **Interface segregation:** `IAuthData`, `ICatalogData`, `IProfileData`,
+  `IDiscoveryData`, `IExchangeData`, `ICommunicationData`, `ITransaction`, and `IMailer`
+  expose separate responsibilities.
 - **Dependency inversion:** service constructors receive interfaces; concrete
   infrastructure is wired at the application entry point.
 
@@ -78,7 +85,7 @@ classes and interfaces in the design.
 
 | Team member | Main role | Contribution to the current foundation |
 | --- | --- | --- |
-| Mykola Sheiko (Sheiko M. P.) | Backend developer | Go API, PostgreSQL schema and migrations, authentication, profile and skill-list services, backend tests, and local development tooling. |
+| Mykola Sheiko (Sheiko M. P.) | Backend developer | Go API, PostgreSQL schema and migrations, authentication, profile, discovery, exchange, and communication services, backend tests, and local development tooling. |
 | Oleksandr Nesmiian (Nesmiian O. S.) | Frontend developer | Next.js/React interface, registration and login forms, onboarding screens, and integration with authentication and email verification. |
 | Both team members | Planning and quality assurance | Requirements, architecture, task estimation, integration checks, and mutual code review as the agreed workflow. |
 

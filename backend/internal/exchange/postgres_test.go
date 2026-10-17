@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"skillswap/backend/internal/communication"
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
 )
@@ -29,11 +30,19 @@ func TestAcceptRequestConcurrentlyAgainstPostgres(t *testing.T) {
 	}
 	t.Cleanup(pool.Close)
 	store := data.NewPostgres(pool)
-	service := NewService(store, store, store)
+	comm := communication.NewService(store, store, store)
+	service := NewService(store, store, store, comm)
 
 	var users []string
 	t.Cleanup(func() {
 		for _, statement := range []string{
+			`DELETE FROM notifications WHERE recipient_id = ANY($1) OR actor_id = ANY($1)`,
+			`DELETE FROM message_receipts WHERE user_id = ANY($1)
+				OR message_id IN (SELECT id FROM messages WHERE author_id = ANY($1))`,
+			`DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE created_by_user_id = ANY($1))`,
+			`DELETE FROM conversation_participants
+				WHERE conversation_id IN (SELECT id FROM conversations WHERE created_by_user_id = ANY($1))`,
+			`DELETE FROM conversations WHERE created_by_user_id = ANY($1)`,
 			`DELETE FROM exchange_status_history WHERE exchange_id IN (SELECT id FROM exchanges WHERE user_a_id = ANY($1))`,
 			`DELETE FROM exchange_skill_commitments WHERE teacher_id = ANY($1)`,
 			`DELETE FROM exchanges WHERE user_a_id = ANY($1)`,
@@ -99,7 +108,7 @@ func TestAcceptRequestConcurrentlyAgainstPostgres(t *testing.T) {
 			t.Fatalf("acceptance %d returned exchange %q, want %q", i, results[i].Exchange.ID, results[0].Exchange.ID)
 		}
 	}
-	var exchanges, accepted int
+	var exchanges, accepted, conversations, notifications int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM exchanges WHERE source_request_id = $1`, created.ID).Scan(&exchanges); err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +116,18 @@ func TestAcceptRequestConcurrentlyAgainstPostgres(t *testing.T) {
 		WHERE request_id = $1 AND status = 'ACCEPTED'`, created.ID).Scan(&accepted); err != nil {
 		t.Fatal(err)
 	}
-	if exchanges != 1 || accepted != 1 {
-		t.Fatalf("exchanges = %d, acceptances in history = %d", exchanges, accepted)
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM conversations
+		WHERE exchange_request_id = $1 AND exchange_id = $2 AND type = 'EXCHANGE'`,
+		created.ID, results[0].Exchange.ID).Scan(&conversations); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM notifications
+		WHERE recipient_id = $1 AND event_type = 'REQUEST_RESPONSE' AND exchange_request_id = $2`,
+		requester, created.ID).Scan(&notifications); err != nil {
+		t.Fatal(err)
+	}
+	if exchanges != 1 || accepted != 1 || conversations != 1 || notifications != 1 {
+		t.Fatalf("exchanges = %d, acceptances = %d, conversations = %d, notifications = %d",
+			exchanges, accepted, conversations, notifications)
 	}
 }

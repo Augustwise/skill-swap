@@ -3,7 +3,7 @@ info:
   title: Skill Swap API
   version: 1.0.0
   description: |
-    HTTP contract implemented by the Sprint 1-5 backend.
+    HTTP contract implemented by the Sprint 1-6 backend.
 
     Authentication (FR-01) uses an opaque server-side session stored in the HttpOnly
     `skillswap_session` cookie (SameSite=Lax, Path=/). Browsers should call the API through
@@ -29,6 +29,15 @@ info:
     sessions in each direction; both directions must add up to the same total time.
     Accepting a request starts an exchange whose terms are copied from the students'
     profiles at that moment, so later profile changes do not alter it.
+
+    Private text chat and in-app notifications (Sprint 6, FR-08 and FR-13) also need a
+    verified email. Each exchange request has one private conversation shared by its two
+    participants; when the request is accepted, the same conversation is linked to the
+    created exchange so the discussion history is preserved. Open chats poll
+    `GET /conversations/{conversationId}/messages?after={lastMessageId}` every 5 seconds
+    without re-fetching the whole history. Notifications are stored in the same database
+    transaction as the event with `UNIQUE (recipient_id, event_key)` so retries never
+    create duplicates.
 servers:
   - url: http://127.0.0.1:8080/api/v1
     description: Local development
@@ -40,6 +49,8 @@ tags:
   - name: Discovery
   - name: Exchange requests
   - name: Exchanges
+  - name: Conversations
+  - name: Notifications
 paths:
   /openapi.yaml:
     get:
@@ -1411,6 +1422,448 @@ paths:
                   message: Exchange was not found
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
+  /exchange-requests/{requestId}/conversation:
+    get:
+      tags: [Conversations]
+      operationId: getRequestConversation
+      summary: Open the private conversation of an exchange request (FR-08)
+      description: |
+        Returns the private conversation between the requester and the recipient. Only the
+        two participants can open it; after the request is accepted, this returns the same
+        conversation now linked to the exchange.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The conversation of the request
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversation]
+                properties:
+                  conversation:
+                    $ref: "#/components/schemas/Conversation"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: No request has this ID, you do not take part in it, or the ID is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: request_not_found
+                  message: Request was not found
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /exchanges/{exchangeId}/conversation:
+    get:
+      tags: [Conversations]
+      operationId: getExchangeConversation
+      summary: Open the private conversation of an exchange (FR-08)
+      description: |
+        Returns the private conversation of the exchange, preserving all messages sent
+        while the request was pending. Only the two participants can open it.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: exchangeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The conversation of the exchange
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversation]
+                properties:
+                  conversation:
+                    $ref: "#/components/schemas/Conversation"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: No exchange has this ID, you do not take part in it, or the ID is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: exchange_not_found
+                  message: Exchange was not found
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/conversations:
+    get:
+      tags: [Conversations]
+      operationId: listMyConversations
+      summary: List your private conversations ordered by latest activity (FR-08)
+      description: |
+        Returns 20 conversations per page, newest message (or creation time) first. Each
+        item includes `partner` (the other student), both skill directions, `lastMessage`,
+        `unreadCount` and `canSend`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: One page of conversations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationPage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /conversations/{conversationId}:
+    get:
+      tags: [Conversations]
+      operationId: getConversation
+      summary: Show a private conversation by ID (FR-08)
+      description: |
+        Checks membership in `conversation_participants`. Anyone except the two participants
+        receives 404 `conversation_not_found`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The conversation
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversation]
+                properties:
+                  conversation:
+                    $ref: "#/components/schemas/Conversation"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          $ref: "#/components/responses/ConversationNotFound"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /conversations/{conversationId}/messages:
+    parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Conversations]
+      operationId: listConversationMessages
+      summary: List or poll messages in a private conversation (FR-08, NFR-02)
+      description: |
+        Messages are ordered chronologically (oldest first), 20 per page. When `after` is
+        provided (the ID of the last seen message in this conversation), only newer messages
+        are returned so the open chat can poll every 5 seconds without re-fetching the whole
+        history.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - name: after
+          in: query
+          required: false
+          description: Return only messages created after this message ID in the same conversation.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Messages in chronological order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagePage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          $ref: "#/components/responses/ConversationNotFound"
+        "422":
+          description: "`after` is not a valid message ID in this conversation or is combined with `page > 1`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: validation_failed
+                  message: Some fields are invalid
+                  fields:
+                    after: Choose a message from this conversation
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+    post:
+      tags: [Conversations]
+      operationId: sendConversationMessage
+      summary: Send a text message in a private conversation (FR-08)
+      description: |
+        `body` is plain text (links and line breaks are allowed), trimmed, from 1 to 2000
+        characters. In one transaction the server locks both participants in UUID order,
+        checks membership and blocks, stores the message, updates `last_message_at`, and
+        creates a `CHAT_MESSAGE` notification for the other participant.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+            example:
+              body: Привіт! Домовимося про перше заняття в середу о 18:00?
+      responses:
+        "201":
+          description: Message stored
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          $ref: "#/components/responses/ConversationNotFound"
+        "409":
+          description: One of the participants blocked the other or an account is no longer active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: conversation_blocked
+                  message: New messages cannot be sent in this conversation
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`body` is empty, longer than 2000 characters, or contains control characters"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: validation_failed
+                  message: Some fields are invalid
+                  fields:
+                    body: Message must be between 1 and 2000 characters
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /conversations/{conversationId}/read:
+    post:
+      tags: [Conversations]
+      operationId: markConversationRead
+      summary: Mark incoming messages in a conversation as read (FR-08, FR-13)
+      description: |
+        Records read receipts for all unread incoming messages in the conversation and marks
+        unread `CHAT_MESSAGE` notifications for this conversation as read. Takes no body.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Updated conversation and number of newly read messages
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversation, readCount]
+                properties:
+                  conversation:
+                    $ref: "#/components/schemas/Conversation"
+                  readCount:
+                    type: integer
+                    minimum: 0
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          $ref: "#/components/responses/ConversationNotFound"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/notifications:
+    get:
+      tags: [Notifications]
+      operationId: listMyNotifications
+      summary: List your in-app notifications and unread counter (FR-13)
+      description: |
+        Returns 20 notifications per page, newest first, together with `unreadCount` (the
+        total number of unread notifications for the signed-in user). Pass `unreadOnly=true`
+        to list only unread items.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: unreadOnly
+          in: query
+          required: false
+          description: When true, only unread notifications (`readAt == null`) are returned.
+          schema:
+            type: boolean
+            default: false
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: One page of notifications and current unread counter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "422":
+          description: "`unreadOnly` is not `true` or `false`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: validation_failed
+                  message: Some fields are invalid
+                  fields:
+                    unreadOnly: unreadOnly must be true or false
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/notifications/{notificationId}/read:
+    post:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      summary: Mark a notification as read and return the updated unread counter (FR-13)
+      description: |
+        Only the recipient of the notification can mark it read. Repeating the call on an
+        already-read notification is idempotent. Takes no body.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The read notification and updated unread counter
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notification, unreadCount]
+                properties:
+                  notification:
+                    $ref: "#/components/schemas/Notification"
+                  unreadCount:
+                    type: integer
+                    minimum: 0
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: No notification has this ID, it does not belong to you, or the ID is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: notification_not_found
+                  message: Notification was not found
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/notifications/read-all:
+    post:
+      tags: [Notifications]
+      operationId: markAllNotificationsRead
+      summary: Mark all of your unread notifications as read (FR-13)
+      description: Marks every unread notification of the signed-in user as read. Takes no body.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "200":
+          description: Number of newly marked notifications and updated unread counter (0)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [markedCount, unreadCount]
+                properties:
+                  markedCount:
+                    type: integer
+                    minimum: 0
+                  unreadCount:
+                    type: integer
+                    example: 0
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
 components:
   securitySchemes:
     sessionCookie:
@@ -1652,6 +2105,16 @@ components:
             error:
               code: database_unavailable
               message: Database is unavailable
+    ConversationNotFound:
+      description: No conversation has this ID, you do not take part in it, or the ID is not a UUID
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: conversation_not_found
+              message: Conversation was not found
   schemas:
     Health:
       type: object
@@ -2339,3 +2802,272 @@ components:
         createdAt:
           type: string
           format: date-time
+    Person:
+      type: object
+      required: [id, firstName, lastName]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+    ConversationType:
+      type: string
+      enum: [REQUEST, EXCHANGE]
+    MessagePreview:
+      type: object
+      required: [id, author, body, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        author:
+          allOf:
+            - $ref: "#/components/schemas/Person"
+          nullable: true
+        body:
+          type: string
+          description: Plain text; clients must display it without interpreting HTML.
+        createdAt:
+          type: string
+          format: date-time
+    Conversation:
+      type: object
+      description: |
+        Private chat between the two participants of a request or an exchange. `partner`
+        is always the other student relative to the signed-in viewer.
+      required: [id, type, requestId, exchangeId, requestStatus, exchangeStatus, format,
+        partner, requester, recipient, requesterTeaches, recipientTeaches, lastMessage,
+        lastMessageAt, unreadCount, canSend, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: "#/components/schemas/ConversationType"
+        requestId:
+          type: string
+          format: uuid
+          nullable: true
+        exchangeId:
+          type: string
+          format: uuid
+          nullable: true
+        requestStatus:
+          allOf:
+            - $ref: "#/components/schemas/RequestStatus"
+          nullable: true
+        exchangeStatus:
+          allOf:
+            - $ref: "#/components/schemas/ExchangeStatus"
+          nullable: true
+        format:
+          $ref: "#/components/schemas/LessonFormat"
+        partner:
+          $ref: "#/components/schemas/StudentSummary"
+        requester:
+          $ref: "#/components/schemas/StudentSummary"
+        recipient:
+          $ref: "#/components/schemas/StudentSummary"
+        requesterTeaches:
+          $ref: "#/components/schemas/RequestTerms"
+        recipientTeaches:
+          $ref: "#/components/schemas/RequestTerms"
+        lastMessage:
+          allOf:
+            - $ref: "#/components/schemas/MessagePreview"
+          nullable: true
+        lastMessageAt:
+          type: string
+          format: date-time
+          nullable: true
+        unreadCount:
+          type: integer
+          minimum: 0
+        canSend:
+          type: boolean
+          description: False when either student blocked the other or an account is no longer active.
+        createdAt:
+          type: string
+          format: date-time
+    ConversationPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Conversation"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+    SendMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Plain text up to 2000 characters; spaces around it are trimmed.
+    Message:
+      type: object
+      required: [id, conversationId, author, type, body, createdAt, editedAt, readAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        conversationId:
+          type: string
+          format: uuid
+        author:
+          allOf:
+            - $ref: "#/components/schemas/Person"
+          nullable: true
+        type:
+          type: string
+          enum: [TEXT, SYSTEM]
+        body:
+          type: string
+          description: Plain text; clients must display it without interpreting HTML.
+        createdAt:
+          type: string
+          format: date-time
+        editedAt:
+          type: string
+          format: date-time
+          nullable: true
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the other participant read the message.
+    MessagePage:
+      type: object
+      required: [items, page, pageSize, total, pollIntervalSeconds]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+        pollIntervalSeconds:
+          type: integer
+          example: 5
+          description: Recommended polling interval in seconds for an open chat (FR-08).
+    NotificationEventType:
+      type: string
+      enum: [EXCHANGE_REQUEST, REQUEST_RESPONSE, CHAT_MESSAGE, SESSION_UPDATED]
+    NotificationTarget:
+      type: object
+      description: Identifies the object to open when the user clicks the notification (FR-13).
+      required: [kind, id, requestId, exchangeId, conversationId, sessionId]
+      properties:
+        kind:
+          type: string
+          enum: [EXCHANGE_REQUEST, EXCHANGE, CONVERSATION, SESSION]
+        id:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+          format: uuid
+          nullable: true
+        exchangeId:
+          type: string
+          format: uuid
+          nullable: true
+        conversationId:
+          type: string
+          format: uuid
+          nullable: true
+        sessionId:
+          type: string
+          format: uuid
+          nullable: true
+    Notification:
+      type: object
+      required: [id, eventType, title, body, actor, target, requestId, exchangeId,
+        conversationId, messageId, sessionId, isRead, readAt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        eventType:
+          $ref: "#/components/schemas/NotificationEventType"
+        title:
+          type: string
+        body:
+          type: string
+          nullable: true
+        actor:
+          allOf:
+            - $ref: "#/components/schemas/Person"
+          nullable: true
+        target:
+          $ref: "#/components/schemas/NotificationTarget"
+        requestId:
+          type: string
+          format: uuid
+          nullable: true
+        exchangeId:
+          type: string
+          format: uuid
+          nullable: true
+        conversationId:
+          type: string
+          format: uuid
+          nullable: true
+        messageId:
+          type: string
+          format: uuid
+          nullable: true
+        sessionId:
+          type: string
+          format: uuid
+          nullable: true
+        isRead:
+          type: boolean
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    NotificationPage:
+      type: object
+      required: [items, page, pageSize, total, unreadCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          description: Number of notifications matching the filter across all pages.
+        unreadCount:
+          type: integer
+          minimum: 0
+          description: Total number of unread notifications for the signed-in user.
