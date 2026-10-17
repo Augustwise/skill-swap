@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { loginDestination } from "./AuthValidation";
 
 type ApiProblem = { error?: { code?: string; fields?: Record<string, string> } };
 type Mode = "login" | "recovery" | "recoverySent";
@@ -81,9 +82,8 @@ export function LoginForm() {
         return;
       }
       const data: { user: { emailVerified: boolean } } = await response.json();
-      const next = new URLSearchParams(window.location.search).get("next");
       router.replace(
-        data.user.emailVerified ? (next === "/main" ? "/main" : "/onboarding") : "/verify-email",
+        data.user.emailVerified ? loginDestination(window.location.search) : "/verify-email",
       );
     } catch {
       setError("Не вдалося зв’язатися із сервером. Перевір з’єднання і спробуй ще раз.");

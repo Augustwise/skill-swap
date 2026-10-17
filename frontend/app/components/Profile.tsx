@@ -11,6 +11,7 @@ import { useProfile } from "./useProfile";
 
 export function Profile() {
   const [section, setSection] = useState("about");
+  const [dirty, setDirty] = useState(false);
   const { profile, session, status, retry, setProfile } = useProfile();
   if (status !== "ready" || !profile || !session) {
     return (
@@ -51,7 +52,12 @@ export function Profile() {
     );
   }
   return (
-    <ProfileShell profile={profile} csrfToken={session.csrfToken}>
+    <ProfileShell
+      key={profile.id}
+      profile={profile}
+      csrfToken={session.csrfToken}
+      hasUnsavedChanges={dirty}
+    >
       <nav className="profile-tabs" aria-label="Розділи профілю">
         <button
           type="button"
@@ -76,7 +82,12 @@ export function Profile() {
             <ProfileSkills profile={profile} csrfToken={session.csrfToken} onSaved={setProfile} />
           </div>
           <div id="profile-about" className="profile-sections" hidden={section !== "about"}>
-            <ProfileEditor profile={profile} csrfToken={session.csrfToken} onSaved={setProfile} />
+            <ProfileEditor
+              profile={profile}
+              csrfToken={session.csrfToken}
+              onSaved={setProfile}
+              onDirtyChange={setDirty}
+            />
             <section className="account-card">
               <h2>Пошта університету</h2>
               <p className="profile-email">{session.user.email}</p>
