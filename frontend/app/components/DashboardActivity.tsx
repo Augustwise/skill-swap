@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { DashboardAvatar, DashboardEmptyState, SectionAction } from "./DashboardCards";
+import { DashboardAvatar, DashboardEmptyState } from "./DashboardCards";
 import { DashboardIcon as Icon } from "./DashboardIcon";
-import type { OpenDashboardModal } from "./DashboardModal";
 import { DiscoveryError } from "./DiscoveryError";
 import { avatarColor, countLabel, fullName, initials } from "./DiscoveryFormat";
 import { SkillTag, StatusBadge } from "./ExchangeCards";
@@ -114,7 +113,7 @@ export function DashboardRequests({
   );
 }
 
-function ExchangeRow({ exchange, viewerId }: { exchange: Exchange; viewerId: string }) {
+export function ExchangeRow({ exchange, viewerId }: { exchange: Exchange; viewerId: string }) {
   const view = requestPerspective(exchange, viewerId);
   const { progress } = exchange;
   return (
@@ -164,12 +163,10 @@ function ExchangeRow({ exchange, viewerId }: { exchange: Exchange; viewerId: str
 export function DashboardExchanges({
   exchanges,
   viewerId,
-  onOpenModal,
   onRetry,
 }: {
   exchanges: QueryState<ExchangePage>;
   viewerId: string;
-  onOpenModal: OpenDashboardModal;
   onRetry: () => void;
 }) {
   const data = exchanges.status === "ready" ? exchanges.data : null;
@@ -181,9 +178,9 @@ export function DashboardExchanges({
     >
       <div className="dashboard-section-heading">
         <h2 id="exchanges-title">Активні обміни</h2>
-        <SectionAction arrow onOpenModal={onOpenModal}>
+        <Link className="dashboard-section-action" href="/exchanges">
           Усі обміни
-        </SectionAction>
+        </Link>
       </div>
       {exchanges.status === "loading" && <SkeletonPanelRows count={1} variant="exchange" />}
       {exchanges.status === "error" && (
