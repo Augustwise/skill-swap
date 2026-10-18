@@ -17,6 +17,32 @@ const draft = () => ({
   meetingPlace: "старе місце",
 });
 
+test("decisions refresh the proposal and never submit an already replaced time", async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  const lesson = { id, activeProposal: { id: "old" }, canRespondToProposal: true };
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return Response.json({ session: { ...lesson, activeProposal: { id: "new" } } });
+  };
+  try {
+    await assert.rejects(api.decideCurrentSession(lesson, "accept", "csrf"), {
+      code: "session_not_proposed",
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].options.method, undefined);
+    globalThis.fetch = async (url, options) => {
+      calls.push({ url, options });
+      return Response.json({ session: lesson });
+    };
+    await api.decideCurrentSession(lesson, "decline", "csrf");
+    assert.equal(calls.at(-1).options.method, "POST");
+    assert.match(calls.at(-1).url, /\/decline$/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("lesson times round trip in the browser zone and serialize with UTC", () => {
   const local = "2099-05-12T12:00";
   assert.equal(time.localDateTime(time.timestamp(local)), local);
