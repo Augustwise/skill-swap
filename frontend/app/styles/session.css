@@ -71,6 +71,37 @@
   gap: 10px;
   overflow-wrap: anywhere;
 }
+.session-history {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 0;
+  list-style: none;
+}
+.session-history li {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow-wrap: anywhere;
+}
+.session-status--proposed {
+  background: #fff5db;
+  color: #805b08;
+}
+.session-status--scheduled {
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+}
+.session-status--completed {
+  background: #e4f8ef;
+  color: #17613d;
+}
+.session-status--cancelled {
+  background: #fff0f2;
+  color: #9f2940;
+}
 @media (max-width: 600px) {
   .session-time-fields {
     grid-template-columns: minmax(0, 1fr);

@@ -32,3 +32,13 @@ including `Z`; never send a zone-less datetime to the API. Reject dates normaliz
 JavaScript and clock times skipped during daylight saving changes. The schedule displays
 the time zone returned by the API. Meeting links accept only HTTP(S) and open separately.
 The server remains authoritative for membership, blocked users, conflicts and status changes.
+
+## Lesson changes
+
+`/sessions/[sessionId]` supports new time proposals for proposed/scheduled lessons,
+accept/decline, cancellation with a reason, and the full proposal history. A new proposal
+requires the partner's agreement again; cancelled lessons retain their history.
+The teacher comes from the selected lesson in the agreed plan. Choose a lesson in the
+other direction to plan with the other teacher. Draft planning requires an active exchange.
+Before a decision, reload the proposal and reject a replaced proposal in the client;
+the existing API does not offer an atomic proposal-version precondition.
