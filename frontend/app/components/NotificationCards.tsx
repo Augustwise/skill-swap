@@ -21,7 +21,6 @@ const icons: Record<NotificationEvent, DashboardIconName> = {
   SESSION_UPDATED: "calendar",
 };
 
-
 export function useNotificationActions(csrfToken: string, onChanged: () => void) {
   const router = useRouter();
   const [pending, setPending] = useState("");
