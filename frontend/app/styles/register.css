@@ -278,6 +278,22 @@
   font-weight: 400;
 }
 
+.auth-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.register-form :is(button, a, input, select):focus-visible {
+  outline: 3px solid #b9afff;
+  outline-offset: 3px;
+}
+
+.register-success p {
+  overflow-wrap: anywhere;
+}
+
 .register-form__notice {
   display: flex;
   align-items: flex-start;

@@ -7,12 +7,17 @@ export const metadata: Metadata = {
   description: "Увійди в SkillSwap, щоб продовжити обмін навичками.",
 };
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string | string[] }>;
+}) {
+  const { mode } = await searchParams;
   return (
     <main className="register-page login-page">
       <AuthBrandPanel />
       <section className="register-main" aria-labelledby="login-title">
-        <LoginForm />
+        <LoginForm initialMode={mode === "recovery" ? "recovery" : "login"} />
       </section>
     </main>
   );

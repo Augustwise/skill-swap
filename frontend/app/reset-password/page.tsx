@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { AuthBrandPanel } from "../components/AuthBrandPanel";
-import { ResetPasswordForm } from "../components/ResetPasswordForm";
+import { ResetLinkNotice, ResetPasswordForm } from "../components/ResetPasswordForm";
 
 export const metadata: Metadata = {
   title: "Новий пароль — SkillSwap",
   description: "Встанови новий пароль для акаунта SkillSwap.",
+  referrer: "no-referrer",
+  robots: { index: false, follow: false },
 };
 
 export default async function ResetPasswordPage({
@@ -14,22 +15,16 @@ export default async function ResetPasswordPage({
   searchParams: Promise<{ token?: string | string[] }>;
 }) {
   const { token } = await searchParams;
-  const resetToken = typeof token === "string" ? token : "";
+  const resetToken = typeof token === "string" && /^[A-Za-z0-9_-]{43}$/.test(token) ? token : "";
 
   return (
     <main className="register-page">
       <AuthBrandPanel />
       <section className="register-main" aria-labelledby="reset-title">
         {resetToken ? (
-          <ResetPasswordForm token={resetToken} />
+          <ResetPasswordForm token={resetToken} key={resetToken} />
         ) : (
-          <div className="register-form register-success">
-            <h1 id="reset-title">Посилання недійсне</h1>
-            <p>Запроси нове посилання для відновлення пароля.</p>
-            <Link className="register-submit register-success__link" href="/login">
-              До входу
-            </Link>
-          </div>
+          <ResetLinkNotice />
         )}
       </section>
     </main>

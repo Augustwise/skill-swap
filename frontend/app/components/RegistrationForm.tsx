@@ -2,7 +2,15 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { AuthError, authRequest, requestError } from "./AuthApi";
+import {
+  emailError,
+  focusInvalid,
+  normalizeEmail,
+  passwordError,
+  registrationErrors,
+} from "./AuthValidation";
 
 type University = {
   id: string;
@@ -10,40 +18,13 @@ type University = {
   emailDomain: string;
 };
 
-type ApiProblem = {
-  error?: {
-    code?: string;
-    fields?: Record<string, string>;
-  };
-};
-
 const asset = "/figma/register";
-
-function translateFieldErrors(fields: Record<string, string>) {
-  const translated: Record<string, string> = {};
-  for (const [field, message] of Object.entries(fields)) {
-    if (field === "email") {
-      translated.email = message.includes("not registered")
-        ? "Цей університет ще не зареєстрований у SkillSwap."
-        : message.includes("valid")
-          ? "Введи коректну адресу пошти."
-          : "Використай університетську пошту.";
-    } else if (field === "password") {
-      translated.password = message.includes("72")
-        ? "Пароль не може перевищувати 72 байти."
-        : "Пароль має містити щонайменше 12 символів.";
-    } else if (field === "firstName") {
-      translated.firstName = "Введи ім’я довжиною до 100 символів.";
-    } else if (field === "lastName") {
-      translated.lastName = "Введи прізвище довжиною до 100 символів.";
-    }
-  }
-  return translated;
-}
 
 export function RegistrationForm() {
   const [universities, setUniversities] = useState<University[]>([]);
   const [universityError, setUniversityError] = useState("");
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [universityId, setUniversityId] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [agreed, setAgreed] = useState(false);
@@ -52,6 +33,7 @@ export function RegistrationForm() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [registeredEmail, setRegisteredEmail] = useState("");
   const [verificationEmailSent, setVerificationEmailSent] = useState(true);
+  const submitting = useRef(false);
 
   const clearFieldError = (field: string) => {
     if (fieldErrors[field]) {
@@ -68,33 +50,36 @@ export function RegistrationForm() {
 
     async function loadUniversities() {
       try {
-        const response = await fetch("/api/v1/universities", { signal: controller.signal });
-        if (!response.ok) throw new Error("University catalog unavailable");
-        const data: { items?: University[] } = await response.json();
+        const data = await authRequest<{ items: University[] }>("universities", {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
         setUniversities(data.items ?? []);
-        if (!data.items?.length) setUniversityError("Список університетів поки порожній.");
+        setUniversityError(data.items?.length ? "" : "Список університетів поки порожній.");
       } catch {
         if (!controller.signal.aborted) {
-          setUniversityError("Не вдалося завантажити університети. Спробуй оновити сторінку.");
+          setUniversityError("Не вдалося завантажити університети. Спробуй ще раз.");
         }
+      } finally {
+        if (!controller.signal.aborted) setCatalogLoading(false);
       }
     }
 
     void loadUniversities();
     return () => controller.abort();
-  }, []);
+  }, [catalogAttempt]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting.current) return;
+    const formElement = event.currentTarget;
     setError("");
     setFieldErrors({});
 
     const form = new FormData(event.currentTarget);
     const firstName = String(form.get("firstName") ?? "").trim();
     const lastName = String(form.get("lastName") ?? "").trim();
-    const email = String(form.get("email") ?? "")
-      .trim()
-      .toLowerCase();
+    const email = normalizeEmail(String(form.get("email") ?? ""));
     const password = String(form.get("password") ?? "");
     const agreement = agreed || form.get("agreement") === "on";
     const university = universities.find((item) => item.id === universityId);
@@ -103,36 +88,28 @@ export function RegistrationForm() {
 
     if (!firstName) {
       errors.firstName = "Введи ім’я.";
-    } else if (firstName.length > 100) {
+    } else if (Array.from(firstName).length > 100) {
       errors.firstName = "Введи ім’я довжиною до 100 символів.";
     }
 
     if (!lastName) {
       errors.lastName = "Введи прізвище.";
-    } else if (lastName.length > 100) {
+    } else if (Array.from(lastName).length > 100) {
       errors.lastName = "Введи прізвище довжиною до 100 символів.";
     }
 
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email) {
-      errors.email = "Введи університетську пошту.";
-    } else if (!emailPattern.test(email)) {
-      errors.email = "Введи коректну адресу пошти.";
-    } else if (university && email.split("@")[1] !== university.emailDomain.toLowerCase()) {
+    const invalidEmail = emailError(email);
+    if (invalidEmail) errors.email = invalidEmail;
+    else if (university && email.split("@")[1] !== university.emailDomain.toLowerCase()) {
       errors.email = `Пошта має належати домену ${university.emailDomain}.`;
     }
 
-    if (!universityId) {
+    if (!university || catalogLoading || universityError) {
       errors.university = "Обери університет зі списку.";
     }
 
-    if (!password) {
-      errors.password = "Введи пароль.";
-    } else if (password.length < 12) {
-      errors.password = "Пароль має містити щонайменше 12 символів.";
-    } else if (new TextEncoder().encode(password).length > 72) {
-      errors.password = "Пароль не може перевищувати 72 байти.";
-    }
+    const invalidPassword = passwordError(password);
+    if (invalidPassword) errors.password = invalidPassword;
 
     if (!agreement) {
       errors.agreement = "Погодься з умовами використання, щоб продовжити.";
@@ -140,41 +117,32 @@ export function RegistrationForm() {
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
-      const formEl = event.currentTarget;
-      const order = ["firstName", "lastName", "email", "university", "password", "agreement"];
-      const firstField = order.find((f) => errors[f]);
-      if (firstField) {
-        const el = formEl.elements.namedItem(firstField) as HTMLElement | null;
-        el?.focus();
-      }
+      focusInvalid(formElement, errors);
       return;
     }
 
+    submitting.current = true;
     setPending(true);
     try {
-      const response = await fetch("/api/v1/auth/register", {
+      const data = await authRequest<{ verificationEmailSent: boolean }>("auth/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ firstName, lastName, email, password }),
       });
-      const data: ApiProblem & { verificationEmailSent?: boolean } = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 409) {
-          setFieldErrors({ email: "Акаунт із цією поштою вже існує." });
-        } else if (data.error?.fields) {
-          setFieldErrors(translateFieldErrors(data.error.fields));
-        } else {
-          setError("Не вдалося створити акаунт. Спробуй ще раз.");
-        }
-        return;
-      }
-
+      formElement.reset();
       setRegisteredEmail(email);
       setVerificationEmailSent(data.verificationEmailSent !== false);
-    } catch {
-      setError("Не вдалося зв’язатися із сервером. Перевір з’єднання і спробуй ще раз.");
+    } catch (error) {
+      const errors =
+        error instanceof AuthError
+          ? error.code === "email_taken"
+            ? { email: "Акаунт із цією поштою вже існує." }
+            : registrationErrors(error.fields)
+          : {};
+      setFieldErrors(errors);
+      focusInvalid(formElement, errors);
+      setError(Object.keys(errors).length ? "Перевір виділені поля." : requestError(error));
     } finally {
+      submitting.current = false;
       setPending(false);
     }
   }
@@ -196,7 +164,7 @@ export function RegistrationForm() {
   }
 
   return (
-    <form className="register-form" noValidate onSubmit={handleSubmit}>
+    <form className="register-form" noValidate onSubmit={handleSubmit} aria-busy={pending}>
       <div className="register-form__heading">
         <h1 id="register-title">Створи акаунт</h1>
         <p>Реєстрація займе менше хвилини</p>
@@ -212,11 +180,14 @@ export function RegistrationForm() {
             autoComplete="given-name"
             maxLength={100}
             aria-invalid={Boolean(fieldErrors.firstName)}
+            aria-describedby={fieldErrors.firstName ? "register-firstName-error" : undefined}
             onChange={() => clearFieldError("firstName")}
             required
           />
           {fieldErrors.firstName && (
-            <small className="register-field__error">{fieldErrors.firstName}</small>
+            <small id="register-firstName-error" className="register-field__error">
+              {fieldErrors.firstName}
+            </small>
           )}
         </label>
         <label className="register-field">
@@ -228,11 +199,14 @@ export function RegistrationForm() {
             autoComplete="family-name"
             maxLength={100}
             aria-invalid={Boolean(fieldErrors.lastName)}
+            aria-describedby={fieldErrors.lastName ? "register-lastName-error" : undefined}
             onChange={() => clearFieldError("lastName")}
             required
           />
           {fieldErrors.lastName && (
-            <small className="register-field__error">{fieldErrors.lastName}</small>
+            <small id="register-lastName-error" className="register-field__error">
+              {fieldErrors.lastName}
+            </small>
           )}
         </label>
       </div>
@@ -246,10 +220,15 @@ export function RegistrationForm() {
           autoComplete="email"
           maxLength={320}
           aria-invalid={Boolean(fieldErrors.email)}
+          aria-describedby={fieldErrors.email ? "register-email-error" : undefined}
           onChange={() => clearFieldError("email")}
           required
         />
-        {fieldErrors.email && <small className="register-field__error">{fieldErrors.email}</small>}
+        {fieldErrors.email && (
+          <small id="register-email-error" className="register-field__error">
+            {fieldErrors.email}
+          </small>
+        )}
       </label>
 
       <label className="register-field register-field--select">
@@ -265,10 +244,12 @@ export function RegistrationForm() {
             }
           }}
           aria-invalid={Boolean(fieldErrors.university)}
+          aria-describedby="register-university-hint"
+          disabled={catalogLoading || pending}
           required
         >
           <option value="" disabled>
-            Обери університет
+            {catalogLoading ? "Завантажуємо університети…" : "Обери університет"}
           </option>
           {universities.map((university) => (
             <option key={university.id} value={university.id}>
@@ -277,12 +258,32 @@ export function RegistrationForm() {
           ))}
         </select>
         <Image src={`${asset}/chevron-down.svg`} alt="" width={16} height={16} />
-        {(fieldErrors.university || universityError) && (
-          <small className="register-field__error">
-            {fieldErrors.university || universityError}
-          </small>
-        )}
+        <small
+          id="register-university-hint"
+          className={
+            fieldErrors.university || universityError ? "register-field__error" : "auth-hint"
+          }
+        >
+          {fieldErrors.university ||
+            universityError ||
+            (universityId
+              ? `Домен пошти: ${universities.find((item) => item.id === universityId)?.emailDomain ?? ""}`
+              : "Обери університет, до якого належить твоя пошта.")}
+        </small>
       </label>
+      {universityError && (
+        <button
+          className="login-form__back"
+          type="button"
+          disabled={catalogLoading}
+          onClick={() => {
+            setCatalogLoading(true);
+            setCatalogAttempt((value) => value + 1);
+          }}
+        >
+          Завантажити університети ще раз
+        </button>
+      )}
 
       <div className="register-field register-field--password">
         <label htmlFor="register-password">Пароль</label>
@@ -294,6 +295,7 @@ export function RegistrationForm() {
           autoComplete="new-password"
           minLength={12}
           aria-invalid={Boolean(fieldErrors.password)}
+          aria-describedby="register-password-hint"
           onChange={() => clearFieldError("password")}
           required
         />
@@ -311,16 +313,19 @@ export function RegistrationForm() {
             height={17}
           />
         </button>
-        {fieldErrors.password && (
-          <small className="register-field__error">{fieldErrors.password}</small>
-        )}
+        <small
+          id="register-password-hint"
+          className={fieldErrors.password ? "register-field__error" : "auth-hint"}
+        >
+          {fieldErrors.password || "Щонайменше 12 символів, не більше 72 байтів UTF-8."}
+        </small>
       </div>
 
       <div className="register-form__notice">
         <Image src={`${asset}/cap.svg`} alt="" width={17} height={17} />
         <p>
-          Потрібна саме університетська пошта — так ми підтверджуємо, що ти студент, і показуємо
-          значок «Верифіковано».
+          Використай пошту свого університету. Після реєстрації надішлемо посилання для
+          підтвердження адреси.
         </p>
       </div>
 
@@ -338,6 +343,7 @@ export function RegistrationForm() {
               clearFieldError("agreement");
             }}
             aria-invalid={Boolean(fieldErrors.agreement)}
+            aria-describedby={fieldErrors.agreement ? "register-agreement-error" : undefined}
             required
           />
           <span id="register-agreement-text">
@@ -349,7 +355,9 @@ export function RegistrationForm() {
           </span>
         </div>
         {fieldErrors.agreement && (
-          <small className="register-field__error">{fieldErrors.agreement}</small>
+          <small id="register-agreement-error" className="register-field__error">
+            {fieldErrors.agreement}
+          </small>
         )}
       </div>
 
@@ -358,7 +366,11 @@ export function RegistrationForm() {
           {error}
         </p>
       )}
-      <button className="register-submit" type="submit" disabled={pending}>
+      <button
+        className="register-submit"
+        type="submit"
+        disabled={pending || catalogLoading || Boolean(universityError)}
+      >
         {pending ? "Створюємо акаунт…" : "Створити акаунт"}
       </button>
       <p className="register-form__login">
