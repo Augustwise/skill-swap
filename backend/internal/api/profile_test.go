@@ -215,6 +215,18 @@ func TestProfileUpdateAndRead(t *testing.T) {
 		}
 	}
 
+	// A new university clears the faculty of the previous one.
+	response = send(t, handler, http.MethodPatch, "/api/v1/me/profile",
+		fmt.Sprintf(`{"universityId":%q}`, datatest.OtherUniversityID), s)
+	expectStatus(t, response, http.StatusOK)
+	moved := decodeProfile(t, response)
+	if moved.University.ID != datatest.OtherUniversityID || moved.University.Name == "" || moved.Faculty != nil {
+		t.Fatalf("unexpected profile after university change: %s", response.Body.String())
+	}
+	response = send(t, handler, http.MethodPatch, "/api/v1/me/profile",
+		fmt.Sprintf(`{"universityId":%q,"facultyId":%q}`, datatest.DemoUniversityID, datatest.DemoFacultyID), s)
+	expectStatus(t, response, http.StatusOK)
+
 	// Null clears faculty and course; fields not in the request (city) stay as they were.
 	response = send(t, handler, http.MethodPatch, "/api/v1/me/profile", `{"facultyId":null,"course":null}`, s)
 	expectStatus(t, response, http.StatusOK)
@@ -239,6 +251,8 @@ func TestProfileValidationErrors(t *testing.T) {
 		{"foreign faculty", fmt.Sprintf(`{"facultyId":%q}`, datatest.OtherFacultyID), "facultyId"},
 		{"empty first name", `{"firstName":""}`, "firstName"},
 		{"null last name", `{"lastName":null}`, "lastName"},
+		{"unknown university", `{"universityId":"x"}`, "universityId"},
+		{"null university", `{"universityId":null}`, "universityId"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -247,8 +261,8 @@ func TestProfileValidationErrors(t *testing.T) {
 		})
 	}
 
-	// universityId cannot be changed, so it is an unknown field; a string course is the wrong type.
-	response := send(t, handler, http.MethodPatch, "/api/v1/me/profile", `{"universityId":"x"}`, s)
+	// Unknown fields and a string course are rejected as invalid JSON.
+	response := send(t, handler, http.MethodPatch, "/api/v1/me/profile", `{"email":"x@example.test"}`, s)
 	assertProblem(t, response, http.StatusBadRequest, "invalid_json")
 	response = send(t, handler, http.MethodPatch, "/api/v1/me/profile", `{"course":"third"}`, s)
 	assertProblem(t, response, http.StatusBadRequest, "invalid_json")
@@ -361,6 +375,16 @@ func TestProfileAgainstLocalPostgres(t *testing.T) {
 	expectStatus(t, send(t, handler, http.MethodPatch, "/api/v1/me/profile", body, s), http.StatusOK)
 	assertFieldError(t, send(t, handler, http.MethodPatch, "/api/v1/me/profile", `{"course":7}`, s), "course")
 
+	// Move to the second demo university and back; the faculty must follow the university.
+	const secondUniversityID = "10000000-0000-0000-0000-000000000002"
+	response := send(t, handler, http.MethodPatch, "/api/v1/me/profile", fmt.Sprintf(`{"universityId":%q}`, secondUniversityID), s)
+	expectStatus(t, response, http.StatusOK)
+	if moved := decodeProfile(t, response); moved.University.ID != secondUniversityID || moved.Faculty != nil {
+		t.Fatalf("unexpected profile after university change: %s", response.Body.String())
+	}
+	expectStatus(t, send(t, handler, http.MethodPatch, "/api/v1/me/profile",
+		fmt.Sprintf(`{"universityId":%q,"facultyId":%q}`, datatest.DemoUniversityID, facultyID), s), http.StatusOK)
+
 	// Add, duplicate, change and remove skills.
 	addGuitar := fmt.Sprintf(`{"skillId":%q,"level":"ADVANCED"}`, datatest.GuitarSkillID)
 	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/me/teaching-skills", addGuitar, s), http.StatusCreated)
@@ -377,7 +401,7 @@ func TestProfileAgainstLocalPostgres(t *testing.T) {
 	// Log in again and check that everything was saved in the database.
 	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/logout", "", s), http.StatusNoContent)
 	s = login(t, handler, email, testPassword)
-	response := send(t, handler, http.MethodGet, "/api/v1/me/profile", "", s)
+	response = send(t, handler, http.MethodGet, "/api/v1/me/profile", "", s)
 	expectStatus(t, response, http.StatusOK)
 	p := decodeProfile(t, response)
 	if p.Faculty == nil || p.Faculty.ID != facultyID || p.Course == nil || *p.Course != 3 || p.City != "Київ" ||

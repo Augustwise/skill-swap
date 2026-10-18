@@ -1,9 +1,16 @@
 import Image from "next/image";
 import type { ProfileFields, Reference } from "./OnboardingApi";
 
+export type UniversityPicker = {
+  options: Reference[];
+  value: string;
+  onChange: (universityId: string) => void;
+};
+
 export function OnboardingProfile({
   values,
   university,
+  universityPicker,
   faculties,
   errors,
   onChange,
@@ -11,6 +18,7 @@ export function OnboardingProfile({
 }: {
   values: ProfileFields;
   university: string;
+  universityPicker?: UniversityPicker;
   faculties: Reference[];
   errors: Record<string, string>;
   onChange: (field: keyof ProfileFields, value: string) => void;
@@ -60,18 +68,54 @@ export function OnboardingProfile({
           {textField("firstName", "Ім’я", "Андрій")}
           {textField("lastName", "Прізвище", "Мельник")}
         </div>
-        <label className="register-field">
-          <span id="onboarding-university-label">Університет</span>
-          <input
-            value={university}
-            readOnly
-            aria-labelledby="onboarding-university-label"
-            aria-describedby="onboarding-university-hint"
-          />
-          <small id="onboarding-university-hint" className="onboarding-field-hint">
-            Університет, вказаний під час реєстрації.
-          </small>
-        </label>
+        {universityPicker ? (
+          <label className="register-field register-field--select">
+            <span id="onboarding-university-label">Університет</span>
+            <select
+              name="universityId"
+              aria-labelledby="onboarding-university-label"
+              value={universityPicker.value}
+              required
+              onChange={(event) => universityPicker.onChange(event.target.value)}
+              aria-invalid={Boolean(errors.universityId)}
+              aria-describedby={
+                errors.universityId ? "onboarding-universityId-error" : "onboarding-university-hint"
+              }
+            >
+              {!universityPicker.options.some((item) => item.id === universityPicker.value) && (
+                <option value={universityPicker.value}>{university}</option>
+              )}
+              {universityPicker.options.map((item) => (
+                <option value={item.id} key={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <Image src="/figma/register/chevron-down.svg" width={16} height={16} alt="" />
+            {errors.universityId ? (
+              <small id="onboarding-universityId-error" className="register-field__error">
+                {errors.universityId}
+              </small>
+            ) : (
+              <small id="onboarding-university-hint" className="onboarding-field-hint">
+                Після зміни університету обери факультет заново.
+              </small>
+            )}
+          </label>
+        ) : (
+          <label className="register-field">
+            <span id="onboarding-university-label">Університет</span>
+            <input
+              value={university}
+              readOnly
+              aria-labelledby="onboarding-university-label"
+              aria-describedby="onboarding-university-hint"
+            />
+            <small id="onboarding-university-hint" className="onboarding-field-hint">
+              Університет, вказаний під час реєстрації. Змінити його можна у профілі.
+            </small>
+          </label>
+        )}
         <div className="register-form__name-row">
           <label className="register-field register-field--select">
             <span id="onboarding-faculty-label">

@@ -18,10 +18,10 @@ Design: Figma `Fer6NQRC3RZCPHPhqNF8QM`, own profile `48:2481`; skills `29:2191`.
 Registration and onboarding persist through the Go API; the profile reads that
 same data. No profile data or credentials are stored in browser storage.
 
-The current API fixes the university at registration; it does not accept a
-university change in `PATCH /me/profile`. The UI explains this read-only field.
-University reassignment needs a separate backend contract change before all of
-FR-02 can be claimed complete. Photos, nickname, birthday, phone, portfolio,
+Registration picks the university from the email domain; the profile can change
+it later through `universityId` in `PATCH /me/profile`. A new university clears
+the faculty, and the editor reloads the faculty list. The account email is not
+changed. The demo seed has a second university for checking this flow. Photos, nickname, birthday, phone, portfolio,
 availability schedules and security settings from Figma are outside FR-02–FR-03.
 
 Before every push: `npm test`, `npm run lint`, `npm run format:check`,

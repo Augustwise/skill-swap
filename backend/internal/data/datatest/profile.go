@@ -12,6 +12,9 @@ func (m *Memory) Universities(context.Context) ([]data.University, error) {
 	return []data.University{{
 		ID: DemoUniversityID, Name: "Демонстраційний університет", ShortName: "Demo Uni",
 		EmailDomain: "students.example.test", City: "Київ",
+	}, {
+		ID: OtherUniversityID, Name: "Інший університет", ShortName: "Other Uni",
+		EmailDomain: "other.example.test", City: "Львів",
 	}}, nil
 }
 
@@ -35,6 +38,11 @@ func (m *Memory) Skills(_ context.Context, query string, limit int) ([]data.Skil
 	return items[:min(limit, len(items))], nil
 }
 
+var universityNames = map[string]string{
+	DemoUniversityID:  "Демонстраційний університет",
+	OtherUniversityID: "Інший університет",
+}
+
 func (m *Memory) ProfileByUserID(_ context.Context, userID string) (data.Profile, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -47,7 +55,7 @@ func (m *Memory) ProfileByUserID(_ context.Context, userID string) (data.Profile
 		FirstName:      a.profile.FirstName,
 		LastName:       a.profile.LastName,
 		UniversityID:   a.user.UniversityID,
-		UniversityName: "Демонстраційний університет",
+		UniversityName: universityNames[a.user.UniversityID],
 		FacultyID:      a.profile.FacultyID,
 		Course:         a.profile.Course,
 		City:           a.profile.City,
@@ -83,6 +91,9 @@ func (m *Memory) UpdateProfile(_ context.Context, userID string, update data.Pro
 	}
 	update.Formats = append([]string{}, update.Formats...)
 	a.profile = update
+	if update.UniversityID != "" {
+		a.user.UniversityID = update.UniversityID
+	}
 	a.user.FirstName = update.FirstName
 	a.user.LastName = update.LastName
 	return nil

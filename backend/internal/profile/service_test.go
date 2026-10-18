@@ -88,6 +88,11 @@ func TestUpdateProfileValidation(t *testing.T) {
 		{"long last name", ProfilePatch{LastName: ptr(strings.Repeat("я", 101))}, "lastName"},
 		{"control character in name", ProfilePatch{FirstName: ptr("Оле\x00на")}, "firstName"},
 		{"faculty of another university", ProfilePatch{FacultyID: ptr(datatest.OtherFacultyID)}, "facultyId"},
+		{"empty university", ProfilePatch{UniversityID: ptr("")}, "universityId"},
+		{"unknown university", ProfilePatch{UniversityID: ptr("10000000-0000-0000-0000-000000000099")}, "universityId"},
+		{"faculty of the previous university", ProfilePatch{
+			UniversityID: ptr(datatest.OtherUniversityID), FacultyID: ptr(datatest.DemoFacultyID),
+		}, "facultyId"},
 		{"unknown faculty", ProfilePatch{FacultyID: ptr("not-a-uuid")}, "facultyId"},
 		{"course 7", ProfilePatch{Course: ptr(7)}, "course"},
 		{"negative course", ProfilePatch{Course: ptr(-1)}, "course"},
@@ -104,6 +109,32 @@ func TestUpdateProfileValidation(t *testing.T) {
 				t.Fatalf("missing %s error in %v", test.field, fields)
 			}
 		})
+	}
+}
+
+// Moving to another university drops the old faculty unless a faculty of the
+// new university is sent in the same patch.
+func TestChangeUniversity(t *testing.T) {
+	s, userID := newTestService(t)
+	ctx := context.Background()
+	if _, err := s.UpdateProfile(ctx, userID, ProfilePatch{FacultyID: ptr(datatest.DemoFacultyID)}); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := s.UpdateProfile(ctx, userID, ProfilePatch{UniversityID: ptr(datatest.OtherUniversityID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.UniversityID != datatest.OtherUniversityID || updated.UniversityName == "" || updated.FacultyID != "" {
+		t.Fatalf("unexpected profile after university change: %+v", updated)
+	}
+	updated, err = s.UpdateProfile(ctx, userID, ProfilePatch{
+		UniversityID: ptr(datatest.DemoUniversityID), FacultyID: ptr(datatest.DemoFacultyID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.UniversityID != datatest.DemoUniversityID || updated.FacultyID != datatest.DemoFacultyID {
+		t.Fatalf("unexpected profile after moving back: %+v", updated)
 	}
 }
 
