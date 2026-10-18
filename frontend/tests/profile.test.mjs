@@ -24,6 +24,7 @@ const { validateProfile, saveProfile, changeProfileSkill } = loadSource(
 const draft = {
   firstName: "Олена",
   lastName: "Коваль",
+  universityId: "uni",
   facultyId: "",
   course: "3",
   city: "",
@@ -46,6 +47,7 @@ test("profile limits count Unicode characters and reject invalid input", () => {
     bio: "x".repeat(601),
     city: "Київ\nЛьвів",
     formats: [],
+    universityId: "",
   }))
     assert.ok(validateProfile({ ...draft, [field]: value })[field], field);
 });
@@ -60,6 +62,7 @@ test("writes use session CSRF, normalized values and the correct skill endpoints
   const body = JSON.parse(calls[0].body);
   assert.equal(body.firstName, "Олена");
   assert.equal(body.facultyId, null);
+  assert.equal(body.universityId, "uni");
   assert.equal(body.course, 3);
   await changeProfileSkill("teaching", "POST", "guitar", "csrf", "BEGINNER");
   await changeProfileSkill("learning", "PATCH", "design", "csrf", "ADVANCED");

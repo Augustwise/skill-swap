@@ -312,7 +312,7 @@ func TestCatalogAgainstLocalPostgres(t *testing.T) {
 		path      string
 		wantCount int
 	}{
-		{path: "/api/v1/universities", wantCount: 1},
+		{path: "/api/v1/universities", wantCount: 2},
 		{path: "/api/v1/skill-categories", wantCount: 4},
 		{path: "/api/v1/universities/10000000-0000-0000-0000-000000000001/faculties", wantCount: 4},
 		{path: "/api/v1/skills?q=Photoshop", wantCount: 1},

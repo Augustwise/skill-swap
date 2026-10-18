@@ -14,8 +14,9 @@ export function ProfileEditor({
   csrfToken: string;
   onSaved: (profile: Profile) => void;
 }) {
-  const initial = (): ProfileDraft => ({ ...profileFields(profile), formats: profile.formats });
+  const initial = (): ProfileDraft => toDraft(profile);
   const [draft, setDraft] = useState(initial);
+  const [universities, setUniversities] = useState<Reference[]>([profile.university]);
   const [faculties, setFaculties] = useState<Reference[]>(profile.faculty ? [profile.faculty] : []);
   const [facultyStatus, setFacultyStatus] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
@@ -28,7 +29,17 @@ export function ProfileEditor({
 
   useEffect(() => {
     const controller = new AbortController();
-    authRequest<{ items: Reference[] }>(`universities/${profile.university.id}/faculties`, {
+    authRequest<{ items: Reference[] }>("universities", {
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+    })
+      .then((data) => setUniversities(data.items))
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    authRequest<{ items: Reference[] }>(`universities/${draft.universityId}/faculties`, {
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
     })
       .then((data) => {
@@ -41,7 +52,7 @@ export function ProfileEditor({
         if (!controller.signal.aborted) setFacultyStatus("error");
       });
     return () => controller.abort();
-  }, [profile.university.id, attempt]);
+  }, [draft.universityId, attempt]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -49,6 +60,14 @@ export function ProfileEditor({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
+
+  function changeUniversity(universityId: string) {
+    setDraft((current) => ({ ...current, universityId, facultyId: "" }));
+    setFaculties([]);
+    setFacultyStatus("loading");
+    setErrors((current) => ({ ...current, universityId: "", facultyId: "" }));
+    setNotice("");
+  }
 
   function change(field: keyof ProfileFields, value: string) {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -72,7 +91,7 @@ export function ProfileEditor({
     try {
       const saved = await saveProfile(draft, csrfToken);
       onSaved(saved);
-      setDraft({ ...profileFields(saved), formats: saved.formats });
+      setDraft(toDraft(saved));
       setNotice("Зміни збережено.");
     } catch (error) {
       setErrors(profileErrors(error));
@@ -126,6 +145,11 @@ export function ProfileEditor({
             embedded
             values={draft}
             university={profile.university.name}
+            universityPicker={{
+              options: universities,
+              value: draft.universityId,
+              onChange: changeUniversity,
+            }}
             faculties={faculties}
             errors={errors}
             onChange={change}
@@ -161,4 +185,12 @@ export function ProfileEditor({
       </div>
     </form>
   );
+}
+
+function toDraft(profile: Profile): ProfileDraft {
+  return {
+    ...profileFields(profile),
+    universityId: profile.university.id,
+    formats: profile.formats,
+  };
 }

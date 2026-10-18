@@ -2,11 +2,12 @@ import { AuthError, authRequest } from "./AuthApi";
 import type { Profile, ProfileFields, SkillLevel } from "./OnboardingApi";
 
 export type SkillList = "teaching" | "learning";
-export type ProfileDraft = ProfileFields & { formats: string[] };
+export type ProfileDraft = ProfileFields & { universityId: string; formats: string[] };
 
 export const profileMessages: Record<string, string> = {
   firstName: "Введи ім’я: від 1 до 100 символів.",
   lastName: "Введи прізвище: від 1 до 100 символів.",
+  universityId: "Обери університет зі списку.",
   facultyId: "Обери факультет свого університету.",
   course: "Обери курс від 1 до 6.",
   city: "Вкажи місто до 100 символів. Для офлайн-занять місто обов’язкове.",
@@ -29,6 +30,7 @@ export function validateProfile(draft: ProfileDraft) {
     const value = draft[field].trim();
     if (!value || length(value) > 100 || invalidLine(value)) errors[field] = profileMessages[field];
   }
+  if (!draft.universityId) errors.universityId = profileMessages.universityId;
   if (draft.course && !/^[1-6]$/.test(draft.course)) errors.course = profileMessages.course;
   if (
     length(draft.city.trim()) > 100 ||

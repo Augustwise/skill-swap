@@ -78,13 +78,14 @@ func EligibleForMatching(p data.Profile) bool {
 }
 
 type ProfilePatch struct {
-	FirstName *string
-	LastName  *string
-	FacultyID *string
-	Course    *int
-	City      *string
-	Bio       *string
-	Formats   *[]string
+	FirstName    *string
+	LastName     *string
+	UniversityID *string
+	FacultyID    *string
+	Course       *int
+	City         *string
+	Bio          *string
+	Formats      *[]string
 }
 
 func (s *Service) UpdateProfile(ctx context.Context, userID string, patch ProfilePatch) (data.Profile, error) {
@@ -94,7 +95,7 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, patch Profil
 		if err != nil {
 			return err
 		}
-		update, err := s.validProfile(ctx, current.UniversityID, applyPatch(current, patch))
+		update, err := s.validProfile(ctx, applyPatch(current, patch))
 		if err != nil {
 			return err
 		}
@@ -109,19 +110,25 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, patch Profil
 
 func applyPatch(current data.Profile, patch ProfilePatch) data.ProfileUpdate {
 	update := data.ProfileUpdate{
-		FirstName: current.FirstName,
-		LastName:  current.LastName,
-		FacultyID: current.FacultyID,
-		Course:    current.Course,
-		City:      current.City,
-		Bio:       current.Bio,
-		Formats:   current.Formats,
+		FirstName:    current.FirstName,
+		LastName:     current.LastName,
+		UniversityID: current.UniversityID,
+		FacultyID:    current.FacultyID,
+		Course:       current.Course,
+		City:         current.City,
+		Bio:          current.Bio,
+		Formats:      current.Formats,
 	}
 	if patch.FirstName != nil {
 		update.FirstName = *patch.FirstName
 	}
 	if patch.LastName != nil {
 		update.LastName = *patch.LastName
+	}
+	if patch.UniversityID != nil && *patch.UniversityID != current.UniversityID {
+		update.UniversityID = *patch.UniversityID
+		// The old faculty belongs to the previous university.
+		update.FacultyID = ""
 	}
 	if patch.FacultyID != nil {
 		update.FacultyID = *patch.FacultyID
@@ -141,7 +148,7 @@ func applyPatch(current data.Profile, patch ProfilePatch) data.ProfileUpdate {
 	return update
 }
 
-func (s *Service) validProfile(ctx context.Context, universityID string, in data.ProfileUpdate) (data.ProfileUpdate, error) {
+func (s *Service) validProfile(ctx context.Context, in data.ProfileUpdate) (data.ProfileUpdate, error) {
 	fields := map[string]string{}
 	out := data.ProfileUpdate{}
 	var ok bool
@@ -177,8 +184,17 @@ func (s *Service) validProfile(ctx context.Context, universityID string, in data
 		fields["city"] = "City is required for offline lessons"
 	}
 
-	if in.FacultyID != "" {
-		faculties, err := s.profiles.FacultiesByUniversity(ctx, universityID)
+	universityOK, err := s.universityExists(ctx, in.UniversityID)
+	if err != nil {
+		return data.ProfileUpdate{}, err
+	}
+	if !universityOK {
+		fields["universityId"] = "Choose a university from the list"
+	}
+	out.UniversityID = in.UniversityID
+
+	if in.FacultyID != "" && universityOK {
+		faculties, err := s.profiles.FacultiesByUniversity(ctx, in.UniversityID)
 		if err != nil {
 			return data.ProfileUpdate{}, err
 		}
@@ -192,6 +208,17 @@ func (s *Service) validProfile(ctx context.Context, universityID string, in data
 		return data.ProfileUpdate{}, &ValidationError{Fields: fields}
 	}
 	return out, nil
+}
+
+func (s *Service) universityExists(ctx context.Context, id string) (bool, error) {
+	if !validate.UUID(id) {
+		return false, nil
+	}
+	universities, err := s.catalog.Universities(ctx)
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(universities, func(u data.University) bool { return u.ID == id }), nil
 }
 
 func (s *Service) AddSkill(ctx context.Context, userID string, list data.SkillList, skillID, level string) (data.Profile, error) {

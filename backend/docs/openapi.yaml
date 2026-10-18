@@ -579,9 +579,9 @@ paths:
       summary: Change some profile fields (FR-02)
       description: |
         Send only the fields to change; missing fields stay as they are. `null` clears
-        `facultyId`, `course`, `city`, `bio` and `formats`. The university comes from the
-        account email and cannot be changed. The whole result is validated: `city` is
-        required when `formats` contains `OFFLINE`.
+        `facultyId`, `course`, `city`, `bio` and `formats`. A new `universityId` clears the
+        faculty unless `facultyId` of that university is sent too. The whole result is
+        validated: `city` is required when `formats` contains `OFFLINE`.
       security:
         - sessionCookie: []
       parameters:
@@ -2757,11 +2757,15 @@ components:
         lastName:
           type: string
           maxLength: 100
+        universityId:
+          type: string
+          format: uuid
+          description: A university from GET /universities. The account email is not changed.
         facultyId:
           type: string
           format: uuid
           nullable: true
-          description: Must be a faculty of the user's university.
+          description: Must be a faculty of the resulting university.
         course:
           type: integer
           minimum: 1

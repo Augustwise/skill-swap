@@ -114,13 +114,14 @@ func (o optional[T]) patch() *T {
 }
 
 type updateProfileRequest struct {
-	FirstName optional[string]   `json:"firstName"`
-	LastName  optional[string]   `json:"lastName"`
-	FacultyID optional[string]   `json:"facultyId"`
-	Course    optional[int]      `json:"course"`
-	City      optional[string]   `json:"city"`
-	Bio       optional[string]   `json:"bio"`
-	Formats   optional[[]string] `json:"formats"`
+	FirstName    optional[string]   `json:"firstName"`
+	LastName     optional[string]   `json:"lastName"`
+	UniversityID optional[string]   `json:"universityId"`
+	FacultyID    optional[string]   `json:"facultyId"`
+	Course       optional[int]      `json:"course"`
+	City         optional[string]   `json:"city"`
+	Bio          optional[string]   `json:"bio"`
+	Formats      optional[[]string] `json:"formats"`
 }
 
 func (a *API) updateProfile(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
@@ -131,13 +132,14 @@ func (a *API) updateProfile(w http.ResponseWriter, r *http.Request, current data
 	ctx, cancel := context.WithTimeout(r.Context(), profileTimeout)
 	defer cancel()
 	p, err := a.app.UpdateProfile(ctx, current.ID, profile.ProfilePatch{
-		FirstName: body.FirstName.patch(),
-		LastName:  body.LastName.patch(),
-		FacultyID: body.FacultyID.patch(),
-		Course:    body.Course.patch(),
-		City:      body.City.patch(),
-		Bio:       body.Bio.patch(),
-		Formats:   body.Formats.patch(),
+		FirstName:    body.FirstName.patch(),
+		LastName:     body.LastName.patch(),
+		UniversityID: body.UniversityID.patch(),
+		FacultyID:    body.FacultyID.patch(),
+		Course:       body.Course.patch(),
+		City:         body.City.patch(),
+		Bio:          body.Bio.patch(),
+		Formats:      body.Formats.patch(),
 	})
 	a.respondProfile(w, http.StatusOK, p, err)
 }

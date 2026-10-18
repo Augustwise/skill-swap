@@ -50,11 +50,13 @@ type Profile struct {
 type ProfileUpdate struct {
 	FirstName string
 	LastName  string
-	FacultyID string
-	Course    int
-	City      string
-	Bio       string
-	Formats   []string
+	// Empty keeps the current university.
+	UniversityID string
+	FacultyID    string
+	Course       int
+	City         string
+	Bio          string
+	Formats      []string
 }
 
 type IProfileData interface {
@@ -118,9 +120,11 @@ func (p *Postgres) UpdateProfile(ctx context.Context, userID string, update Prof
 	return p.WithinTx(ctx, func(ctx context.Context) error {
 		tag, err := p.conn(ctx).Exec(ctx, `UPDATE users SET first_name = $2, last_name = $3,
 				faculty_id = NULLIF($4, '')::uuid, academic_year = NULLIF($5, 0),
-				city = NULLIF($6, ''), bio = NULLIF($7, ''), updated_at = now()
+				city = NULLIF($6, ''), bio = NULLIF($7, ''),
+				university_id = COALESCE(NULLIF($8, '')::uuid, university_id), updated_at = now()
 			WHERE id = $1 AND deleted_at IS NULL`,
-			userID, update.FirstName, update.LastName, update.FacultyID, update.Course, update.City, update.Bio)
+			userID, update.FirstName, update.LastName, update.FacultyID, update.Course, update.City, update.Bio,
+			update.UniversityID)
 		if err != nil {
 			return err
 		}
