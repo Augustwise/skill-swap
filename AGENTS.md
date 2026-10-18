@@ -29,7 +29,7 @@ Go tests use the standard `testing` package and `*_test.go` files beside the cod
 
 ## Commit & Pull Request Guidelines
 
-Recent feature and refactor commits use scoped subjects such as `feat(backend): ...` and `refactor(styles): ...`; use that pattern for new commits. Keep each commit focused. In pull requests, explain the change, list the checks run, note database or environment setup, and include screenshots for visible UI changes.
+Recent feature and refactor commits use scoped subjects such as `feat(backend): ...` and `refactor(styles): ...`; use that pattern for new commits. Keep each commit focused. In pull requests, explain the change, list the checks run, and note database or environment setup.
 
 ## Configuration & Security
 

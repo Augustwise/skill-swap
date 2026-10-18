@@ -34,6 +34,11 @@ const assets = {
   "learn-dot": ["ellipse1", 7],
   "pending-dot": ["ellipse2", 6],
   "active-dot": ["ellipse3", 6],
+  "accepted-dot": ["requests/status-accepted", 6],
+  "completed-dot": ["requests/status-completed", 6],
+  "declined-dot": ["requests/status-declined", 6],
+  "neutral-dot": ["requests/status-neutral", 6],
+  handshake: ["requests/handshake", 20],
 } as const;
 
 export type DashboardIconName = keyof typeof assets;
@@ -43,7 +48,7 @@ export function DashboardIcon({ name }: { name: DashboardIconName }) {
   return (
     <Image
       className="dashboard-icon"
-      src={`/figma/main/${file}.svg`}
+      src={`/figma/${file.includes("/") ? file : `main/${file}`}.svg`}
       alt=""
       width={size}
       height={size}

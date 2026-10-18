@@ -1,5 +1,6 @@
 import Image from "next/image";
 import type { Reference, SelectedSkill, Skill, SkillLevel } from "./OnboardingApi";
+import { SkillChipsSkeleton } from "./Skeleton";
 
 export function OnboardingIcon({ name, size }: { name: string; size: number }) {
   return <Image src={`/figma/onboarding/${name}.svg`} alt="" width={size} height={size} />;
@@ -103,9 +104,7 @@ export function OnboardingSkills({
         </h2>
         <div className="onboarding-skill-list__chips">
           {loading ? (
-            <p className="onboarding-empty" role="status">
-              Завантажуємо навички…
-            </p>
+            <SkillChipsSkeleton label="Завантажуємо навички…" />
           ) : catalogError ? (
             <div className="onboarding-catalog-error" role="alert">
               <p>{catalogError}</p>

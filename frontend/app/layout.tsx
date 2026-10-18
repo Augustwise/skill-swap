@@ -12,6 +12,7 @@ import "./styles/footer.css";
 import "./styles/register.css";
 import "./styles/login.css";
 import "./styles/onboarding.css";
+import "./styles/skeleton.css";
 
 const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin", "cyrillic"] });
 const caveat = Caveat({

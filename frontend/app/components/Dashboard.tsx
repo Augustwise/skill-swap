@@ -3,19 +3,17 @@
 import Link from "next/link";
 import { useState } from "react";
 import { AppGate, type AppContext } from "./AppGate";
+import { pageShells } from "./AppNavigation";
 import { AppShell } from "./AppShell";
 import { DashboardIcon as Icon } from "./DashboardIcon";
 import { DashboardModal, type DashboardModalContent } from "./DashboardModal";
-import {
-  DashboardExchanges,
-  DashboardEmptyState,
-  DashboardRequests,
-  DashboardSessions,
-  DashboardStats,
-} from "./DashboardCards";
+import { DashboardExchanges, DashboardRequests } from "./DashboardActivity";
+import { DashboardEmptyState, DashboardSessions, DashboardStats } from "./DashboardCards";
 import { MatchCard } from "./DiscoveryCards";
 import { DiscoveryError } from "./DiscoveryError";
 import { eligibleForMatching, mutualMatches } from "./DiscoveryApi";
+import { activeExchanges } from "./ExchangeApi";
+import { SkeletonCardGrid } from "./Skeleton";
 import { useApiQuery } from "./useApiQuery";
 
 const recommendedCount = 2;
@@ -37,7 +35,7 @@ function RecommendedMatches() {
           <Icon name="chevron-right" />
         </Link>
       </div>
-      {matches.state.status === "loading" && <div className="discovery-skeleton" />}
+      {matches.state.status === "loading" && <SkeletonCardGrid count={2} columns="two" />}
       {matches.state.status === "error" && (
         <DiscoveryError error={matches.state.error} path="/main" onRetry={matches.retry} />
       )}
@@ -65,13 +63,14 @@ function RecommendedMatches() {
 function DashboardContent({ profile, session }: AppContext) {
   const [modal, setModal] = useState<DashboardModalContent | null>(null);
   const ready = eligibleForMatching(profile);
+  const exchanges = useApiQuery("me/exchanges?status=ACTIVE", activeExchanges);
   return (
     <AppShell
       profile={profile}
       csrfToken={session.csrfToken}
       section="main"
-      title="Головна"
-      subtitle="Твоя активність за тиждень"
+      title={pageShells.main.title}
+      subtitle={pageShells.main.subtitle}
       contentId="dashboard-content"
       toolbar={
         <a
@@ -102,15 +101,23 @@ function DashboardContent({ profile, session }: AppContext) {
           <Icon name="arrow-right" />
         </Link>
       </section>
-      <DashboardStats />
+      <DashboardStats
+        activeExchanges={exchanges.state.status === "ready" ? exchanges.state.data.total : null}
+        loading={exchanges.state.status === "loading"}
+      />
       <div className="dashboard-columns">
         <div className="dashboard-left">
           <RecommendedMatches />
-          <DashboardExchanges onOpenModal={setModal} />
+          <DashboardExchanges
+            exchanges={exchanges.state}
+            viewerId={profile.id}
+            onOpenModal={setModal}
+            onRetry={exchanges.retry}
+          />
         </div>
         <div className="dashboard-right">
           <DashboardSessions onOpenModal={setModal} />
-          <DashboardRequests onOpenModal={setModal} />
+          <DashboardRequests viewerId={profile.id} csrfToken={session.csrfToken} />
         </div>
       </div>
       {modal && <DashboardModal {...modal} onClose={() => setModal(null)} />}
@@ -120,7 +127,7 @@ function DashboardContent({ profile, session }: AppContext) {
 
 export function Dashboard() {
   return (
-    <AppGate subject="головну" path="/main">
+    <AppGate page="main" path="/main">
       {(context) => <DashboardContent {...context} />}
     </AppGate>
   );

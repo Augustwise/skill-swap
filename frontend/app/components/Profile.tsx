@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AppMessage } from "./AppMessage";
 import { ProfileShell } from "./ProfileShell";
+import { AppSkeleton } from "./Skeleton";
 import { ProfileSummary } from "./ProfileSummary";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileSkills } from "./ProfileSkills";
@@ -12,10 +13,13 @@ export function Profile() {
   const [section, setSection] = useState("about");
   const [dirty, setDirty] = useState(false);
   const { profile, session, status, retry, setProfile } = useProfile();
+  if (status === "loading" || (status === "ready" && (!profile || !session))) {
+    return <AppSkeleton page="profile" />;
+  }
   if (status !== "ready" || !profile || !session) {
     return (
       <AppMessage
-        status={status === "ready" ? "loading" : status}
+        status={status === "login" ? "login" : "error"}
         subject="профіль"
         path="/profile"
         onRetry={retry}

@@ -3,6 +3,7 @@ import { CandidateProfile } from "../../components/CandidateProfile";
 import "../../styles/dashboard.css";
 import "../../styles/profile.css";
 import "../../styles/discovery.css";
+import "../../styles/exchange.css";
 
 export const metadata: Metadata = {
   title: "Профіль студента — SkillSwap",

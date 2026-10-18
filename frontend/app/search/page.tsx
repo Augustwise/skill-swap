@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { AppMessage } from "../components/AppMessage";
+import { AppSkeleton } from "../components/Skeleton";
 import { StudentSearch } from "../components/StudentSearch";
 import "../styles/dashboard.css";
 import "../styles/profile.css";
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<AppMessage status="loading" subject="пошук" path="/search" />}>
+    <Suspense fallback={<AppSkeleton page="search" />}>
       <StudentSearch />
     </Suspense>
   );

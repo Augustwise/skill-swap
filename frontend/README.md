@@ -26,21 +26,24 @@ the API and Mailpit as described in the root `README.md`.
 
 ## Routes
 
-| Route                   | Sprint | Page                                               |
-| ----------------------- | ------ | -------------------------------------------------- |
-| `/`, `/terms`           | —      | Landing page and data-handling terms               |
-| `/register`, `/login`   | 2      | Registration, login and password recovery          |
-| `/verify-email`         | 2      | Email verification and resend                      |
-| `/reset-password`       | 2      | New password from a one-time link                  |
-| `/onboarding`           | 3      | First profile, skill lists and lesson formats      |
-| `/profile`              | 3      | Own profile, skills and formats                    |
-| `/main`                 | 3–4    | Dashboard with recommended mutual matches          |
-| `/search`               | 4      | Student search with filters                        |
-| `/matches`              | 4      | Mutual matches with explanations                   |
-| `/students/[studentId]` | 4      | Candidate profile with skills, formats and reviews |
+| Route                     | Sprint | Page                                                      |
+| ------------------------- | ------ | --------------------------------------------------------- |
+| `/`, `/terms`             | —      | Landing page and data-handling terms                      |
+| `/register`, `/login`     | 2      | Registration, login and password recovery                 |
+| `/verify-email`           | 2      | Email verification and resend                             |
+| `/reset-password`         | 2      | New password from a one-time link                         |
+| `/onboarding`             | 3      | First profile, skill lists and lesson formats             |
+| `/profile`                | 3      | Own profile, skills and formats                           |
+| `/main`                   | 3–5    | Dashboard: mutual matches, new requests, active exchanges |
+| `/search`                 | 4      | Student search with filters                               |
+| `/matches`                | 4      | Mutual matches with explanations                          |
+| `/students/[studentId]`   | 4–5    | Candidate profile and the exchange proposal dialog        |
+| `/requests`               | 5      | Incoming and sent exchange requests with decisions        |
+| `/requests/[requestId]`   | 5      | Request terms, message, decision and status history       |
+| `/exchanges/[exchangeId]` | 5      | Started exchange: agreed terms and progress               |
 
 Sprint notes: [`SPRINT2.md`](SPRINT2.md), [`SPRINT3.md`](SPRINT3.md),
-[`SPRINT4.md`](SPRINT4.md).
+[`SPRINT4.md`](SPRINT4.md), [`SPRINT5.md`](SPRINT5.md).
 
 ## Structure
 
@@ -49,17 +52,21 @@ app/
 ├── <route>/page.tsx      # Server entry: metadata, Suspense, route params
 ├── components/
 │   ├── *Api.ts           # HTTP client modules: DTO types, requests, validation
-│   ├── AppShell.tsx      # Shared sidebar, top bar search and account menu
+│   ├── AppShell.tsx      # Shared sidebar, top bar search, account menu, requests counter
 │   ├── AppGate.tsx       # Signed-in, verified-email gate for private pages
+│   ├── AppDialog.tsx     # Native modal dialog for proposals and confirmations
+│   ├── AppNavigation.ts  # Navigation items and page titles shared with skeletons
+│   ├── Skeleton.tsx      # Page-shaped loading skeletons
 │   └── *.tsx             # Page and UI components (PascalCase)
 └── styles/               # Global and per-section CSS
-public/figma/             # Icons exported from the Figma design
+public/figma/             # Icons and status dots exported from the Figma design
 tests/                    # node:test unit tests for the *.ts modules
 ```
 
 Private pages render `AppGate`, which loads `GET /auth/me` and `GET /me/profile`, sends
 unverified users to `/verify-email`, and offers login or retry otherwise. Inside it,
-`AppShell` provides the common layout.
+`AppShell` provides the common layout. While the session loads, `AppGate` shows
+`AppSkeleton`: the real sidebar and page title with a shimmering outline of the page.
 
 ## Conventions
 
@@ -68,8 +75,15 @@ unverified users to `/verify-email`, and offers login or retry otherwise. Inside
   `/auth/me`; tokens and passwords are never stored in browser storage.
 - Business rules stay on the server. Client checks only give earlier, translated
   feedback and mirror the server limits.
-- Page state that a user may share or restore (filters, page numbers) lives in the URL.
-  Return paths in `?next=` and `?from=` pass through `safeAppPath`.
+- Page state that a user may share or restore (filters, tabs, page numbers) lives in the
+  URL. Return paths in `?next=` and `?from=` pass through `safeAppPath`.
+- Actions that change state disable their buttons while sending and rely on the server's
+  idempotent answers; final decisions (decline, withdraw) ask for confirmation. After a
+  conflict the page reloads the object instead of guessing its new state.
 - The interface is Ukrainian, works from 360 to 1920 px without horizontal scrolling,
   and keeps visible focus, labels and text error messages (NFR-10).
 - No design fixtures replace user data: empty lists show an empty state.
+- Loading states are skeletons shaped like the content they replace (cards, panels, the
+  detail columns, form fields), never a blank page or a "loading" card. They are hidden
+  from screen readers, which hear one "Завантажуємо …" status instead; the shimmer stops
+  with `prefers-reduced-motion`.
