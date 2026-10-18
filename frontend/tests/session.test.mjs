@@ -4,6 +4,8 @@ import { loadSource } from "./load-source.mjs";
 
 const time = loadSource("app/components/SessionTime.ts");
 const api = loadSource("app/components/SessionApi.ts");
+const exchanges = loadSource("app/components/ExchangeApi.ts");
+const routes = loadSource("app/components/AppRoutes.ts");
 const { AuthError } = loadSource("app/components/AuthApi.ts");
 const id = "80000000-0000-0000-0000-000000000001";
 const draft = () => ({
@@ -137,4 +139,28 @@ test("lesson API guards identifiers and sends decisions with CSRF", async () => 
     globalThis.fetch = original;
   }
   assert.match(api.sessionErrorMessage(new AuthError(409, "session_conflict")), /інший час/);
+});
+
+test("exchange pages paginate and lesson reads use the existing private API", async () => {
+  const original = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(url);
+    return Response.json({ items: [], session: { id } });
+  };
+  try {
+    await exchanges.listActiveExchanges(2);
+    await api.exchangeSessions(id);
+    await api.sessionDetails(id);
+    assert.deepEqual(urls, [
+      "/api/v1/me/exchanges?status=ACTIVE&page=2",
+      `/api/v1/exchanges/${id}/sessions`,
+      `/api/v1/sessions/${id}`,
+    ]);
+  } finally {
+    globalThis.fetch = original;
+  }
+  for (const path of ["/exchanges?page=2", `/sessions/${id}`])
+    assert.equal(routes.safeAppPath(path, "/main"), path);
+  assert.equal(routes.safeAppPath("/sessions/nope", "/main"), "/main");
 });

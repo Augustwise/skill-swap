@@ -78,6 +78,48 @@
   padding: 0;
   list-style: none;
 }
+.session-list {
+  display: grid;
+  gap: 16px;
+  padding: 0;
+  list-style: none;
+}
+.session-list > .account-card {
+  display: grid;
+  gap: 16px;
+}
+.session-plan {
+  margin-top: 20px;
+}
+.session-plan > li {
+  display: flex;
+  align-items: start;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.session-plan__body {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+.session-plan h3 {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.session-number {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--purple-soft);
+  color: var(--purple);
+  font-size: 12px;
+}
 .session-history li {
   display: grid;
   gap: 8px;

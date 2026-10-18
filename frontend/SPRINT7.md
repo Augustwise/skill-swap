@@ -42,3 +42,13 @@ The teacher comes from the selected lesson in the agreed plan. Choose a lesson i
 other direction to plan with the other teacher. Draft planning requires an active exchange.
 Before a decision, reload the proposal and reject a replaced proposal in the client;
 the existing API does not offer an atomic proposal-version precondition.
+
+## Exchanges
+
+`/exchanges?page=2` lists only active exchanges through `GET /me/exchanges?status=ACTIVE`.
+Cards reuse the dashboard's partner, skill directions and server progress. Each links to
+the complete conditions and lesson plan; the original request remains available there.
+`GET /exchanges/{id}/sessions` supplies every slot, including drafts and cancelled lessons.
+Select a numbered lesson to propose/agree/change its time. The nearest meeting links to
+its lesson and opens only a validated HTTP(S) meeting URL. Empty, missing, loading and
+connection-error states use shared application components.

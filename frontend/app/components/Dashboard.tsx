@@ -102,7 +102,6 @@ function DashboardContent({ profile, session }: AppContext) {
           <DashboardExchanges
             exchanges={exchanges.state}
             viewerId={profile.id}
-            onOpenModal={setModal}
             onRetry={exchanges.retry}
           />
         </div>

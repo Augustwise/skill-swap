@@ -11,6 +11,9 @@ import { DiscoveryEmpty } from "./DiscoveryCards";
 import { DiscoveryError } from "./DiscoveryError";
 import { countLabel, formatList } from "./DiscoveryFormat";
 import { ExchangeDirections, PartnerHeading, StatusBadge } from "./ExchangeCards";
+import { ExchangeLessons } from "./ExchangeLessons";
+import { sessionHref } from "./SessionApi";
+import { meetingLink } from "./SessionTime";
 import {
   exchangeDetails,
   exchangeHref,
@@ -78,7 +81,9 @@ function NextStepsCard({ exchange }: { exchange: Exchange }) {
       <h2 id="exchange-next-title">Найближче заняття</h2>
       {next ? (
         <div className="exchange-next">
-          <strong>{next.title}</strong>
+          <Link className="exchange-person__link" href={sessionHref(next.id)}>
+            <strong>{next.title}</strong>
+          </Link>
           <p>
             <Icon name="clock" />
             <time dateTime={next.startsAt}>{formatDateTime(next.startsAt)}</time>
@@ -89,10 +94,10 @@ function NextStepsCard({ exchange }: { exchange: Exchange }) {
               {next.meetingPlace}
             </p>
           )}
-          {next.meetingUrl && (
+          {meetingLink(next.meetingUrl) && (
             <p>
               <Icon name="video" />
-              <a href={next.meetingUrl} target="_blank" rel="noopener noreferrer">
+              <a href={meetingLink(next.meetingUrl)!} target="_blank" rel="noopener noreferrer">
                 Посилання на зустріч
               </a>
             </p>
@@ -100,8 +105,7 @@ function NextStepsCard({ exchange }: { exchange: Exchange }) {
         </div>
       ) : (
         <p className="profile-hint">
-          Заняття ще не заплановані. Узгодьте дату, час і місце в чаті — планування занять з’явиться
-          в наступному оновленні SkillSwap.
+          Погоджених майбутніх занять немає. Обери заняття в плані та запропонуй час партнеру.
         </p>
       )}
     </section>
@@ -123,15 +127,13 @@ function ExchangeView({
     <AppShell
       profile={profile}
       csrfToken={session.csrfToken}
+      section="exchanges"
       title={pageShells.exchange.title}
       subtitle={pageShells.exchange.subtitle}
       contentId="exchange-content"
     >
-      <Link
-        className="discovery-back"
-        href={exchange?.requestId ? requestHref(exchange.requestId) : "/requests"}
-      >
-        ← {exchange?.requestId ? "До запиту на обмін" : "До запитів на обмін"}
+      <Link className="discovery-back" href="/exchanges">
+        ← До активних обмінів
       </Link>
       {started && exchange?.status === "ACTIVE" && (
         <section className="account-card profile-tip exchange-started" role="status">
@@ -220,6 +222,11 @@ function ExchangeView({
                 Назви навичок і рівні зафіксовано під час прийняття запиту: зміни профілю не
                 переписують погоджені умови.
               </p>
+              {exchange.requestId && (
+                <Link className="exchange-person__link" href={requestHref(exchange.requestId)}>
+                  Початковий запит та історія →
+                </Link>
+              )}
             </section>
             {exchange.cancellationReason && (
               <section className="account-card" aria-labelledby="exchange-cancel-title">
@@ -227,6 +234,7 @@ function ExchangeView({
                 <p className="profile-biography">{exchange.cancellationReason}</p>
               </section>
             )}
+            <ExchangeLessons exchangeId={exchangeId} />
           </div>
           <aside className="profile-rail" aria-label="Прогрес і заняття">
             <ProgressCard exchange={exchange} viewerId={profile.id} />
