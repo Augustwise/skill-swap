@@ -22,6 +22,7 @@ import (
 	"skillswap/backend/internal/exchange"
 	"skillswap/backend/internal/mailer"
 	"skillswap/backend/internal/profile"
+	"skillswap/backend/internal/session"
 )
 
 func main() {
@@ -50,8 +51,9 @@ func run(logger *slog.Logger) error {
 		AllowedEmailDomains: cfg.AllowedEmailDomains,
 	}, logger)
 	comm := communication.NewService(store, store, store)
+	sessions := session.NewService(store, store, store, comm)
 	app := core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store),
-		exchange.NewService(store, store, store, comm), comm)
+		exchange.NewService(store, store, store, comm), comm, sessions)
 	server := &http.Server{
 		Addr:              cfg.APIAddr,
 		Handler:           api.New(app, access, store, api.Settings{FrontendOrigin: cfg.FrontendURL}, logger),

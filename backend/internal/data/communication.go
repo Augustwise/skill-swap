@@ -312,8 +312,14 @@ func (p *Postgres) LockConversation(ctx context.Context, userID, conversationID 
 func (p *Postgres) CreateMessage(ctx context.Context, conversationID, authorID, body string) (Message, error) {
 	var m Message
 	err := p.conn(ctx).QueryRow(ctx, `WITH created AS (
-			INSERT INTO messages (conversation_id, author_id, type, body)
-			VALUES ($1, $2, 'TEXT', $3)
+			INSERT INTO messages (conversation_id, author_id, type, body, created_at)
+			VALUES (
+				$1, $2, 'TEXT', $3,
+				GREATEST(
+					clock_timestamp(),
+					COALESCE((SELECT MAX(created_at) + interval '1 microsecond' FROM messages WHERE conversation_id = $1), clock_timestamp())
+				)
+			)
 			RETURNING id, conversation_id, author_id, type::text AS type, body, created_at, edited_at
 		), touched AS (
 			UPDATE conversations

@@ -100,7 +100,7 @@ for 40 minutes (NFR-08; `login_throttles`, migration `00002_auth.sql`).
 | ----------------- | ------- |
 | HTTP handlers: routes, DTOs, errors | `internal/api` |
 | Access and authentication | `internal/auth` |
-| Domain core and `IApplication` | `internal/core` (`internal/profile`, `internal/discovery`, `internal/exchange`, `internal/communication`) |
+| Domain core and `IApplication` | `internal/core` (`internal/profile`, `internal/discovery`, `internal/exchange`, `internal/session`, `internal/communication`) |
 | Shared input checks (names, text length, UUID) | `internal/validate` |
 | Data access: `IData` / `ITransaction`, pgx v5, pgxpool | `internal/data` |
 | Mail adapter `IMailer` | `internal/mailer` |
@@ -392,9 +392,10 @@ database too.
 | `request_not_pending` | 409 | the request was declined or withdrawn |
 | `request_outdated` | 409 | one student blocked the other, an account is suspended or deleted, or one of the four skills was removed from a profile; the request stays pending and its author can withdraw it |
 
-`GET /api/v1/exchanges/{exchangeId}` returns `{ exchange }` with the terms from those
-copies. Only the two participants see it; anyone else, an unknown ID or a value that is
-not a UUID gets 404 `exchange_not_found`. The list of exchanges comes with FR-10.
+`GET /api/v1/exchanges/{exchangeId}` returns `{ exchange, sessions }` with the terms from
+those copies, `partner`, `progress`, `nextSession`, and the ordered lesson plan. Only the
+two participants see it; anyone else, an unknown ID or a value that is not a UUID gets
+404 `exchange_not_found`. The list of exchanges is `GET /api/v1/me/exchanges` (FR-10).
 
 With the demo data, Olha can accept Taras's request and open the exchange. Do this only
 on your own database: the seed does not reset an answered demo request.
@@ -483,6 +484,91 @@ Each `notification` has `eventType` (`EXCHANGE_REQUEST`, `REQUEST_RESPONSE`,
 (`{ kind, id, requestId, exchangeId, conversationId, sessionId }`) so clicking a
 notification in the UI can open the corresponding request, exchange, conversation, or
 session directly.
+
+## Lesson planning, active exchanges and schedule (Sprint 7, FR-09, FR-10)
+
+Migration `00007_sessions.sql` adds integrity constraints for `meeting_places`, `sessions`
+(non-empty title, distinct teacher and learner, 15–240 minute duration, schedule state, and
+format-specific location/link rules), and `session_schedule_proposals` (duration,
+format-specific location/link rules, and a partial unique index allowing at most one
+`PENDING` proposal per session). Back up a shared database before applying it (NFR-04):
+
+```bash
+pg_dump --format=custom --file=../backups/skillswap-before-00007.dump "$DATABASE_URL"
+go run ./cmd/db up
+go run ./cmd/db seed
+```
+
+The seed adds an active exchange (`80000000-0000-0000-0000-000000000001`) between
+`demo.iryna` and `demo.marko` (English ↔ Photoshop, online, 2 × 60 min each way,
+`totalSessions: 4`) with four planned lesson slots (`81000000-0000-0000-0000-000000000001`
+through `04`):
+
+- Session 1 (`planOrder: 1`, Iryna teaches Marko English): `SCHEDULED` with an accepted
+  proposal (`82000000-0000-0000-0000-000000000001`) and both participants' `SCHEDULE`
+  confirmations;
+- Session 2 (`planOrder: 2`, Iryna teaches Marko English): `DRAFT`;
+- Session 3 (`planOrder: 3`, Marko teaches Iryna Photoshop): `PROPOSED` with a pending
+  proposal from Marko (`82000000-0000-0000-0000-000000000002`) and an unread
+  `SESSION_UPDATED` notification for Iryna;
+- Session 4 (`planOrder: 4`, Marko teaches Iryna Photoshop): `DRAFT`.
+
+Accepting an exchange request (`POST /api/v1/exchange-requests/{requestId}/accept`)
+automatically creates the `totalSessions` initial `DRAFT` slots in `sessions` (LR2 5.1,
+Figure 3).
+
+### Active exchanges and schedule routes (FR-09, FR-10)
+
+| Method | Path | Session | Purpose |
+| ------ | ---- | ------- | ------- |
+| GET | `/api/v1/me/exchanges?status=&page=1` | cookie | List your exchanges (`ACTIVE` first, 20 per page) with `partner`, `progress`, and `nextSession` |
+| GET | `/api/v1/exchanges/{exchangeId}` | cookie | Open an exchange with its terms, `progress`, `nextSession`, and `sessions` |
+| GET | `/api/v1/exchanges/{exchangeId}/sessions` | cookie | List all sessions of an exchange ordered by `planOrder` |
+| POST | `/api/v1/exchanges/{exchangeId}/sessions` | cookie + CSRF | Propose a lesson on an active exchange (picks the next `DRAFT` slot for `teacherId` or targets `sessionId`) |
+| GET | `/api/v1/sessions/{sessionId}` | cookie | Open a session and its chronological `proposals` history |
+| POST | `/api/v1/sessions/{sessionId}/proposals` | cookie + CSRF | Propose or reschedule a specific session (`DRAFT`, `PROPOSED`, or `SCHEDULED`) |
+| POST | `/api/v1/sessions/{sessionId}/accept` | cookie + CSRF | Accept the partner's pending schedule proposal (`PROPOSED` → `SCHEDULED`) |
+| POST | `/api/v1/sessions/{sessionId}/decline` | cookie + CSRF | Decline the partner's pending schedule proposal (`PROPOSED` → `DRAFT`) |
+| POST | `/api/v1/sessions/{sessionId}/cancel` | cookie + CSRF | Cancel a `PROPOSED` or `SCHEDULED` session with an optional `{ "reason" }` |
+| GET | `/api/v1/me/schedule?status=SCHEDULED&upcoming=false&page=1` | cookie | List your meetings chronologically (`startsAt` ascending, 20 per page), `timezone`, and `pendingProposalsCount` |
+
+Server rules for lesson planning and schedules (FR-09, FR-10, LR2 5.3, NFR-05, NFR-09):
+
+- Only the two participants of an exchange can view or act on its sessions; anyone else
+  receives 404 `exchange_not_found` or `session_not_found`, and `GET /api/v1/me/schedule`
+  returns only the signed-in student's own lessons.
+- `startsAt` and `endsAt` must be ISO-8601 / RFC3339 timestamps with timezone (`timestamptz`),
+  in the future, with `endsAt > startsAt` and duration between 15 and 240 minutes.
+- `ONLINE` proposals require a valid `http://` or `https://` `meetingUrl` (up to 500
+  characters) and no `meetingPlace`; `OFFLINE` proposals require a `meetingPlace` (1–180
+  characters, stored in `meeting_places`) and no `meetingUrl`.
+- Proposing or accepting a session locks both participants in canonical UUID order
+  (`LockUsers`, LR2 5.2–5.3) and checks half-open intervals `[startsAt, endsAt)` against
+  all `SCHEDULED` sessions of both participants across all exchanges. Overlapping intervals
+  return 409 `session_conflict`; back-to-back intervals (`[14:00, 15:00)` and
+  `[15:00, 16:00)`) are allowed.
+- Rescheduling an already `SCHEDULED` or `PROPOSED` session supersedes any pending
+  proposal, clears previous `SCHEDULE` confirmations in `session_confirmations`, sets the
+  session back to `PROPOSED` with only the proposer's confirmation, and notifies the
+  partner (`SESSION_UPDATED`).
+- Cancelling a `PROPOSED` or `SCHEDULED` session marks it `CANCELLED`, preserves it in the
+  exchange history without increasing `progress.completedSessions`, and inserts a
+  replacement `DRAFT` slot so the agreed plan can still be completed.
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `exchange_not_found` | 404 | no exchange has this ID, or you do not take part in it |
+| `session_not_found` | 404 | no session has this ID, or you do not take part in it |
+| `action_not_allowed` | 403 | the proposer tries to accept or decline their own proposal |
+| `exchange_not_active` | 409 | the exchange is already `COMPLETED` or `CANCELLED` |
+| `exchange_blocked` | 409 | one participant blocked the other, or an account is suspended or deleted |
+| `plan_limit_reached` | 409 | all planned sessions for the chosen teacher in this exchange are already proposed, scheduled, or completed |
+| `session_not_schedulable` | 409 | the session is already `COMPLETED` or `CANCELLED` |
+| `session_not_proposed` | 409 | the session has no pending proposal to accept or decline |
+| `session_not_cancellable` | 409 | trying to cancel a `DRAFT` or `COMPLETED` session |
+| `session_in_past` | 409 | the proposed start time has already passed before acceptance |
+| `session_conflict` | 409 | either participant already has a `SCHEDULED` session overlapping `[startsAt, endsAt)` |
+| `validation_failed` | 422 | invalid `title`, `description`, `teacherId`, `startsAt`, `endsAt`, `format`, `meetingUrl`, `meetingPlace`, `reason`, `status`, or `upcoming` |
 
 ## Run Mailpit on Windows without Docker
 

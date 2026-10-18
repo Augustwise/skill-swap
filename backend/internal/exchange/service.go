@@ -24,8 +24,9 @@ const (
 )
 
 var (
-	formats  = []string{data.FormatOnline, data.FormatOffline}
-	statuses = []string{data.RequestPending, data.RequestAccepted, data.RequestDeclined, data.RequestWithdrawn}
+	formats          = []string{data.FormatOnline, data.FormatOffline}
+	statuses         = []string{data.RequestPending, data.RequestAccepted, data.RequestDeclined, data.RequestWithdrawn}
+	exchangeStatuses = []string{data.ExchangeActive, data.ExchangeCompleted, data.ExchangeCancelled}
 )
 
 var (
@@ -283,6 +284,28 @@ func (s *Service) Exchange(ctx context.Context, userID, exchangeID string) (data
 		return data.Exchange{}, ErrExchangeNotFound
 	}
 	return exchange, nil
+}
+
+type ExchangePage struct {
+	Items []data.Exchange
+	Page  int
+	Total int
+}
+
+func (s *Service) Exchanges(ctx context.Context, userID string, filter data.ExchangeFilter, page int) (ExchangePage, error) {
+	if page < 1 || page > MaxPage {
+		return ExchangePage{}, ErrInvalidPage
+	}
+	if filter.Status != "" && !slices.Contains(exchangeStatuses, filter.Status) {
+		return ExchangePage{}, &profile.ValidationError{Fields: map[string]string{
+			"status": "Status must be ACTIVE, COMPLETED or CANCELLED",
+		}}
+	}
+	items, total, err := s.exchanges.UserExchanges(ctx, userID, filter, PageSize, (page-1)*PageSize)
+	if err != nil {
+		return ExchangePage{}, err
+	}
+	return ExchangePage{Items: items, Page: page, Total: total}, nil
 }
 
 // lockRequest must run inside a transaction: the row stays locked until it ends.

@@ -620,3 +620,58 @@ func TestExchange(t *testing.T) {
 		}
 	}
 }
+
+func TestExchangesListAndFilters(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	marko := f.student(t, "marko@students.example.test", datatest.DemoUniversityID, "Київ", []string{data.FormatOnline},
+		datatest.PhotoshopSkillID, datatest.GuitarSkillID)
+
+	req1, err := f.service.CreateRequest(ctx, f.olha, f.request())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc1, err := f.service.AcceptRequest(ctx, f.andrii, req1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acc1.Exchange.Progress.TotalSessions != 3 || acc1.Exchange.Progress.DraftSessions != 3 {
+		t.Fatalf("initial progress = %+v", acc1.Exchange.Progress)
+	}
+
+	in2 := f.request()
+	in2.RecipientID = marko
+	req2, err := f.service.CreateRequest(ctx, f.olha, in2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc2, err := f.service.AcceptRequest(ctx, marko, req2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.store.SetExchangeStatus(acc1.Exchange.ID, data.ExchangeCompleted)
+
+	// ACTIVE exchanges come first; status filter narrows the list.
+	all, err := f.service.Exchanges(ctx, f.olha, data.ExchangeFilter{}, 1)
+	if err != nil || all.Total != 2 || len(all.Items) != 2 ||
+		all.Items[0].ID != acc2.Exchange.ID || all.Items[1].ID != acc1.Exchange.ID {
+		t.Fatalf("all exchanges = %+v, err %v", all, err)
+	}
+	activeOnly, err := f.service.Exchanges(ctx, f.olha, data.ExchangeFilter{Status: data.ExchangeActive}, 1)
+	if err != nil || activeOnly.Total != 1 || activeOnly.Items[0].ID != acc2.Exchange.ID {
+		t.Fatalf("active exchanges = %+v, err %v", activeOnly, err)
+	}
+	completedOnly, err := f.service.Exchanges(ctx, f.olha, data.ExchangeFilter{Status: data.ExchangeCompleted}, 1)
+	if err != nil || completedOnly.Total != 1 || completedOnly.Items[0].ID != acc1.Exchange.ID {
+		t.Fatalf("completed exchanges = %+v, err %v", completedOnly, err)
+	}
+
+	if _, err := f.service.Exchanges(ctx, f.olha, data.ExchangeFilter{Status: "PAUSED"}, 1); fieldErrors(t, err)["status"] == "" {
+		t.Fatalf("invalid status: err = %v", err)
+	}
+	for _, p := range []int{0, MaxPage + 1} {
+		if _, err := f.service.Exchanges(ctx, f.olha, data.ExchangeFilter{}, p); !errors.Is(err, ErrInvalidPage) {
+			t.Fatalf("page %d: err = %v", p, err)
+		}
+	}
+}

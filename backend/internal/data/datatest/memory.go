@@ -18,27 +18,32 @@ const (
 	OtherFacultyID    = "50000000-0000-0000-0000-000000000099"
 	GuitarSkillID     = "30000000-0000-0000-0000-000000000001"
 	PhotoshopSkillID  = "30000000-0000-0000-0000-000000000002"
+	TypographySkillID = "30000000-0000-0000-0000-000000000011"
+	BrandingSkillID   = "30000000-0000-0000-0000-000000000012"
 	InactiveSkillID   = "30000000-0000-0000-0000-000000000098"
 )
 
 type Memory struct {
-	mu            sync.Mutex
-	universities  map[string]string
-	faculties     map[string][]data.Faculty
-	skills        map[string]catalogSkill
-	users         map[string]*account
-	sessions      map[string]*session
-	tokens        map[string]*token
-	throttles     map[string]*throttle
-	settings      map[string]requestSettings
-	blocks        map[[2]string]bool
-	requests      map[string]*data.ExchangeRequest
-	history       map[string][]data.RequestStatusChange
-	exchanges     map[string]*data.Exchange
-	conversations map[string]*storedConversation
-	messages      map[string][]*data.Message
-	receipts      map[[2]string]time.Time // [messageID, userID] -> readAt
-	notifications map[string]*data.Notification
+	mu                   sync.Mutex
+	universities         map[string]string
+	faculties            map[string][]data.Faculty
+	skills               map[string]catalogSkill
+	users                map[string]*account
+	sessions             map[string]*session
+	tokens               map[string]*token
+	throttles            map[string]*throttle
+	settings             map[string]requestSettings
+	blocks               map[[2]string]bool
+	requests             map[string]*data.ExchangeRequest
+	history              map[string][]data.RequestStatusChange
+	exchanges            map[string]*data.Exchange
+	conversations        map[string]*storedConversation
+	messages             map[string][]*data.Message
+	receipts             map[[2]string]time.Time // [messageID, userID] -> readAt
+	notifications        map[string]*data.Notification
+	lessonSessions       map[string]*data.Session
+	proposals            map[string][]*data.SessionProposal
+	sessionConfirmations map[string][]string
 }
 
 type catalogSkill struct {
@@ -91,19 +96,22 @@ func NewMemory() *Memory {
 			PhotoshopSkillID: {skill: data.Skill{ID: PhotoshopSkillID, CategoryID: "20000000-0000-0000-0000-000000000002", Name: "Photoshop", Slug: "photoshop"}, active: true},
 			InactiveSkillID:  {skill: data.Skill{ID: InactiveSkillID, CategoryID: "20000000-0000-0000-0000-000000000002", Name: "Flash", Slug: "flash"}},
 		},
-		users:         map[string]*account{},
-		sessions:      map[string]*session{},
-		tokens:        map[string]*token{},
-		throttles:     map[string]*throttle{},
-		settings:      map[string]requestSettings{},
-		blocks:        map[[2]string]bool{},
-		requests:      map[string]*data.ExchangeRequest{},
-		history:       map[string][]data.RequestStatusChange{},
-		exchanges:     map[string]*data.Exchange{},
-		conversations: map[string]*storedConversation{},
-		messages:      map[string][]*data.Message{},
-		receipts:      map[[2]string]time.Time{},
-		notifications: map[string]*data.Notification{},
+		users:                map[string]*account{},
+		sessions:             map[string]*session{},
+		tokens:               map[string]*token{},
+		throttles:            map[string]*throttle{},
+		settings:             map[string]requestSettings{},
+		blocks:               map[[2]string]bool{},
+		requests:             map[string]*data.ExchangeRequest{},
+		history:              map[string][]data.RequestStatusChange{},
+		exchanges:            map[string]*data.Exchange{},
+		conversations:        map[string]*storedConversation{},
+		messages:             map[string][]*data.Message{},
+		receipts:             map[[2]string]time.Time{},
+		notifications:        map[string]*data.Notification{},
+		lessonSessions:       map[string]*data.Session{},
+		proposals:            map[string][]*data.SessionProposal{},
+		sessionConfirmations: map[string][]string{},
 	}
 }
 

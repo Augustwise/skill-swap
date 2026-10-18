@@ -3,7 +3,7 @@ info:
   title: Skill Swap API
   version: 1.0.0
   description: |
-    HTTP contract implemented by the Sprint 1-6 backend.
+    HTTP contract implemented by the Sprint 1-7 backend.
 
     Authentication (FR-01) uses an opaque server-side session stored in the HttpOnly
     `skillswap_session` cookie (SameSite=Lax, Path=/). Browsers should call the API through
@@ -38,6 +38,16 @@ info:
     without re-fetching the whole history. Notifications are stored in the same database
     transaction as the event with `UNIQUE (recipient_id, event_key)` so retries never
     create duplicates.
+
+    Lesson planning, time agreement, active exchanges, and personal schedule (Sprint 7,
+    FR-09 and FR-10) also need a verified email. Accepting an exchange request creates
+    initial `DRAFT` lesson slots according to the agreed plan. Either participant of an
+    active exchange can propose a topic, teacher, date, start/end time (with timezone),
+    and meeting place or external video link; the partner accepts or declines the proposal.
+    Rescheduling clears previous schedule confirmations and requires new agreement.
+    Half-open intervals `[startsAt, endsAt)` are checked against all `SCHEDULED` sessions
+    of both participants across all exchanges under canonical UUID user locks. Cancelled
+    sessions do not increase progress and automatically add a replacement `DRAFT` slot.
 servers:
   - url: http://127.0.0.1:8080/api/v1
     description: Local development
@@ -49,6 +59,7 @@ tags:
   - name: Discovery
   - name: Exchange requests
   - name: Exchanges
+  - name: Sessions
   - name: Conversations
   - name: Notifications
 paths:
@@ -1378,14 +1389,58 @@ paths:
                   message: The request has already been answered
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
+  /me/exchanges:
+    get:
+      tags: [Exchanges]
+      operationId: listMyExchanges
+      summary: List your exchanges with progress and nearest scheduled meeting (FR-10)
+      description: |
+        Returns 20 exchanges per page, with `ACTIVE` exchanges first and then ordered by
+        latest activity. Each item includes `partner`, both skill directions from the
+        acceptance snapshots, `progress` (completed vs planned sessions, excluding
+        cancelled sessions) and `nextSession` (the earliest upcoming `SCHEDULED` meeting,
+        or null).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Optional status filter (`ACTIVE`, `COMPLETED` or `CANCELLED`).
+          schema:
+            type: string
+            enum: [ACTIVE, COMPLETED, CANCELLED]
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: One page of exchanges
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExchangePage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "422":
+          description: "`status` is not `ACTIVE`, `COMPLETED` or `CANCELLED`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
   /exchanges/{exchangeId}:
     get:
       tags: [Exchanges]
       operationId: getExchange
-      summary: Show the terms of an exchange (FR-07)
+      summary: Show the terms, progress and sessions of an exchange (FR-07, FR-10)
       description: |
         Only the two participants can see an exchange. The terms come from the snapshots
-        taken on acceptance.
+        taken on acceptance; `sessions` lists all planned and cancelled lessons in
+        `planOrder` order.
       security:
         - sessionCookie: []
       parameters:
@@ -1397,15 +1452,19 @@ paths:
             format: uuid
       responses:
         "200":
-          description: The exchange
+          description: The exchange and its sessions
           content:
             application/json:
               schema:
                 type: object
-                required: [exchange]
+                required: [exchange, sessions]
                 properties:
                   exchange:
                     $ref: "#/components/schemas/Exchange"
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Session"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -1420,6 +1479,433 @@ paths:
                 error:
                   code: exchange_not_found
                   message: Exchange was not found
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /exchanges/{exchangeId}/sessions:
+    parameters:
+      - name: exchangeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Sessions]
+      operationId: listExchangeSessions
+      summary: List all sessions of an exchange ordered by planOrder (FR-09, FR-10)
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The exchange and its sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exchange, items]
+                properties:
+                  exchange:
+                    $ref: "#/components/schemas/Exchange"
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: No exchange has this ID, you do not take part in it, or the ID is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+    post:
+      tags: [Sessions]
+      operationId: proposeExchangeSession
+      summary: Propose a lesson topic, teacher, time and place or link in an active exchange (FR-09)
+      description: |
+        When `sessionId` is omitted, the server picks the first `DRAFT` slot for
+        `teacherId` in this exchange. In one transaction it locks both participants in
+        UUID order, checks that neither has a conflicting `SCHEDULED` session in
+        `[startsAt, endsAt)`, records the proposer's `SCHEDULE` confirmation, stores a
+        `PENDING` proposal, sets the session to `PROPOSED`, and records a
+        `SESSION_UPDATED` notification for the partner.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProposeSessionRequest"
+      responses:
+        "201":
+          description: Lesson proposal created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, proposal]
+                properties:
+                  session:
+                    $ref: "#/components/schemas/Session"
+                  proposal:
+                    $ref: "#/components/schemas/SessionProposal"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: Exchange or session was not found (`exchange_not_found` or `session_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: |
+            `exchange_not_active`, `exchange_blocked`, `plan_limit_reached`,
+            `session_not_schedulable`, or `session_conflict`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /sessions/{sessionId}:
+    get:
+      tags: [Sessions]
+      operationId: getSession
+      summary: Show a session and its proposal history (FR-09, FR-10)
+      description: Only the two participants of the session's exchange can see it.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Session details and chronological proposal history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, proposals]
+                properties:
+                  session:
+                    $ref: "#/components/schemas/Session"
+                  proposals:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SessionProposal"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: No session has this ID, you do not take part in it, or the ID is not a UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: session_not_found
+                  message: Session was not found
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /sessions/{sessionId}/proposals:
+    post:
+      tags: [Sessions]
+      operationId: proposeSession
+      summary: Propose a schedule or reschedule a specific session (FR-09)
+      description: |
+        Proposes time and location/link on a `DRAFT` session or reschedules a `PROPOSED`
+        or `SCHEDULED` session. Rescheduling clears previous `SCHEDULE` confirmations and
+        requires the partner's new acceptance (LR2 5.3).
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProposeSessionRequest"
+      responses:
+        "201":
+          description: Schedule proposal saved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, proposal]
+                properties:
+                  session:
+                    $ref: "#/components/schemas/Session"
+                  proposal:
+                    $ref: "#/components/schemas/SessionProposal"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: Session was not found (`session_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: |
+            `exchange_not_active`, `exchange_blocked`, `plan_limit_reached`,
+            `session_not_schedulable`, or `session_conflict`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /sessions/{sessionId}/accept:
+    post:
+      tags: [Sessions]
+      operationId: acceptSessionProposal
+      summary: Accept the partner's pending schedule proposal (FR-09)
+      description: |
+        Only the recipient of the pending proposal can accept it. Locks both participants
+        in UUID order, verifies that the start time is still in the future and neither
+        participant has an overlapping `SCHEDULED` session (`[startsAt, endsAt)`), records
+        the second `SCHEDULE` confirmation, sets the session to `SCHEDULED`, and notifies
+        the proposer. Repeating the call is idempotent. Takes no body.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Session scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, proposal]
+                properties:
+                  session:
+                    $ref: "#/components/schemas/Session"
+                  proposal:
+                    $ref: "#/components/schemas/SessionProposal"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: "`action_not_allowed` (proposer cannot accept own proposal), `email_not_verified`, `csrf_invalid`, or `origin_forbidden`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Session was not found (`session_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`exchange_not_active`, `exchange_blocked`, `session_not_proposed`, `session_in_past`, or `session_conflict`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /sessions/{sessionId}/decline:
+    post:
+      tags: [Sessions]
+      operationId: declineSessionProposal
+      summary: Decline the partner's pending schedule proposal (FR-09)
+      description: |
+        Only the recipient of the pending proposal can decline it. Marks the proposal
+        `DECLINED`, clears schedule confirmations, resets the session back to `DRAFT`, and
+        notifies the proposer. Repeating the call is idempotent. Takes no body.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Proposal declined and session returned to DRAFT
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, proposal]
+                properties:
+                  session:
+                    $ref: "#/components/schemas/Session"
+                  proposal:
+                    $ref: "#/components/schemas/SessionProposal"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: "`action_not_allowed`, `email_not_verified`, `csrf_invalid`, or `origin_forbidden`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Session was not found (`session_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`exchange_not_active` or `session_not_proposed`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /sessions/{sessionId}/cancel:
+    post:
+      tags: [Sessions]
+      operationId: cancelSession
+      summary: Cancel a proposed or scheduled session (FR-09, FR-10)
+      description: |
+        Either participant can cancel a `PROPOSED` or `SCHEDULED` session. Cancelled
+        sessions do not increase progress and automatically add a replacement `DRAFT` slot
+        so the agreed plan can still be completed. Repeating the call is idempotent.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelSessionRequest"
+      responses:
+        "200":
+          description: Session cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session]
+                properties:
+                  session:
+                    $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: Session was not found (`session_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`exchange_not_active` or `session_not_cancellable`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/schedule:
+    get:
+      tags: [Sessions]
+      operationId: listMySchedule
+      summary: List your scheduled meetings in chronological order (FR-10)
+      description: |
+        Returns only sessions where the signed-in student is the teacher or learner,
+        ordered chronologically by `startsAt` ascending, 20 per page. By default only
+        `SCHEDULED` meetings are returned; pass `status=PROPOSED|COMPLETED|CANCELLED|ALL`
+        to inspect other states, or `upcoming=true` to filter `endsAt >= now()`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by session status; defaults to `SCHEDULED`.
+          schema:
+            type: string
+            enum: [SCHEDULED, PROPOSED, COMPLETED, CANCELLED, ALL]
+            default: SCHEDULED
+        - name: upcoming
+          in: query
+          required: false
+          description: When true, only sessions whose `endsAt` has not passed are returned.
+          schema:
+            type: boolean
+            default: false
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: Chronological schedule page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchedulePage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
   /exchange-requests/{requestId}/conversation:
@@ -2724,15 +3210,94 @@ components:
           nullable: true
     ExchangeStatus:
       type: string
-      description: Every exchange starts ACTIVE; the other statuses come in later sprints.
+      description: Every exchange starts ACTIVE; COMPLETED and CANCELLED come in Sprint 8.
       enum: [PLANNED, ACTIVE, PAUSED, COMPLETED, CANCELLED]
+    ExchangeProgress:
+      type: object
+      description: |
+        Progress of an exchange relative to the agreed plan (FR-10). Cancelled sessions do
+        not increase `completedSessions` or `percent`.
+      required: [completedSessions, totalSessions, requesterCompletedSessions,
+        requesterPlannedSessions, recipientCompletedSessions, recipientPlannedSessions,
+        scheduledSessions, proposedSessions, draftSessions, cancelledSessions, percent]
+      properties:
+        completedSessions:
+          type: integer
+          minimum: 0
+        totalSessions:
+          type: integer
+          minimum: 1
+        requesterCompletedSessions:
+          type: integer
+          minimum: 0
+        requesterPlannedSessions:
+          type: integer
+          minimum: 1
+        recipientCompletedSessions:
+          type: integer
+          minimum: 0
+        recipientPlannedSessions:
+          type: integer
+          minimum: 1
+        scheduledSessions:
+          type: integer
+          minimum: 0
+        proposedSessions:
+          type: integer
+          minimum: 0
+        draftSessions:
+          type: integer
+          minimum: 0
+        cancelledSessions:
+          type: integer
+          minimum: 0
+        percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+    NextSessionSummary:
+      type: object
+      description: The earliest upcoming `SCHEDULED` meeting of an exchange.
+      required: [id, planOrder, title, status, format, startsAt, endsAt, teacher, learner,
+        meetingPlace, meetingUrl]
+      properties:
+        id:
+          type: string
+          format: uuid
+        planOrder:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        format:
+          $ref: "#/components/schemas/LessonFormat"
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        teacher:
+          $ref: "#/components/schemas/StudentSummary"
+        learner:
+          $ref: "#/components/schemas/StudentSummary"
+        meetingPlace:
+          type: string
+          nullable: true
+        meetingUrl:
+          type: string
+          nullable: true
     Exchange:
       type: object
       description: |
-        The same for both participants. `requesterTeaches` and `recipientTeaches` hold the
-        skill name and levels copied on acceptance, not the current profile values.
-      required: [id, requestId, status, format, totalSessions, requester, recipient, requesterTeaches,
-        recipientTeaches, startedAt, createdAt]
+        `requesterTeaches` and `recipientTeaches` hold the skill name and levels copied on
+        acceptance, not the current profile values. `partner` is the other student relative
+        to the signed-in viewer.
+      required: [id, requestId, status, format, totalSessions, partner, requester, recipient,
+        requesterTeaches, recipientTeaches, progress, nextSession, startedAt, completedAt,
+        cancelledAt, cancellationReason, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -2748,6 +3313,8 @@ components:
           $ref: "#/components/schemas/LessonFormat"
         totalSessions:
           type: integer
+        partner:
+          $ref: "#/components/schemas/StudentSummary"
         requester:
           $ref: "#/components/schemas/StudentSummary"
         recipient:
@@ -2756,13 +3323,264 @@ components:
           $ref: "#/components/schemas/RequestTerms"
         recipientTeaches:
           $ref: "#/components/schemas/RequestTerms"
+        progress:
+          $ref: "#/components/schemas/ExchangeProgress"
+        nextSession:
+          allOf:
+            - $ref: "#/components/schemas/NextSessionSummary"
+          nullable: true
         startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        cancelledAt:
+          type: string
+          format: date-time
+          nullable: true
+        cancellationReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ExchangePage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Exchange"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+    SessionStatus:
+      type: string
+      enum: [DRAFT, PROPOSED, SCHEDULED, COMPLETED, CANCELLED]
+    ScheduleProposalStatus:
+      type: string
+      enum: [PENDING, ACCEPTED, DECLINED, SUPERSEDED]
+    SessionRole:
+      type: string
+      enum: [TEACHER, LEARNER]
+    SessionProposal:
+      type: object
+      required: [id, sessionId, status, proposedBy, startsAt, endsAt, format, meetingPlace,
+        meetingUrl, respondedBy, respondedAt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/ScheduleProposalStatus"
+        proposedBy:
+          $ref: "#/components/schemas/Person"
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        format:
+          $ref: "#/components/schemas/LessonFormat"
+        meetingPlace:
+          type: string
+          nullable: true
+        meetingUrl:
+          type: string
+          nullable: true
+        respondedBy:
+          allOf:
+            - $ref: "#/components/schemas/Person"
+          nullable: true
+        respondedAt:
           type: string
           format: date-time
           nullable: true
         createdAt:
           type: string
           format: date-time
+    Session:
+      type: object
+      description: |
+        Lesson slot within an exchange (FR-09, FR-10). `partner` and `role` are computed
+        relative to the signed-in viewer; `startsAt` and `endsAt` include the timezone
+        offset.
+      required: [id, exchangeId, planOrder, title, description, status, format, skill,
+        plannedDurationMinutes, teacher, learner, partner, role, startsAt, endsAt,
+        durationMinutes, meetingPlace, meetingUrl, activeProposal, scheduleConfirmedByMe,
+        scheduleConfirmedByPartner, canRespondToProposal, canCancel, completedAt,
+        cancelledAt, cancellationReason, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        exchangeId:
+          type: string
+          format: uuid
+        planOrder:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        format:
+          $ref: "#/components/schemas/LessonFormat"
+        skill:
+          type: object
+          required: [skillId, categoryId, name]
+          properties:
+            skillId:
+              type: string
+              format: uuid
+            categoryId:
+              type: string
+              format: uuid
+            name:
+              type: string
+        plannedDurationMinutes:
+          type: integer
+        teacher:
+          $ref: "#/components/schemas/StudentSummary"
+        learner:
+          $ref: "#/components/schemas/StudentSummary"
+        partner:
+          $ref: "#/components/schemas/StudentSummary"
+        role:
+          $ref: "#/components/schemas/SessionRole"
+        startsAt:
+          type: string
+          format: date-time
+          nullable: true
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+        durationMinutes:
+          type: integer
+          nullable: true
+        meetingPlace:
+          type: string
+          nullable: true
+        meetingUrl:
+          type: string
+          nullable: true
+        activeProposal:
+          allOf:
+            - $ref: "#/components/schemas/SessionProposal"
+          nullable: true
+        scheduleConfirmedByMe:
+          type: boolean
+        scheduleConfirmedByPartner:
+          type: boolean
+        canRespondToProposal:
+          type: boolean
+        canCancel:
+          type: boolean
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        cancelledAt:
+          type: string
+          format: date-time
+          nullable: true
+        cancellationReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ProposeSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [startsAt, endsAt]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+          description: Optional specific session slot ID when calling `POST /exchanges/{exchangeId}/sessions`.
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Required on `POST /exchanges/{exchangeId}/sessions`; optional when updating an existing session.
+        description:
+          type: string
+          maxLength: 1000
+        teacherId:
+          type: string
+          format: uuid
+          description: Must be one of the two exchange participants.
+        startsAt:
+          type: string
+          format: date-time
+          description: ISO-8601 timestamp with timezone, in the future.
+        endsAt:
+          type: string
+          format: date-time
+          description: ISO-8601 timestamp with timezone, 15 to 240 minutes after `startsAt`.
+        format:
+          $ref: "#/components/schemas/LessonFormat"
+        meetingPlace:
+          type: string
+          maxLength: 180
+          description: Required when `format` is `OFFLINE`; must be empty when `ONLINE`.
+        meetingUrl:
+          type: string
+          maxLength: 500
+          description: Required `http://` or `https://` link when `format` is `ONLINE`; must be empty when `OFFLINE`.
+    CancelSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+    SchedulePage:
+      type: object
+      required: [items, page, pageSize, total, timezone, pendingProposalsCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Session"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+        timezone:
+          type: string
+          example: Europe/Kyiv
+        pendingProposalsCount:
+          type: integer
+          minimum: 0
     ExchangeRequestPage:
       type: object
       required: [items, page, pageSize, total]

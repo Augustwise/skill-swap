@@ -79,7 +79,18 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	mux.HandleFunc("/api/v1/exchange-requests/{requestId}/conversation", getOnly(a.withVerifiedUser(a.requestConversation)))
 	mux.HandleFunc("/api/v1/exchanges/{exchangeId}", getOnly(a.withVerifiedUser(a.exchangeDetails)))
 	mux.HandleFunc("/api/v1/exchanges/{exchangeId}/conversation", getOnly(a.withVerifiedUser(a.exchangeConversation)))
+	mux.HandleFunc("/api/v1/exchanges/{exchangeId}/sessions", a.methods(map[string]http.HandlerFunc{
+		http.MethodGet:  a.withVerifiedUser(a.listExchangeSessions),
+		http.MethodPost: a.withVerifiedUser(a.proposeExchangeSession),
+	}))
+	mux.HandleFunc("/api/v1/sessions/{sessionId}", getOnly(a.withVerifiedUser(a.sessionDetails)))
+	mux.HandleFunc("/api/v1/sessions/{sessionId}/proposals", a.postOnly(a.withVerifiedUser(a.proposeSession)))
+	mux.HandleFunc("/api/v1/sessions/{sessionId}/accept", a.postOnly(a.withVerifiedUser(a.acceptSessionProposal)))
+	mux.HandleFunc("/api/v1/sessions/{sessionId}/decline", a.postOnly(a.withVerifiedUser(a.declineSessionProposal)))
+	mux.HandleFunc("/api/v1/sessions/{sessionId}/cancel", a.postOnly(a.withVerifiedUser(a.cancelSession)))
 	mux.HandleFunc("/api/v1/me/exchange-requests", getOnly(a.withVerifiedUser(a.listRequests)))
+	mux.HandleFunc("/api/v1/me/exchanges", getOnly(a.withVerifiedUser(a.listExchanges)))
+	mux.HandleFunc("/api/v1/me/schedule", getOnly(a.withVerifiedUser(a.listSchedule)))
 	mux.HandleFunc("/api/v1/me/conversations", getOnly(a.withVerifiedUser(a.listConversations)))
 	mux.HandleFunc("/api/v1/conversations/{conversationId}", getOnly(a.withVerifiedUser(a.conversationDetails)))
 	mux.HandleFunc("/api/v1/conversations/{conversationId}/messages", a.methods(map[string]http.HandlerFunc{

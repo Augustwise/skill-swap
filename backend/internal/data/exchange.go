@@ -15,7 +15,11 @@ const (
 	RequestDeclined  = "DECLINED"
 	RequestWithdrawn = "WITHDRAWN"
 
-	ExchangeActive = "ACTIVE"
+	ExchangePlanned   = "PLANNED"
+	ExchangeActive    = "ACTIVE"
+	ExchangePaused    = "PAUSED"
+	ExchangeCompleted = "COMPLETED"
+	ExchangeCancelled = "CANCELLED"
 )
 
 var ErrDuplicateRequest = errors.New("a pending request for this pair of skills already exists")
@@ -105,20 +109,58 @@ type RequestState struct {
 	Status      string
 }
 
+type ExchangeFilter struct {
+	Status string // empty for any status
+}
+
+type ExchangeProgress struct {
+	CompletedSessions          int
+	TotalSessions              int
+	RequesterCompletedSessions int
+	RequesterPlannedSessions   int
+	RecipientCompletedSessions int
+	RecipientPlannedSessions   int
+	ScheduledSessions          int
+	ProposedSessions           int
+	DraftSessions              int
+	CancelledSessions          int
+	Percent                    int
+}
+
+type NextSessionSummary struct {
+	ID           string
+	PlanOrder    int
+	Title        string
+	Status       string
+	Format       string
+	StartsAt     time.Time
+	EndsAt       time.Time
+	Teacher      RequestParty
+	Learner      RequestParty
+	MeetingPlace string
+	MeetingURL   string
+}
+
 // Exchange terms come from the snapshots taken when the request was accepted, so later
 // profile changes do not alter them.
 type Exchange struct {
-	ID               string
-	RequestID        string
-	Status           string
-	Format           string
-	TotalSessions    int
-	Requester        RequestParty
-	Recipient        RequestParty
-	RequesterTeaches RequestTerms
-	RecipientTeaches RequestTerms
-	StartedAt        *time.Time
-	CreatedAt        time.Time
+	ID                 string
+	RequestID          string
+	Status             string
+	Format             string
+	TotalSessions      int
+	Requester          RequestParty
+	Recipient          RequestParty
+	RequesterTeaches   RequestTerms
+	RecipientTeaches   RequestTerms
+	Progress           ExchangeProgress
+	NextSession        *NextSessionSummary
+	StartedAt          *time.Time
+	CompletedAt        *time.Time
+	CancelledAt        *time.Time
+	CancellationReason string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type IExchangeData interface {
@@ -132,6 +174,7 @@ type IExchangeData interface {
 	RequestIsCurrent(ctx context.Context, requestID string) (bool, error)
 	CreateExchange(ctx context.Context, requestID, acceptedByID string) (string, error)
 	ExchangeByID(ctx context.Context, exchangeID string) (Exchange, error)
+	UserExchanges(ctx context.Context, userID string, filter ExchangeFilter, limit, offset int) ([]Exchange, int, error)
 }
 
 var _ IExchangeData = (*Postgres)(nil)
@@ -330,8 +373,8 @@ func (p *Postgres) RequestIsCurrent(ctx context.Context, requestID string) (bool
 	return current, err
 }
 
-// CreateExchange starts the exchange agreed in the request and copies the skill names and
-// levels as they are now.
+// CreateExchange starts the exchange agreed in the request, copies the skill names and
+// levels as they are now, and creates the initial DRAFT lesson slots (LR2 5.1, Figure 3).
 func (p *Postgres) CreateExchange(ctx context.Context, requestID, acceptedByID string) (string, error) {
 	var id string
 	err := p.conn(ctx).QueryRow(ctx, `WITH r AS (
@@ -339,7 +382,7 @@ func (p *Postgres) CreateExchange(ctx context.Context, requestID, acceptedByID s
 		), created AS (
 			INSERT INTO exchanges (source_request_id, user_a_id, user_b_id, status, total_sessions, format, started_at)
 			SELECT id, requester_id, recipient_id, 'ACTIVE', total_sessions, format, now() FROM r
-			RETURNING id, created_at
+			RETURNING id, format, created_at
 		), commitments AS (
 			INSERT INTO exchange_skill_commitments (exchange_id, teacher_id, learner_id, teaching_skill_id,
 				learning_skill_id, planned_sessions, duration_minutes, skill_name_snapshot,
@@ -353,6 +396,26 @@ func (p *Postgres) CreateExchange(ctx context.Context, requestID, acceptedByID s
 			JOIN user_teaching_skills t ON t.id = x.teaching_id
 			JOIN user_learning_skills l ON l.id = x.learning_id
 			JOIN skills s ON s.id = t.skill_id
+		), draft_sessions AS (
+			INSERT INTO sessions (exchange_id, plan_order, title, teacher_id, learner_id, status, format, created_at, updated_at)
+			SELECT created.id,
+				x.offset_order + gs.n,
+				s.name || ' — заняття ' || gs.n,
+				t.user_id,
+				l.user_id,
+				'DRAFT',
+				created.format,
+				created.created_at,
+				created.created_at
+			FROM created CROSS JOIN r
+			CROSS JOIN LATERAL (VALUES
+				(r.requester_teaching_skill_id, r.recipient_learning_skill_id, r.requester_sessions::int, 0),
+				(r.recipient_teaching_skill_id, r.requester_learning_skill_id, r.recipient_sessions::int, r.requester_sessions::int)
+			) AS x (teaching_id, learning_id, sessions, offset_order)
+			JOIN user_teaching_skills t ON t.id = x.teaching_id
+			JOIN user_learning_skills l ON l.id = x.learning_id
+			JOIN skills s ON s.id = t.skill_id
+			CROSS JOIN LATERAL generate_series(1, x.sessions) AS gs(n)
 		)
 		INSERT INTO exchange_status_history (exchange_id, status, changed_by_user_id, created_at)
 		SELECT id, 'ACTIVE', $2, created_at FROM created
@@ -373,18 +436,91 @@ func commitmentTerms(teacher string) string {
 		WHERE c.exchange_id = e.id AND c.teacher_id = ` + teacher + `)`
 }
 
+const exchangeProgressObject = `json_build_object(
+	'CompletedSessions', (SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'COMPLETED'),
+	'TotalSessions', e.total_sessions,
+	'RequesterCompletedSessions', (SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'COMPLETED' AND s.teacher_id = e.user_a_id),
+	'RequesterPlannedSessions', COALESCE((SELECT c.planned_sessions FROM exchange_skill_commitments c WHERE c.exchange_id = e.id AND c.teacher_id = e.user_a_id), 0),
+	'RecipientCompletedSessions', (SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'COMPLETED' AND s.teacher_id = e.user_b_id),
+	'RecipientPlannedSessions', COALESCE((SELECT c.planned_sessions FROM exchange_skill_commitments c WHERE c.exchange_id = e.id AND c.teacher_id = e.user_b_id), 0),
+	'ScheduledSessions', (SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'SCHEDULED'),
+	'ProposedSessions', (SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'PROPOSED'),
+	'DraftSessions', (SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'DRAFT'),
+	'CancelledSessions', (SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'CANCELLED'),
+	'Percent', CASE WHEN e.total_sessions > 0
+		THEN LEAST(100, ((SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'COMPLETED') * 100) / e.total_sessions)
+		ELSE 0 END
+)`
+
+var exchangeNextSessionObject = `(SELECT json_build_object(
+		'ID', s.id,
+		'PlanOrder', s.plan_order,
+		'Title', s.title,
+		'Status', s.status::text,
+		'Format', COALESCE(s.format::text, e.format::text),
+		'StartsAt', s.scheduled_start,
+		'EndsAt', s.scheduled_end,
+		'Teacher', ` + requestParty("st") + `,
+		'Learner', ` + requestParty("sl") + `,
+		'MeetingPlace', COALESCE(mp.name, ''),
+		'MeetingURL', COALESCE(s.meeting_url, '')
+	)
+	FROM sessions s
+	JOIN users st ON st.id = s.teacher_id
+	JOIN users sl ON sl.id = s.learner_id
+	LEFT JOIN meeting_places mp ON mp.id = s.meeting_place_id
+	WHERE s.exchange_id = e.id AND s.status = 'SCHEDULED' AND s.scheduled_end >= now()
+	ORDER BY s.scheduled_start ASC, s.plan_order ASC, s.id ASC
+	LIMIT 1)`
+
+var exchangeColumns = `e.id, COALESCE(e.source_request_id::text, ''), e.status::text,
+	e.format::text, e.total_sessions, ` + requestParty("ua") + `, ` + requestParty("ub") + `,
+	` + commitmentTerms("e.user_a_id") + `, ` + commitmentTerms("e.user_b_id") + `,
+	` + exchangeProgressObject + `, ` + exchangeNextSessionObject + `,
+	e.started_at, e.completed_at, e.cancelled_at, COALESCE(e.cancellation_reason, ''),
+	e.created_at, e.updated_at`
+
+const exchangeFrom = `
+	FROM exchanges e
+	JOIN users ua ON ua.id = e.user_a_id
+	JOIN users ub ON ub.id = e.user_b_id`
+
+func (e *Exchange) scanTargets(extra ...any) []any {
+	return append([]any{&e.ID, &e.RequestID, &e.Status, &e.Format, &e.TotalSessions,
+		&e.Requester, &e.Recipient, &e.RequesterTeaches, &e.RecipientTeaches,
+		&e.Progress, &e.NextSession,
+		&e.StartedAt, &e.CompletedAt, &e.CancelledAt, &e.CancellationReason,
+		&e.CreatedAt, &e.UpdatedAt}, extra...)
+}
+
 func (p *Postgres) ExchangeByID(ctx context.Context, exchangeID string) (Exchange, error) {
 	var e Exchange
-	err := p.conn(ctx).QueryRow(ctx, `SELECT e.id, COALESCE(e.source_request_id::text, ''), e.status::text,
-			e.format::text, e.total_sessions, `+requestParty("ua")+`, `+requestParty("ub")+`,
-			`+commitmentTerms("e.user_a_id")+`, `+commitmentTerms("e.user_b_id")+`, e.started_at, e.created_at
-		FROM exchanges e
-		JOIN users ua ON ua.id = e.user_a_id
-		JOIN users ub ON ub.id = e.user_b_id
-		WHERE e.id = $1`, exchangeID).Scan(&e.ID, &e.RequestID, &e.Status, &e.Format, &e.TotalSessions,
-		&e.Requester, &e.Recipient, &e.RequesterTeaches, &e.RecipientTeaches, &e.StartedAt, &e.CreatedAt)
+	err := p.conn(ctx).QueryRow(ctx, `SELECT `+exchangeColumns+exchangeFrom+` WHERE e.id = $1`, exchangeID).Scan(e.scanTargets()...)
 	if err != nil {
 		return Exchange{}, notFound(err)
 	}
 	return e, nil
+}
+
+func (p *Postgres) UserExchanges(ctx context.Context, userID string, filter ExchangeFilter, limit, offset int) ([]Exchange, int, error) {
+	where := ` WHERE (e.user_a_id = $1 OR e.user_b_id = $1) AND ($2 = '' OR e.status::text = $2)`
+	rows, err := p.conn(ctx).Query(ctx, `SELECT `+exchangeColumns+`, count(*) OVER ()`+exchangeFrom+where+`
+		ORDER BY CASE WHEN e.status = 'ACTIVE' THEN 0 ELSE 1 END, e.updated_at DESC, e.created_at DESC, e.id DESC
+		LIMIT $3 OFFSET $4`, userID, filter.Status, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := 0
+	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Exchange, error) {
+		var e Exchange
+		err := row.Scan(e.scanTargets(&total)...)
+		return e, err
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(items) == 0 && offset > 0 {
+		err = p.conn(ctx).QueryRow(ctx, `SELECT count(*) FROM exchanges e`+where, userID, filter.Status).Scan(&total)
+	}
+	return items, total, err
 }

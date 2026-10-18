@@ -164,29 +164,108 @@ func (a *API) answerRequest(answer answerFunc) userHandler {
 	}
 }
 
-type exchangeResponse struct {
-	ID               string         `json:"id"`
-	RequestID        *string        `json:"requestId"`
-	Status           string         `json:"status"`
-	Format           string         `json:"format"`
-	TotalSessions    int            `json:"totalSessions"`
-	Requester        studentSummary `json:"requester"`
-	Recipient        studentSummary `json:"recipient"`
-	RequesterTeaches requestTerms   `json:"requesterTeaches"`
-	RecipientTeaches requestTerms   `json:"recipientTeaches"`
-	StartedAt        *time.Time     `json:"startedAt"`
-	CreatedAt        time.Time      `json:"createdAt"`
+type exchangeProgressResponse struct {
+	CompletedSessions          int `json:"completedSessions"`
+	TotalSessions              int `json:"totalSessions"`
+	RequesterCompletedSessions int `json:"requesterCompletedSessions"`
+	RequesterPlannedSessions   int `json:"requesterPlannedSessions"`
+	RecipientCompletedSessions int `json:"recipientCompletedSessions"`
+	RecipientPlannedSessions   int `json:"recipientPlannedSessions"`
+	ScheduledSessions          int `json:"scheduledSessions"`
+	ProposedSessions           int `json:"proposedSessions"`
+	DraftSessions              int `json:"draftSessions"`
+	CancelledSessions          int `json:"cancelledSessions"`
+	Percent                    int `json:"percent"`
 }
 
-func toExchange(e data.Exchange) exchangeResponse {
+type nextSessionResponse struct {
+	ID           string         `json:"id"`
+	PlanOrder    int            `json:"planOrder"`
+	Title        string         `json:"title"`
+	Status       string         `json:"status"`
+	Format       string         `json:"format"`
+	StartsAt     time.Time      `json:"startsAt"`
+	EndsAt       time.Time      `json:"endsAt"`
+	Teacher      studentSummary `json:"teacher"`
+	Learner      studentSummary `json:"learner"`
+	MeetingPlace *string        `json:"meetingPlace"`
+	MeetingURL   *string        `json:"meetingUrl"`
+}
+
+type exchangeResponse struct {
+	ID                 string                   `json:"id"`
+	RequestID          *string                  `json:"requestId"`
+	Status             string                   `json:"status"`
+	Format             string                   `json:"format"`
+	TotalSessions      int                      `json:"totalSessions"`
+	Partner            studentSummary           `json:"partner"`
+	Requester          studentSummary           `json:"requester"`
+	Recipient          studentSummary           `json:"recipient"`
+	RequesterTeaches   requestTerms             `json:"requesterTeaches"`
+	RecipientTeaches   requestTerms             `json:"recipientTeaches"`
+	Progress           exchangeProgressResponse `json:"progress"`
+	NextSession        *nextSessionResponse     `json:"nextSession"`
+	StartedAt          *time.Time               `json:"startedAt"`
+	CompletedAt        *time.Time               `json:"completedAt"`
+	CancelledAt        *time.Time               `json:"cancelledAt"`
+	CancellationReason *string                  `json:"cancellationReason"`
+	CreatedAt          time.Time                `json:"createdAt"`
+	UpdatedAt          time.Time                `json:"updatedAt"`
+}
+
+func toExchange(e data.Exchange, viewerID ...string) exchangeResponse {
+	requester := toRequestParty(e.Requester)
+	recipient := toRequestParty(e.Recipient)
+	partner := recipient
+	if len(viewerID) > 0 && viewerID[0] == e.Recipient.UserID {
+		partner = requester
+	}
 	response := exchangeResponse{
 		ID: e.ID, Status: e.Status, Format: e.Format, TotalSessions: e.TotalSessions,
-		Requester: toRequestParty(e.Requester), Recipient: toRequestParty(e.Recipient),
+		Partner:   partner,
+		Requester: requester, Recipient: recipient,
 		RequesterTeaches: toRequestTerms(e.RequesterTeaches), RecipientTeaches: toRequestTerms(e.RecipientTeaches),
-		StartedAt: e.StartedAt, CreatedAt: e.CreatedAt,
+		Progress: exchangeProgressResponse{
+			CompletedSessions:          e.Progress.CompletedSessions,
+			TotalSessions:              e.Progress.TotalSessions,
+			RequesterCompletedSessions: e.Progress.RequesterCompletedSessions,
+			RequesterPlannedSessions:   e.Progress.RequesterPlannedSessions,
+			RecipientCompletedSessions: e.Progress.RecipientCompletedSessions,
+			RecipientPlannedSessions:   e.Progress.RecipientPlannedSessions,
+			ScheduledSessions:          e.Progress.ScheduledSessions,
+			ProposedSessions:           e.Progress.ProposedSessions,
+			DraftSessions:              e.Progress.DraftSessions,
+			CancelledSessions:          e.Progress.CancelledSessions,
+			Percent:                    e.Progress.Percent,
+		},
+		StartedAt: e.StartedAt, CompletedAt: e.CompletedAt, CancelledAt: e.CancelledAt,
+		CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
 	}
 	if e.RequestID != "" {
 		response.RequestID = &e.RequestID
+	}
+	if e.CancellationReason != "" {
+		response.CancellationReason = &e.CancellationReason
+	}
+	if e.NextSession != nil {
+		next := &nextSessionResponse{
+			ID:        e.NextSession.ID,
+			PlanOrder: e.NextSession.PlanOrder,
+			Title:     e.NextSession.Title,
+			Status:    e.NextSession.Status,
+			Format:    e.NextSession.Format,
+			StartsAt:  inTimezone(e.NextSession.StartsAt, defaultTimezone),
+			EndsAt:    inTimezone(e.NextSession.EndsAt, defaultTimezone),
+			Teacher:   toRequestParty(e.NextSession.Teacher),
+			Learner:   toRequestParty(e.NextSession.Learner),
+		}
+		if e.NextSession.MeetingPlace != "" {
+			next.MeetingPlace = &e.NextSession.MeetingPlace
+		}
+		if e.NextSession.MeetingURL != "" {
+			next.MeetingURL = &e.NextSession.MeetingURL
+		}
+		response.NextSession = next
 	}
 	return response
 }
@@ -201,19 +280,55 @@ func (a *API) acceptRequest(w http.ResponseWriter, r *http.Request, current data
 	}
 	respond(w, http.StatusOK, map[string]any{
 		"request":  toExchangeRequest(accepted.Request),
-		"exchange": toExchange(accepted.Exchange),
+		"exchange": toExchange(accepted.Exchange, current.ID),
+	})
+}
+
+func (a *API) listExchanges(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
+	page, ok := pageParam(w, r)
+	if !ok {
+		return
+	}
+	filter := data.ExchangeFilter{Status: r.URL.Query().Get("status")}
+	ctx, cancel := context.WithTimeout(r.Context(), exchangeTimeout)
+	defer cancel()
+	result, err := a.app.Exchanges(ctx, current.ID, filter, page)
+	if err != nil {
+		a.exchangeError(w, err)
+		return
+	}
+	items := make([]exchangeResponse, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, toExchange(item, current.ID))
+	}
+	respond(w, http.StatusOK, map[string]any{
+		"items":    items,
+		"page":     result.Page,
+		"pageSize": exchange.PageSize,
+		"total":    result.Total,
 	})
 }
 
 func (a *API) exchangeDetails(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
 	ctx, cancel := context.WithTimeout(r.Context(), exchangeTimeout)
 	defer cancel()
-	found, err := a.app.Exchange(ctx, current.ID, r.PathValue("exchangeId"))
+	exchangeID := r.PathValue("exchangeId")
+	found, err := a.app.Exchange(ctx, current.ID, exchangeID)
 	if err != nil {
 		a.exchangeError(w, err)
 		return
 	}
-	respond(w, http.StatusOK, map[string]any{"exchange": toExchange(found)})
+	sessions := []sessionResponse{}
+	if result, err := a.app.ExchangeSessions(ctx, current.ID, found.ID); err == nil {
+		sessions = make([]sessionResponse, 0, len(result.Items))
+		for _, item := range result.Items {
+			sessions = append(sessions, toSession(item, current.ID))
+		}
+	}
+	respond(w, http.StatusOK, map[string]any{
+		"exchange": toExchange(found, current.ID),
+		"sessions": sessions,
+	})
 }
 
 func (a *API) exchangeError(w http.ResponseWriter, err error) {

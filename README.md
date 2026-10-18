@@ -26,6 +26,7 @@ skill-swap/
 │   ├── internal/profile/        # Profile and skill-list business rules
 │   ├── internal/discovery/      # Student search, candidate profile, and mutual matches
 │   ├── internal/exchange/       # Exchange requests, decisions, and active exchanges
+│   ├── internal/session/        # Lesson planning, time agreement, and personal schedule
 │   ├── internal/communication/  # Private text chat and in-app notifications
 │   ├── internal/data/           # Repository interfaces and PostgreSQL adapter
 │   ├── internal/mailer/         # IMailer contract and SMTP adapter
@@ -57,10 +58,11 @@ classes and interfaces in the design.
 | --- | --- |
 | `api.API` | HTTP routing, request parsing, responses, and access checks; `api.New` builds the handler. |
 | `auth.Service` | Registration, login, email verification, password reset, and session management. |
-| `core.Application` / `IApplication` | Application entry point; coordinates profile, discovery, exchange, and communication services. |
+| `core.Application` / `IApplication` | Application entry point; coordinates profile, discovery, exchange, session, and communication services. |
 | `profile.Service` | Profile validation, teaching/learning lists, and `EligibleForMatching`. |
 | `discovery.Service` | Student search with filters, candidate profiles, and `MutualMatches`. |
-| `exchange.Service` | Exchange requests, decisions (`AcceptRequest`, `DeclineRequest`, `WithdrawRequest`), and exchanges. |
+| `exchange.Service` | Exchange requests, decisions (`AcceptRequest`, `DeclineRequest`, `WithdrawRequest`), and `Exchanges`. |
+| `session.Service` | Lesson plan (`ExchangeSessions`), proposals (`ProposeSession`, `AcceptSessionProposal`, `DeclineSessionProposal`), cancellation, and chronological `Schedule`. |
 | `communication.Service` | Private conversations, chat messages, 5-second polling (`Messages`), and in-app `Notifications`. |
 | `data.Postgres` | SQL repositories and `WithinTx` transaction boundaries. |
 | `mailer.SMTP` / `IMailer` | Sending verification and reset messages through `Send`. |
@@ -69,15 +71,16 @@ classes and interfaces in the design.
 ### SOLID in the implementation
 
 - **Single responsibility:** HTTP handling, authentication, profile rules, discovery,
-  exchanges, communication, storage, and email delivery live in separate packages.
+  exchanges, session scheduling, communication, storage, and email delivery live in
+  separate packages.
 - **Open/closed:** services can receive another storage or mail implementation through
   their existing interfaces without rewriting their business rules.
 - **Liskov substitution:** PostgreSQL and in-memory repositories implement the same
   contracts, allowing service tests to substitute a test double. The substitutes must
   preserve the contract's results and error semantics.
 - **Interface segregation:** `IAuthData`, `ICatalogData`, `IProfileData`,
-  `IDiscoveryData`, `IExchangeData`, `ICommunicationData`, `ITransaction`, and `IMailer`
-  expose separate responsibilities.
+  `IDiscoveryData`, `IExchangeData`, `ISessionData`, `ICommunicationData`,
+  `ITransaction`, and `IMailer` expose separate responsibilities.
 - **Dependency inversion:** service constructors receive interfaces; concrete
   infrastructure is wired at the application entry point.
 
@@ -85,7 +88,7 @@ classes and interfaces in the design.
 
 | Team member | Main role | Contribution to the current foundation |
 | --- | --- | --- |
-| Mykola Sheiko (Sheiko M. P.) | Backend developer | Go API, PostgreSQL schema and migrations, authentication, profile, discovery, exchange, and communication services, backend tests, and local development tooling. |
+| Mykola Sheiko (Sheiko M. P.) | Backend developer | Go API, PostgreSQL schema and migrations, authentication, profile, discovery, exchange, session, and communication services, backend tests, and local development tooling. |
 | Oleksandr Nesmiian (Nesmiian O. S.) | Frontend developer | Next.js/React interface, registration and login forms, onboarding screens, and integration with authentication and email verification. |
 | Both team members | Planning and quality assurance | Requirements, architecture, task estimation, integration checks, and mutual code review as the agreed workflow. |
 

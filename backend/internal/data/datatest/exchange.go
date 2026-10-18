@@ -191,6 +191,23 @@ func (m *Memory) RequestIsCurrent(_ context.Context, requestID string) (bool, er
 	return ok1 && ok2 && ok3 && ok4, nil
 }
 
+// SetExchangeStatus changes the status of a stored exchange, e.g. to COMPLETED or CANCELLED.
+func (m *Memory) SetExchangeStatus(exchangeID, status string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if e, ok := m.exchanges[exchangeID]; ok {
+		e.Status = status
+		now := time.Now().UTC()
+		e.UpdatedAt = now
+		switch status {
+		case data.ExchangeCompleted:
+			e.CompletedAt = &now
+		case data.ExchangeCancelled:
+			e.CancelledAt = &now
+		}
+	}
+}
+
 func (m *Memory) CreateExchange(_ context.Context, requestID, _ string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -203,14 +220,114 @@ func (m *Memory) CreateExchange(_ context.Context, requestID, _ string) (string,
 	}
 	id := fmt.Sprintf("80000000-0000-0000-0000-%012d", len(m.exchanges)+1)
 	now := time.Now().UTC()
+	for _, existing := range m.exchanges {
+		if !now.After(existing.UpdatedAt) {
+			now = existing.UpdatedAt.Add(time.Microsecond)
+		}
+	}
 	m.exchanges[id] = &data.Exchange{
 		ID: id, RequestID: r.ID, Status: data.ExchangeActive, Format: r.Format, TotalSessions: r.TotalSessions,
 		Requester: r.Requester, Recipient: r.Recipient,
 		RequesterTeaches: r.RequesterTeaches, RecipientTeaches: r.RecipientTeaches,
-		StartedAt: &now, CreatedAt: now,
+		StartedAt: &now, CreatedAt: now, UpdatedAt: now,
 	}
 	r.ExchangeID = id
+
+	order := 1
+	addDrafts := func(teacher, learner data.RequestParty, terms data.RequestTerms) {
+		for i := 1; i <= terms.Sessions; i++ {
+			sessionID := fmt.Sprintf("81000000-0000-0000-0000-%012d", len(m.lessonSessions)+1)
+			m.lessonSessions[sessionID] = &data.Session{
+				ID:                     sessionID,
+				ExchangeID:             id,
+				ExchangeStatus:         data.ExchangeActive,
+				ExchangeFormat:         r.Format,
+				PlanOrder:              order,
+				Title:                  fmt.Sprintf("%s — заняття %d", terms.Name, i),
+				Status:                 data.SessionDraft,
+				Format:                 r.Format,
+				SkillID:                terms.SkillID,
+				SkillCategoryID:        terms.CategoryID,
+				SkillName:              terms.Name,
+				PlannedDurationMinutes: terms.DurationMinutes,
+				Requester:              r.Requester,
+				Recipient:              r.Recipient,
+				Teacher:                teacher,
+				Learner:                learner,
+				CreatedAt:              now,
+				UpdatedAt:              now,
+			}
+			order++
+		}
+	}
+	addDrafts(r.Requester, r.Recipient, r.RequesterTeaches)
+	addDrafts(r.Recipient, r.Requester, r.RecipientTeaches)
 	return id, nil
+}
+
+func (m *Memory) hydrateExchange(e *data.Exchange) data.Exchange {
+	out := *e
+	if a, ok := m.users[out.Requester.UserID]; ok {
+		out.Requester = m.party(a)
+	}
+	if b, ok := m.users[out.Recipient.UserID]; ok {
+		out.Recipient = m.party(b)
+	}
+	progress := data.ExchangeProgress{
+		TotalSessions:            out.TotalSessions,
+		RequesterPlannedSessions: out.RequesterTeaches.Sessions,
+		RecipientPlannedSessions: out.RecipientTeaches.Sessions,
+	}
+	now := time.Now().UTC()
+	var next *data.NextSessionSummary
+	for _, s := range m.lessonSessions {
+		if s.ExchangeID != out.ID {
+			continue
+		}
+		switch s.Status {
+		case data.SessionCompleted:
+			progress.CompletedSessions++
+			if s.Teacher.UserID == out.Requester.UserID {
+				progress.RequesterCompletedSessions++
+			} else if s.Teacher.UserID == out.Recipient.UserID {
+				progress.RecipientCompletedSessions++
+			}
+		case data.SessionScheduled:
+			progress.ScheduledSessions++
+			if s.StartsAt != nil && s.EndsAt != nil && !s.EndsAt.Before(now) {
+				candidate := &data.NextSessionSummary{
+					ID:           s.ID,
+					PlanOrder:    s.PlanOrder,
+					Title:        s.Title,
+					Status:       s.Status,
+					Format:       s.Format,
+					StartsAt:     *s.StartsAt,
+					EndsAt:       *s.EndsAt,
+					Teacher:      s.Teacher,
+					Learner:      s.Learner,
+					MeetingPlace: s.MeetingPlace,
+					MeetingURL:   s.MeetingURL,
+				}
+				if next == nil || candidate.StartsAt.Before(next.StartsAt) ||
+					(candidate.StartsAt.Equal(next.StartsAt) && (candidate.PlanOrder < next.PlanOrder ||
+						(candidate.PlanOrder == next.PlanOrder && candidate.ID < next.ID))) {
+					next = candidate
+				}
+			}
+		case data.SessionProposed:
+			progress.ProposedSessions++
+		case data.SessionDraft:
+			progress.DraftSessions++
+		case data.SessionCancelled:
+			progress.CancelledSessions++
+		}
+	}
+	if progress.TotalSessions > 0 {
+		progress.Percent = min(100, (progress.CompletedSessions*100)/progress.TotalSessions)
+	}
+	out.Progress = progress
+	out.NextSession = next
+	return out
 }
 
 func (m *Memory) ExchangeByID(_ context.Context, exchangeID string) (data.Exchange, error) {
@@ -220,5 +337,33 @@ func (m *Memory) ExchangeByID(_ context.Context, exchangeID string) (data.Exchan
 	if !ok {
 		return data.Exchange{}, data.ErrNotFound
 	}
-	return *e, nil
+	return m.hydrateExchange(e), nil
+}
+
+func (m *Memory) UserExchanges(_ context.Context, userID string, filter data.ExchangeFilter, limit, offset int) ([]data.Exchange, int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	found := []data.Exchange{}
+	for _, e := range m.exchanges {
+		if (e.Requester.UserID == userID || e.Recipient.UserID == userID) &&
+			(filter.Status == "" || e.Status == filter.Status) {
+			found = append(found, m.hydrateExchange(e))
+		}
+	}
+	slices.SortFunc(found, func(a, b data.Exchange) int {
+		activeOrder := func(s string) int {
+			if s == data.ExchangeActive {
+				return 0
+			}
+			return 1
+		}
+		return cmp.Or(
+			cmp.Compare(activeOrder(a.Status), activeOrder(b.Status)),
+			b.UpdatedAt.Compare(a.UpdatedAt),
+			b.CreatedAt.Compare(a.CreatedAt),
+			cmp.Compare(b.ID, a.ID),
+		)
+	})
+	total := len(found)
+	return append([]data.Exchange{}, found[min(offset, total):min(offset+limit, total)]...), total, nil
 }
