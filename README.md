@@ -11,10 +11,11 @@ Repository: [Augustwise/skill-swap](https://github.com/Augustwise/skill-swap).
 ```text
 skill-swap/
 ├── frontend/
-│   ├── app/                 # Next.js routes and root layout
-│   │   ├── components/      # React forms and reusable UI
+│   ├── app/                 # Next.js routes (search, matches, students/[id], ...) and layout
+│   │   ├── components/      # Pages, shared shell, and *Api.ts HTTP client modules
 │   │   └── styles/          # Global and section CSS
 │   ├── public/              # Icons and static design assets
+│   ├── tests/               # node:test unit tests for the client modules
 │   └── package.json         # Scripts and frontend dependencies
 ├── backend/
 │   ├── cmd/api/                 # API entry point and dependency wiring
@@ -44,7 +45,9 @@ Go tests are stored beside the code as `*_test.go`. In-memory test doubles are i
 `internal/data/datatest` and `internal/mailer/mailertest`; a separate top-level `tests/`
 directory is not required. Detailed setup and API documentation are in
 [`backend/README.md`](backend/README.md) and
-[`backend/docs/openapi.yaml`](backend/docs/openapi.yaml).
+[`backend/docs/openapi.yaml`](backend/docs/openapi.yaml). The web client, its routes and
+conventions are described in [`frontend/README.md`](frontend/README.md); sprint notes are
+in `frontend/SPRINT2.md`–`SPRINT4.md`.
 
 ## Architecture and main components
 
@@ -66,7 +69,15 @@ classes and interfaces in the design.
 | `communication.Service` | Private conversations, chat messages, 5-second polling (`Messages`), and in-app `Notifications`. |
 | `data.Postgres` | SQL repositories and `WithinTx` transaction boundaries. |
 | `mailer.SMTP` / `IMailer` | Sending verification and reset messages through `Send`. |
-| React form components | `RegistrationForm`, `LoginForm`, `ResetPasswordForm`, and `Onboarding`. |
+| React form components | `RegistrationForm`, `LoginForm`, `ResetPasswordForm`, `Onboarding`, and `Profile`. |
+| `AppShell` / `AppGate` | Shared signed-in layout (navigation, top bar search, account menu) and the verified-session gate. |
+| Discovery pages | `StudentSearch`, `MutualMatches`, and `CandidateProfile` render FR-04/FR-05 through `DiscoveryApi`. |
+| `*Api.ts` client modules | `AuthApi`, `ProfileApi`, and `DiscoveryApi`: DTO types, requests, validation, and error mapping. |
+
+The web client is the presentation layer from Laboratory 2. Pages use only the HTTP
+API (through the `/api/v1/*` rewrite) and render its DTOs; matching, access, and state
+rules stay in the Go services. Filters and page numbers are kept in the URL, and return
+paths are limited to known in-app pages.
 
 ### SOLID in the implementation
 
@@ -88,12 +99,12 @@ classes and interfaces in the design.
 
 | Team member | Main role | Contribution to the current foundation |
 | --- | --- | --- |
-| Mykola Sheiko (Sheiko M. P.) | Backend developer | Go API, PostgreSQL schema and migrations, authentication, profile, discovery, exchange, session, and communication services, backend tests, and local development tooling. |
+| Mykola Sheiko (Sheiko M. P.) | Backend developer | Go API, PostgreSQL schema and migrations, authentication, profile, discovery, exchange, session, and communication services, backend tests, local development tooling, and the sprint 4 web pages for search, mutual matches, and candidate profiles. |
 | Oleksandr Nesmiian (Nesmiian O. S.) | Frontend developer | Next.js/React interface, registration and login forms, onboarding screens, and integration with authentication and email verification. |
 | Both team members | Planning and quality assurance | Requirements, architecture, task estimation, integration checks, and mutual code review as the agreed workflow. |
 
-The division follows Laboratories 1–3. Git history records backend work under
-`Mykola Sheiko` and frontend work under `Oleksandr`; ownership does not prohibit
+The division follows Laboratories 1–3. Git history records most backend work under
+`Mykola Sheiko` and most frontend work under `Oleksandr`; ownership does not prohibit
 either participant from helping with the other part of the application.
 
 ## Git collaboration workflow
@@ -200,13 +211,15 @@ in `TEST_DATABASE_URL`; otherwise they skip. See the backend README for the comm
 From `frontend/`:
 
 ```bash
+npm test
 npm run lint
 npm run format:check
 npm run build
 npm start -- --hostname 127.0.0.1
 ```
 
-There is currently no frontend unit-test script. The build checks TypeScript and creates
-the production bundle. Lint and formatting are separate checks and should both pass
-before merging. Root and frontend `.gitignore` files exclude secrets, dependencies,
+`npm test` runs `node:test` unit tests for the client modules (validation, request paths,
+URL filters, error mapping, and safe return paths) without a browser. The build checks
+TypeScript and creates the production bundle. Lint and formatting are separate checks
+and should all pass before merging. Root and frontend `.gitignore` files exclude secrets, dependencies,
 build outputs, logs, and local tools.

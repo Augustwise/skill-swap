@@ -36,7 +36,9 @@ export async function authRequest<T>(
     headers,
     cache: "no-store",
     credentials: "same-origin",
-    signal: options.signal ?? AbortSignal.timeout(15000),
+    signal: options.signal
+      ? AbortSignal.any([options.signal, AbortSignal.timeout(15000)])
+      : AbortSignal.timeout(15000),
   });
   const data = response.status === 204 ? undefined : await response.json().catch(() => null);
   if (!response.ok) {

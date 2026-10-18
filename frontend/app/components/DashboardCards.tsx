@@ -1,4 +1,4 @@
-import type { DashboardExchange, DashboardMatch, DashboardRequest } from "./DashboardData";
+import type { DashboardExchange, DashboardRequest } from "./DashboardData";
 import { DashboardIcon as Icon, type DashboardIconName } from "./DashboardIcon";
 import type { OpenDashboardModal } from "./DashboardModal";
 
@@ -110,86 +110,6 @@ export function DashboardStats() {
         </article>
       ))}
     </section>
-  );
-}
-
-export function DashboardMatchCard({
-  match,
-  onOpenModal,
-}: { match: DashboardMatch } & ModalActionProps) {
-  return (
-    <article className="dashboard-match">
-      <div className="dashboard-match__person">
-        <DashboardAvatar initials={match.initials} color={match.color} size={48} />
-        <div className="dashboard-match__identity">
-          <h3>{match.name}</h3>
-          <p>{match.university}</p>
-        </div>
-        <span className="dashboard-score">
-          <Icon name="match-sparkles" />
-          {match.score}% збіг
-        </span>
-      </div>
-      <div
-        className="dashboard-rating"
-        aria-label={`Рейтинг ${match.rating} з 5, ${match.reviews}`}
-      >
-        <span className="dashboard-rating__stars" aria-hidden="true">
-          {Array.from({ length: 5 }, (_, index) => (
-            <Icon name="star" key={index} />
-          ))}
-        </span>
-        <strong>{match.rating}</strong>
-        <span>({match.reviews})</span>
-      </div>
-      <div className="dashboard-match__skills">
-        <div>
-          <h4>Навчить</h4>
-          <div className="dashboard-tags">
-            {match.teaching.map((skill) => (
-              <SkillTag label={skill} key={skill} />
-            ))}
-          </div>
-        </div>
-        <div>
-          <h4>Хоче вивчити</h4>
-          <div className="dashboard-tags">
-            {match.learning.map((skill) => (
-              <SkillTag label={skill} learn key={skill} />
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="dashboard-match__actions">
-        <button
-          type="button"
-          className="dashboard-button dashboard-button--primary"
-          onClick={() =>
-            onOpenModal({
-              title: "Запропонувати обмін",
-              description: `Обмін навичками з ${match.name} буде доступний згодом. Поки що це демонстраційний профіль.`,
-            })
-          }
-          aria-haspopup="dialog"
-        >
-          Запропонувати обмін
-        </button>
-        <button
-          type="button"
-          className="dashboard-button dashboard-button--icon"
-          onClick={() =>
-            onOpenModal({
-              title: `Повідомлення: ${match.name}`,
-              description: "Чат ще в розробці. Можливість написати цій людині з’явиться згодом.",
-            })
-          }
-          aria-haspopup="dialog"
-          aria-label={`Написати: ${match.name}`}
-        >
-          <Icon name="chat" />
-        </button>
-      </div>
-    </article>
   );
 }
 

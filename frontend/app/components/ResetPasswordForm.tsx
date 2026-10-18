@@ -2,7 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
+import { AuthError, authRequest, requestError } from "./AuthApi";
+import { focusInvalid, passwordError } from "./AuthValidation";
 
 export function ResetPasswordForm({ token }: { token: string }) {
   const [pending, setPending] = useState(false);
@@ -11,6 +13,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
   const [complete, setComplete] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [invalidLink, setInvalidLink] = useState(false);
+  const submitting = useRef(false);
 
   const clearFieldError = (field: string) => {
     if (fieldErrors[field]) {
@@ -24,6 +28,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting.current || invalidLink) return;
+    const formElement = event.currentTarget;
     setError("");
     setFieldErrors({});
 
@@ -32,13 +38,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
     const confirmation = String(form.get("confirmation") ?? "");
 
     const newFieldErrors: Record<string, string> = {};
-    if (!password) {
-      newFieldErrors.password = "Введи новий пароль.";
-    } else if (password.length < 12) {
-      newFieldErrors.password = "Пароль має містити щонайменше 12 символів.";
-    } else if (new TextEncoder().encode(password).length > 72) {
-      newFieldErrors.password = "Пароль не може перевищувати 72 байти.";
-    }
+    const invalidPassword = passwordError(password);
+    if (invalidPassword) newFieldErrors.password = invalidPassword;
 
     if (!confirmation) {
       newFieldErrors.confirmation = "Повтори новий пароль.";
@@ -48,41 +49,49 @@ export function ResetPasswordForm({ token }: { token: string }) {
 
     if (Object.keys(newFieldErrors).length > 0) {
       setFieldErrors(newFieldErrors);
-      const firstField = ["password", "confirmation"].find((f) => newFieldErrors[f]);
-      if (firstField) {
-        (event.currentTarget.elements.namedItem(firstField) as HTMLElement | null)?.focus();
-      }
+      focusInvalid(formElement, newFieldErrors);
       return;
     }
 
+    submitting.current = true;
     setPending(true);
     try {
-      const response = await fetch("/api/v1/auth/reset-password", {
+      await authRequest("auth/reset-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, password }),
       });
-      if (!response.ok) {
-        setError(
-          response.status === 400
-            ? "Посилання недійсне або прострочене. Запроси нове через сторінку входу."
-            : "Не вдалося змінити пароль. Спробуй ще раз.",
-        );
-        return;
-      }
+      formElement.reset();
+      window.history.replaceState(null, "", "/reset-password");
       setComplete(true);
-    } catch {
-      setError("Не вдалося зв’язатися із сервером. Перевір з’єднання і спробуй ще раз.");
+      window.requestAnimationFrame(() => document.getElementById("reset-title")?.focus());
+    } catch (error) {
+      if (error instanceof AuthError && error.code === "invalid_token") {
+        formElement.reset();
+        window.history.replaceState(null, "", "/reset-password");
+        setInvalidLink(true);
+        window.requestAnimationFrame(() => document.getElementById("reset-title")?.focus());
+      } else if (error instanceof AuthError && error.fields.password) {
+        const fields = {
+          password: "Використай щонайменше 12 символів і не більше 72 байтів UTF-8.",
+        };
+        setFieldErrors(fields);
+        focusInvalid(formElement, fields);
+      } else setError(requestError(error));
     } finally {
+      submitting.current = false;
       setPending(false);
     }
   }
 
+  if (invalidLink) return <ResetLinkNotice />;
+
   if (complete) {
     return (
       <div className="register-form register-success" role="status">
-        <h1 id="reset-title">Пароль змінено</h1>
-        <p>Тепер можеш увійти з новим паролем.</p>
+        <h1 id="reset-title" tabIndex={-1}>
+          Пароль змінено
+        </h1>
+        <p>Усі попередні сесії завершено. Увійди з новим паролем.</p>
         <Link className="register-submit register-success__link" href="/login">
           Увійти
         </Link>
@@ -91,7 +100,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
   }
 
   return (
-    <form className="register-form" noValidate onSubmit={handleSubmit}>
+    <form className="register-form" noValidate onSubmit={handleSubmit} aria-busy={pending}>
       <div className="register-form__heading">
         <h1 id="reset-title">Новий пароль</h1>
         <p>Використай щонайменше 12 символів.</p>
@@ -103,8 +112,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
           name="password"
           type={showPassword ? "text" : "password"}
           autoComplete="new-password"
-          minLength={12}
           aria-invalid={Boolean(fieldErrors.password)}
+          aria-describedby="reset-password-hint"
           onChange={() => clearFieldError("password")}
           required
         />
@@ -122,9 +131,12 @@ export function ResetPasswordForm({ token }: { token: string }) {
             height={17}
           />
         </button>
-        {fieldErrors.password && (
-          <small className="register-field__error">{fieldErrors.password}</small>
-        )}
+        <small
+          id="reset-password-hint"
+          className={fieldErrors.password ? "register-field__error" : "auth-hint"}
+        >
+          {fieldErrors.password || "Щонайменше 12 символів, не більше 72 байтів UTF-8."}
+        </small>
       </div>
       <div className="register-field register-field--password">
         <label htmlFor="reset-confirmation">Повтори пароль</label>
@@ -133,8 +145,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
           name="confirmation"
           type={showConfirmation ? "text" : "password"}
           autoComplete="new-password"
-          minLength={12}
           aria-invalid={Boolean(fieldErrors.confirmation)}
+          aria-describedby={fieldErrors.confirmation ? "reset-confirmation-error" : undefined}
           onChange={() => clearFieldError("confirmation")}
           required
         />
@@ -153,7 +165,9 @@ export function ResetPasswordForm({ token }: { token: string }) {
           />
         </button>
         {fieldErrors.confirmation && (
-          <small className="register-field__error">{fieldErrors.confirmation}</small>
+          <small id="reset-confirmation-error" className="register-field__error">
+            {fieldErrors.confirmation}
+          </small>
         )}
       </div>
       {error && (
@@ -164,6 +178,25 @@ export function ResetPasswordForm({ token }: { token: string }) {
       <button className="register-submit" type="submit" disabled={pending}>
         {pending ? "Зберігаємо…" : "Зберегти пароль"}
       </button>
+      <Link className="login-form__back" href="/login">
+        Повернутися до входу
+      </Link>
     </form>
+  );
+}
+
+export function ResetLinkNotice() {
+  return (
+    <div className="register-form register-success" role="alert">
+      <h1 id="reset-title" tabIndex={-1}>
+        Посилання недійсне
+      </h1>
+      <p>
+        Посилання вже використане, прострочене або пошкоджене. Запроси нове, щоб змінити пароль.
+      </p>
+      <Link className="register-submit register-success__link" href="/login?mode=recovery">
+        Отримати нове посилання
+      </Link>
+    </div>
   );
 }

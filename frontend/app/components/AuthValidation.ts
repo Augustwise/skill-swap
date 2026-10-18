@@ -1,3 +1,5 @@
+import { safeAppPath } from "./AppRoutes";
+
 export function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
@@ -43,6 +45,5 @@ export function focusInvalid(form: HTMLFormElement, errors: Record<string, strin
 }
 
 export function loginDestination(search: string) {
-  const next = new URLSearchParams(search).get("next");
-  return next === "/main" ? "/main" : "/onboarding";
+  return safeAppPath(new URLSearchParams(search).get("next"), "/onboarding");
 }

@@ -1,6 +1,3 @@
-.profile-topbar-user {
-  margin-left: auto;
-}
 .profile-tabs {
   display: flex;
   gap: 28px;
@@ -223,15 +220,88 @@
   outline-offset: 3px;
 }
 .profile-save-bar {
-  position: sticky;
-  bottom: 12px;
-  z-index: 1;
+  gap: 12px;
 }
 .profile-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+}
+.profile-shell :is(button, input, select, textarea):disabled {
+  opacity: 0.55;
+}
+.profile-shell :is(select, textarea):focus-visible {
+  outline: 3px solid #b9afff;
+  outline-offset: 3px;
+}
+.profile-formats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.profile-format {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.profile-format:has(:checked) {
+  border-color: var(--purple);
+  background: var(--purple-soft);
+}
+.profile-format input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--purple);
+}
+.profile-progress {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  border-radius: 50%;
+}
+.profile-progress > span {
+  display: grid;
+  width: 60px;
+  height: 60px;
+  place-items: center;
+  border-radius: 50%;
+  background: white;
+  color: var(--purple-dark);
+  font-size: 17px;
+  font-weight: 700;
+}
+.profile-checklist {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: #4b5478;
+  font-size: 12px;
+}
+.profile-checklist li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.profile-checklist span {
+  display: grid;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  background: #f1f3f9;
+}
+.profile-checklist .is-complete {
+  background: #e8f8ef;
 }
 .profile-text-button {
   margin-left: 8px;

@@ -3,20 +3,21 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
-
-type ApiProblem = { error?: { code?: string; fields?: Record<string, string> } };
+import { useRef, useState, type FormEvent } from "react";
+import { AuthError, authRequest, requestError, type AuthSession } from "./AuthApi";
+import { emailError, focusInvalid, loginDestination, normalizeEmail } from "./AuthValidation";
 type Mode = "login" | "recovery" | "recoverySent";
 
-export function LoginForm() {
+export function LoginForm({ initialMode = "login" }: { initialMode?: "login" | "recovery" }) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("login");
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [email, setEmail] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const submitting = useRef(false);
 
   const clearFieldError = (field: string) => {
     if (fieldErrors[field]) {
@@ -29,26 +30,27 @@ export function LoginForm() {
   };
 
   const switchMode = (nextMode: Mode) => {
+    if (submitting.current) return;
     setError("");
     setFieldErrors({});
     setMode(nextMode);
+    window.requestAnimationFrame(() => document.getElementById("login-title")?.focus());
   };
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting.current) return;
+    const formElement = event.currentTarget;
     setError("");
     setFieldErrors({});
 
-    const emailVal = email.trim().toLowerCase();
+    const emailVal = normalizeEmail(email);
     const form = new FormData(event.currentTarget);
     const password = String(form.get("password") ?? "");
 
     const newFieldErrors: Record<string, string> = {};
-    if (!emailVal) {
-      newFieldErrors.email = "Введи університетську пошту.";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
-      newFieldErrors.email = "Введи коректну адресу пошти.";
-    }
+    const invalidEmail = emailError(emailVal);
+    if (invalidEmail) newFieldErrors.email = invalidEmail;
 
     if (!password) {
       newFieldErrors.password = "Введи пароль.";
@@ -56,76 +58,66 @@ export function LoginForm() {
 
     if (Object.keys(newFieldErrors).length > 0) {
       setFieldErrors(newFieldErrors);
-      const firstField = ["email", "password"].find((f) => newFieldErrors[f]);
-      if (firstField) {
-        (event.currentTarget.elements.namedItem(firstField) as HTMLElement | null)?.focus();
-      }
+      focusInvalid(formElement, newFieldErrors);
       return;
     }
 
+    submitting.current = true;
     setPending(true);
     try {
-      const response = await fetch("/api/v1/auth/login", {
+      const data = await authRequest<AuthSession>("auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
         body: JSON.stringify({ email: emailVal, password, rememberMe }),
       });
-      if (!response.ok) {
-        const data: ApiProblem = await response.json();
-        if (response.status === 401) setError("Невірна пошта або пароль.");
-        else if (response.status === 429) setError("Забагато спроб входу. Спробуй пізніше.");
-        else if (data.error?.code === "account_suspended") setError("Цей акаунт призупинено.");
-        else if (data.error?.fields) setError("Перевір адресу пошти та пароль.");
-        else setError("Не вдалося увійти. Спробуй ще раз.");
-        return;
-      }
-      const data: { user: { emailVerified: boolean } } = await response.json();
-      const next = new URLSearchParams(window.location.search).get("next");
+      formElement.reset();
       router.replace(
-        data.user.emailVerified ? (next === "/main" ? "/main" : "/onboarding") : "/verify-email",
+        data.user.emailVerified ? loginDestination(window.location.search) : "/verify-email",
       );
-    } catch {
-      setError("Не вдалося зв’язатися із сервером. Перевір з’єднання і спробуй ще раз.");
+    } catch (error) {
+      setError(
+        error instanceof AuthError && error.status === 401
+          ? "Невірна пошта або пароль."
+          : error instanceof AuthError && error.retryAfter
+            ? `${error.message} Можна повторити через ${Math.ceil(error.retryAfter)} с.`
+            : requestError(error),
+      );
     } finally {
+      submitting.current = false;
       setPending(false);
     }
   }
 
   async function handleRecovery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting.current) return;
     setError("");
     setFieldErrors({});
 
-    const emailVal = email.trim().toLowerCase();
+    const emailVal = normalizeEmail(email);
     const newFieldErrors: Record<string, string> = {};
-    if (!emailVal) {
-      newFieldErrors.email = "Введи університетську пошту.";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
-      newFieldErrors.email = "Введи коректну адресу пошти.";
-    }
+    const invalidEmail = emailError(emailVal);
+    if (invalidEmail) newFieldErrors.email = invalidEmail;
 
     if (Object.keys(newFieldErrors).length > 0) {
       setFieldErrors(newFieldErrors);
-      (event.currentTarget.elements.namedItem("email") as HTMLElement | null)?.focus();
+      focusInvalid(event.currentTarget, newFieldErrors);
       return;
     }
 
+    submitting.current = true;
     setPending(true);
     try {
-      const response = await fetch("/api/v1/auth/forgot-password", {
+      await authRequest("auth/forgot-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailVal }),
       });
-      if (!response.ok) {
-        setError("Не вдалося надіслати лист. Спробуй ще раз.");
-        return;
-      }
+      setEmail(emailVal);
       setMode("recoverySent");
-    } catch {
-      setError("Не вдалося зв’язатися із сервером. Перевір з’єднання і спробуй ще раз.");
+      window.requestAnimationFrame(() => document.getElementById("login-title")?.focus());
+    } catch (error) {
+      setError(requestError(error));
     } finally {
+      submitting.current = false;
       setPending(false);
     }
   }
@@ -133,7 +125,9 @@ export function LoginForm() {
   if (mode === "recoverySent") {
     return (
       <div className="register-form register-success" role="status">
-        <h1 id="login-title">Перевір пошту</h1>
+        <h1 id="login-title" tabIndex={-1}>
+          Перевір пошту
+        </h1>
         <p>Якщо акаунт для {email} існує, ми надіслали лист для відновлення пароля.</p>
         <button className="register-submit" type="button" onClick={() => switchMode("login")}>
           Повернутися до входу
@@ -144,9 +138,11 @@ export function LoginForm() {
 
   if (mode === "recovery") {
     return (
-      <form className="register-form" noValidate onSubmit={handleRecovery}>
+      <form className="register-form" noValidate onSubmit={handleRecovery} aria-busy={pending}>
         <div className="register-form__heading">
-          <h1 id="login-title">Відновити пароль</h1>
+          <h1 id="login-title" tabIndex={-1}>
+            Відновити пароль
+          </h1>
           <p>Вкажи університетську пошту, і ми надішлемо посилання.</p>
         </div>
         <label className="register-field">
@@ -163,10 +159,13 @@ export function LoginForm() {
               clearFieldError("email");
             }}
             aria-invalid={Boolean(fieldErrors.email)}
+            aria-describedby={fieldErrors.email ? "recovery-email-error" : undefined}
             required
           />
           {fieldErrors.email && (
-            <small className="register-field__error">{fieldErrors.email}</small>
+            <small id="recovery-email-error" className="register-field__error">
+              {fieldErrors.email}
+            </small>
           )}
         </label>
         {error && (
@@ -177,7 +176,12 @@ export function LoginForm() {
         <button className="register-submit" type="submit" disabled={pending}>
           {pending ? "Надсилаємо…" : "Надіслати посилання"}
         </button>
-        <button className="login-form__back" type="button" onClick={() => switchMode("login")}>
+        <button
+          className="login-form__back"
+          type="button"
+          disabled={pending}
+          onClick={() => switchMode("login")}
+        >
           Повернутися до входу
         </button>
       </form>
@@ -185,9 +189,16 @@ export function LoginForm() {
   }
 
   return (
-    <form className="register-form login-form" noValidate onSubmit={handleLogin}>
+    <form
+      className="register-form login-form"
+      noValidate
+      onSubmit={handleLogin}
+      aria-busy={pending}
+    >
       <div className="register-form__heading">
-        <h1 id="login-title">З поверненням</h1>
+        <h1 id="login-title" tabIndex={-1}>
+          З поверненням
+        </h1>
         <p>Увійди, щоб побачити свої нові збіги</p>
       </div>
       <label className="register-field">
@@ -204,9 +215,14 @@ export function LoginForm() {
             clearFieldError("email");
           }}
           aria-invalid={Boolean(fieldErrors.email)}
+          aria-describedby={fieldErrors.email ? "login-email-error" : undefined}
           required
         />
-        {fieldErrors.email && <small className="register-field__error">{fieldErrors.email}</small>}
+        {fieldErrors.email && (
+          <small id="login-email-error" className="register-field__error">
+            {fieldErrors.email}
+          </small>
+        )}
       </label>
       <div className="register-field register-field--password">
         <label htmlFor="login-password">Пароль</label>
@@ -217,6 +233,7 @@ export function LoginForm() {
           placeholder="Введи пароль"
           autoComplete="current-password"
           aria-invalid={Boolean(fieldErrors.password)}
+          aria-describedby={fieldErrors.password ? "login-password-error" : undefined}
           onChange={() => clearFieldError("password")}
           required
         />
@@ -235,7 +252,9 @@ export function LoginForm() {
           />
         </button>
         {fieldErrors.password && (
-          <small className="register-field__error">{fieldErrors.password}</small>
+          <small id="login-password-error" className="register-field__error">
+            {fieldErrors.password}
+          </small>
         )}
       </div>
       <div className="login-form__options">
@@ -248,7 +267,7 @@ export function LoginForm() {
           />
           <span>Запам&apos;ятати мене</span>
         </label>
-        <button type="button" onClick={() => switchMode("recovery")}>
+        <button type="button" disabled={pending} onClick={() => switchMode("recovery")}>
           Забув пароль?
         </button>
       </div>
@@ -266,6 +285,7 @@ export function LoginForm() {
       <button
         className="login-form__university"
         type="button"
+        disabled={pending}
         onClick={() => setError("Вхід через акаунт університету поки недоступний.")}
       >
         <Image src="/figma/login/cap.svg" alt="" width={18} height={18} />
