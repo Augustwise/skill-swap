@@ -8,6 +8,7 @@ import (
 
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
+	"skillswap/backend/internal/expect"
 )
 
 // newTestService creates a profile service on an in-memory store with one demo
@@ -55,15 +56,13 @@ func TestUpdateProfileSavesAndNormalizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.FirstName != "Марія" || updated.LastName != "Коваль" || updated.City != "Київ" || updated.Course != 3 {
-		t.Fatalf("unexpected profile: %+v", updated)
-	}
-	if updated.FacultyID != datatest.DemoFacultyID || updated.FacultyName == "" {
-		t.Fatalf("faculty = %q %q", updated.FacultyID, updated.FacultyName)
-	}
-	if strings.Join(updated.Formats, ",") != "ONLINE,OFFLINE" {
-		t.Fatalf("formats = %v", updated.Formats)
-	}
+	expect.Equal(t, "first name", updated.FirstName, "Марія")
+	expect.Equal(t, "last name", updated.LastName, "Коваль")
+	expect.Equal(t, "city", updated.City, "Київ")
+	expect.Equal(t, "course", updated.Course, 3)
+	expect.Equal(t, "faculty ID", updated.FacultyID, datatest.DemoFacultyID)
+	expect.Equal(t, "faculty name is set", updated.FacultyName != "", true)
+	expect.Slice(t, "formats", updated.Formats, []string{"ONLINE", "OFFLINE"})
 
 	// Partial update: an empty faculty and course 0 clear those fields; name and city stay.
 	updated, err = s.UpdateProfile(context.Background(), userID, ProfilePatch{
@@ -72,9 +71,10 @@ func TestUpdateProfileSavesAndNormalizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.FirstName != "Марія" || updated.City != "Київ" || updated.FacultyID != "" || updated.Course != 0 {
-		t.Fatalf("unexpected profile after partial update: %+v", updated)
-	}
+	expect.Equal(t, "first name after partial update", updated.FirstName, "Марія")
+	expect.Equal(t, "city after partial update", updated.City, "Київ")
+	expect.Equal(t, "faculty ID after partial update", updated.FacultyID, "")
+	expect.Equal(t, "course after partial update", updated.Course, 0)
 }
 
 // Each invalid patch must fail with an error for the expected field.
@@ -124,18 +124,18 @@ func TestChangeUniversity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.UniversityID != datatest.OtherUniversityID || updated.UniversityName == "" || updated.FacultyID != "" {
-		t.Fatalf("unexpected profile after university change: %+v", updated)
-	}
+	expect.Equal(t, "university ID after the change", updated.UniversityID, datatest.OtherUniversityID)
+	expect.Equal(t, "university name is set", updated.UniversityName != "", true)
+	expect.Equal(t, "faculty ID after the change", updated.FacultyID, "")
+
 	updated, err = s.UpdateProfile(ctx, userID, ProfilePatch{
 		UniversityID: ptr(datatest.DemoUniversityID), FacultyID: ptr(datatest.DemoFacultyID),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.UniversityID != datatest.DemoUniversityID || updated.FacultyID != datatest.DemoFacultyID {
-		t.Fatalf("unexpected profile after moving back: %+v", updated)
-	}
+	expect.Equal(t, "university ID after moving back", updated.UniversityID, datatest.DemoUniversityID)
+	expect.Equal(t, "faculty ID after moving back", updated.FacultyID, datatest.DemoFacultyID)
 }
 
 // The 600 limit counts characters, not bytes (Cyrillic letters take 2 bytes each).
@@ -162,9 +162,8 @@ func TestInvalidPatchDoesNotChangeProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.City != "" || current.Course != 0 {
-		t.Fatalf("invalid patch changed the profile: %+v", current)
-	}
+	expect.Equal(t, "city after an invalid patch", current.City, "")
+	expect.Equal(t, "course after an invalid patch", current.Course, 0)
 }
 
 // Adding, changing and removing skills works on one list at a time; the
@@ -177,38 +176,34 @@ func TestSkillLists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated.TeachingSkills) != 1 || updated.TeachingSkills[0].Name != "Гітара" || updated.TeachingSkills[0].Level != "ADVANCED" {
-		t.Fatalf("teaching skills = %+v", updated.TeachingSkills)
-	}
+	expect.Equal(t, "teaching skills", len(updated.TeachingSkills), 1)
+	expect.Equal(t, "teaching skill name", updated.TeachingSkills[0].Name, "Гітара")
+	expect.Equal(t, "teaching skill level", updated.TeachingSkills[0].Level, "ADVANCED")
 
 	// The same skill can be in both lists, but not twice in one list.
 	if _, err := s.AddSkill(ctx, userID, data.LearningList, datatest.GuitarSkillID, "BEGINNER"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddSkill(ctx, userID, data.TeachingList, datatest.GuitarSkillID, "BEGINNER"); !errors.Is(err, ErrSkillAlreadyAdded) {
-		t.Fatalf("duplicate err = %v, want ErrSkillAlreadyAdded", err)
-	}
+	_, err = s.AddSkill(ctx, userID, data.TeachingList, datatest.GuitarSkillID, "BEGINNER")
+	expect.Error(t, "add a duplicate teaching skill", err, ErrSkillAlreadyAdded)
 
 	// Changing the learning level must not change the teaching level.
 	updated, err = s.UpdateSkillLevel(ctx, userID, data.LearningList, datatest.GuitarSkillID, "INTERMEDIATE")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.LearningSkills[0].Level != "INTERMEDIATE" || updated.TeachingSkills[0].Level != "ADVANCED" {
-		t.Fatalf("level change touched the wrong list: %+v", updated)
-	}
+	expect.Equal(t, "learning level", updated.LearningSkills[0].Level, "INTERMEDIATE")
+	expect.Equal(t, "teaching level", updated.TeachingSkills[0].Level, "ADVANCED")
 
 	// Removing from teaching must keep the learning entry; removing twice fails.
 	updated, err = s.RemoveSkill(ctx, userID, data.TeachingList, datatest.GuitarSkillID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated.TeachingSkills) != 0 || len(updated.LearningSkills) != 1 {
-		t.Fatalf("removal touched the other list: %+v", updated)
-	}
-	if _, err := s.RemoveSkill(ctx, userID, data.TeachingList, datatest.GuitarSkillID); !errors.Is(err, ErrSkillNotInList) {
-		t.Fatalf("second removal err = %v, want ErrSkillNotInList", err)
-	}
+	expect.Equal(t, "teaching skills after removal", len(updated.TeachingSkills), 0)
+	expect.Equal(t, "learning skills after removal", len(updated.LearningSkills), 1)
+	_, err = s.RemoveSkill(ctx, userID, data.TeachingList, datatest.GuitarSkillID)
+	expect.Error(t, "remove the teaching skill again", err, ErrSkillNotInList)
 	if _, err := s.AddSkill(ctx, userID, data.TeachingList, datatest.GuitarSkillID, "INTERMEDIATE"); err != nil {
 		t.Fatalf("adding a removed skill again: %v", err)
 	}
@@ -246,9 +241,7 @@ func TestSkillListErrors(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if err := test.call(); !errors.Is(err, test.want) {
-				t.Fatalf("err = %v, want %v", err, test.want)
-			}
+			expect.Error(t, test.name, test.call(), test.want)
 		})
 	}
 
@@ -288,11 +281,10 @@ func TestEligibleForMatching(t *testing.T) {
 // "not found"; a valid ID returns that university's faculties.
 func TestFacultiesRejectMalformedUniversityID(t *testing.T) {
 	s, _ := newTestService(t)
-	if _, err := s.Faculties(context.Background(), "1 OR 1=1"); !errors.Is(err, ErrUniversityNotFound) {
-		t.Fatalf("err = %v, want ErrUniversityNotFound", err)
-	}
+	_, err := s.Faculties(context.Background(), "1 OR 1=1")
+	expect.Error(t, "faculties of a malformed university ID", err, ErrUniversityNotFound)
+
 	faculties, err := s.Faculties(context.Background(), datatest.DemoUniversityID)
-	if err != nil || len(faculties) != 1 {
-		t.Fatalf("faculties = %v, err = %v", faculties, err)
-	}
+	expect.NoError(t, "faculties of the demo university", err)
+	expect.Equal(t, "faculties", len(faculties), 1)
 }

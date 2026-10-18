@@ -14,6 +14,7 @@ import (
 
 	"skillswap/backend/internal/auth"
 	"skillswap/backend/internal/data/datatest"
+	"skillswap/backend/internal/expect"
 	"skillswap/backend/internal/mailer/mailertest"
 )
 
@@ -126,9 +127,7 @@ func TestProfileRequiresVerifiedEmail(t *testing.T) {
 	// The existing session gains access only after a valid link has been used.
 	response := send(t, handler, http.MethodGet, "/api/v1/me/profile", "", s)
 	expectStatus(t, response, http.StatusOK)
-	if got := decodeProfile(t, response).City; got != "" {
-		t.Fatalf("unverified request changed city to %q", got)
-	}
+	expect.Equal(t, "city after unverified requests", decodeProfile(t, response).City, "")
 	expectStatus(t, send(t, handler, http.MethodPatch, "/api/v1/me/profile", `{"city":"Київ"}`, s), http.StatusOK)
 	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/logout", "", s), http.StatusNoContent)
 }
@@ -170,19 +169,17 @@ func TestProfileMethodsAndCORS(t *testing.T) {
 	handler, s := newProfileHandler(t)
 	response := send(t, handler, http.MethodPut, "/api/v1/me/profile", `{}`, s)
 	assertProblem(t, response, http.StatusMethodNotAllowed, "method_not_allowed")
-	if got := response.Header().Get("Allow"); got != "GET, PATCH" {
-		t.Fatalf("Allow = %q", got)
-	}
+	expect.Equal(t, "Allow", response.Header().Get("Allow"), "GET, PATCH")
 
 	preflight := httptest.NewRequest(http.MethodOptions, guitarPath, nil)
 	preflight.Header.Set("Origin", "http://localhost:3000")
 	preflight.Header.Set("Access-Control-Request-Method", http.MethodDelete)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, preflight)
+	expectStatus(t, response, http.StatusNoContent)
 	methods := response.Header().Get("Access-Control-Allow-Methods")
-	if response.Code != http.StatusNoContent || !strings.Contains(methods, "PATCH") || !strings.Contains(methods, "DELETE") {
-		t.Fatalf("preflight status = %d, methods = %q", response.Code, methods)
-	}
+	expect.Equal(t, "preflight allows PATCH", strings.Contains(methods, "PATCH"), true)
+	expect.Equal(t, "preflight allows DELETE", strings.Contains(methods, "DELETE"), true)
 }
 
 // A new profile starts mostly empty; a PATCH changes only the fields sent,
@@ -193,10 +190,13 @@ func TestProfileUpdateAndRead(t *testing.T) {
 	response := send(t, handler, http.MethodGet, "/api/v1/me/profile", "", s)
 	expectStatus(t, response, http.StatusOK)
 	empty := decodeProfile(t, response)
-	if empty.FirstName != "Олена" || empty.University.ID != datatest.DemoUniversityID || empty.Faculty != nil ||
-		empty.Course != nil || empty.Formats == nil || empty.TeachingSkills == nil || empty.EligibleForMatching {
-		t.Fatalf("unexpected new profile: %s", response.Body.String())
-	}
+	expect.Equal(t, "first name from registration", empty.FirstName, "Олена")
+	expect.Equal(t, "university from registration", empty.University.ID, datatest.DemoUniversityID)
+	expect.Equal(t, "new profile has a faculty", empty.Faculty != nil, false)
+	expect.Equal(t, "new profile has a course", empty.Course != nil, false)
+	expect.Equal(t, "formats are an array", empty.Formats != nil, true)
+	expect.Equal(t, "teaching skills are an array", empty.TeachingSkills != nil, true)
+	expect.Equal(t, "new profile eligible for matching", empty.EligibleForMatching, false)
 
 	// The bio is stored as plain text; escaping is left to the client.
 	body := fmt.Sprintf(`{"facultyId":%q,"course":2,"city":"Київ","bio":"<script>alert(1)</script>","formats":["ONLINE","OFFLINE"]}`,
@@ -204,10 +204,10 @@ func TestProfileUpdateAndRead(t *testing.T) {
 	response = send(t, handler, http.MethodPatch, "/api/v1/me/profile", body, s)
 	expectStatus(t, response, http.StatusOK)
 	updated := decodeProfile(t, response)
-	if updated.Faculty == nil || updated.Faculty.ID != datatest.DemoFacultyID || updated.Course == nil || *updated.Course != 2 ||
-		updated.Bio != "<script>alert(1)</script>" || strings.Join(updated.Formats, ",") != "ONLINE,OFFLINE" {
-		t.Fatalf("unexpected profile: %s", response.Body.String())
-	}
+	expect.Equal(t, "faculty after update", valueOf(updated.Faculty).ID, datatest.DemoFacultyID)
+	expect.Equal(t, "course after update", valueOf(updated.Course), 2)
+	expect.Equal(t, "bio", updated.Bio, "<script>alert(1)</script>")
+	expect.Slice(t, "formats", updated.Formats, []string{"ONLINE", "OFFLINE"})
 	// The response must not leak account or credential data.
 	for _, private := range []string{"password", "email", "accountStatus", "role"} {
 		if strings.Contains(response.Body.String(), private) {
@@ -220,9 +220,9 @@ func TestProfileUpdateAndRead(t *testing.T) {
 		fmt.Sprintf(`{"universityId":%q}`, datatest.OtherUniversityID), s)
 	expectStatus(t, response, http.StatusOK)
 	moved := decodeProfile(t, response)
-	if moved.University.ID != datatest.OtherUniversityID || moved.University.Name == "" || moved.Faculty != nil {
-		t.Fatalf("unexpected profile after university change: %s", response.Body.String())
-	}
+	expect.Equal(t, "university after the move", moved.University.ID, datatest.OtherUniversityID)
+	expect.Equal(t, "university name is set", moved.University.Name != "", true)
+	expect.Equal(t, "faculty kept after the move", moved.Faculty != nil, false)
 	response = send(t, handler, http.MethodPatch, "/api/v1/me/profile",
 		fmt.Sprintf(`{"universityId":%q,"facultyId":%q}`, datatest.DemoUniversityID, datatest.DemoFacultyID), s)
 	expectStatus(t, response, http.StatusOK)
@@ -231,9 +231,9 @@ func TestProfileUpdateAndRead(t *testing.T) {
 	response = send(t, handler, http.MethodPatch, "/api/v1/me/profile", `{"facultyId":null,"course":null}`, s)
 	expectStatus(t, response, http.StatusOK)
 	cleared := decodeProfile(t, response)
-	if cleared.Faculty != nil || cleared.Course != nil || cleared.City != "Київ" {
-		t.Fatalf("unexpected profile after null patch: %s", response.Body.String())
-	}
+	expect.Equal(t, "faculty kept after null", cleared.Faculty != nil, false)
+	expect.Equal(t, "course kept after null", cleared.Course != nil, false)
+	expect.Equal(t, "city after null patch", cleared.City, "Київ")
 }
 
 // Invalid values give a 422 naming the bad field; unknown or wrongly typed
@@ -283,9 +283,7 @@ func TestSkillListEndpoints(t *testing.T) {
 	expectStatus(t, response, http.StatusCreated)
 	// One teaching skill, one learning skill and a format make the profile eligible.
 	response = send(t, handler, http.MethodPatch, "/api/v1/me/profile", `{"formats":["ONLINE"]}`, s)
-	if p := decodeProfile(t, response); !p.EligibleForMatching {
-		t.Fatalf("profile with both lists and a format must be eligible: %s", response.Body.String())
-	}
+	expect.Equal(t, "eligible with both lists and a format", decodeProfile(t, response).EligibleForMatching, true)
 
 	// Error cases: duplicate skill, inactive skill, invalid level.
 	response = add("/api/v1/me/teaching-skills", datatest.GuitarSkillID, "BEGINNER")
@@ -298,16 +296,15 @@ func TestSkillListEndpoints(t *testing.T) {
 	// Change the level of an existing skill.
 	response = send(t, handler, http.MethodPatch, guitarPath, `{"level":"INTERMEDIATE"}`, s)
 	expectStatus(t, response, http.StatusOK)
-	if p := decodeProfile(t, response); p.TeachingSkills[0].Level != "INTERMEDIATE" {
-		t.Fatalf("level was not changed: %s", response.Body.String())
-	}
+	expect.Equal(t, "guitar level", decodeProfile(t, response).TeachingSkills[0].Level, "INTERMEDIATE")
 
 	// Removing the only learning skill makes the profile ineligible again.
 	response = send(t, handler, http.MethodDelete, photoshopPath, "", s)
 	expectStatus(t, response, http.StatusOK)
-	if p := decodeProfile(t, response); len(p.LearningSkills) != 0 || len(p.TeachingSkills) != 1 || p.EligibleForMatching {
-		t.Fatalf("unexpected profile after removal: %s", response.Body.String())
-	}
+	afterRemoval := decodeProfile(t, response)
+	expect.Equal(t, "learning skills after removal", len(afterRemoval.LearningSkills), 0)
+	expect.Equal(t, "teaching skills after removal", len(afterRemoval.TeachingSkills), 1)
+	expect.Equal(t, "eligible after removal", afterRemoval.EligibleForMatching, false)
 	// Deleting it again, or using a malformed ID, returns "not found".
 	response = send(t, handler, http.MethodDelete, photoshopPath, "", s)
 	assertProblem(t, response, http.StatusNotFound, "skill_not_found")
@@ -325,9 +322,10 @@ func TestProfileSurvivesSignInAgain(t *testing.T) {
 	s = login(t, handler, "a@students.example.test", testPassword)
 	response := send(t, handler, http.MethodGet, "/api/v1/me/profile", "", s)
 	expectStatus(t, response, http.StatusOK)
-	if p := decodeProfile(t, response); p.City != "Одеса" || p.Bio != "Привіт" || len(p.TeachingSkills) != 1 {
-		t.Fatalf("profile was not kept: %s", response.Body.String())
-	}
+	kept := decodeProfile(t, response)
+	expect.Equal(t, "city after signing in again", kept.City, "Одеса")
+	expect.Equal(t, "bio after signing in again", kept.Bio, "Привіт")
+	expect.Equal(t, "teaching skills after signing in again", len(kept.TeachingSkills), 1)
 }
 
 // The faculties list is public and returns only the faculties of the given
@@ -340,9 +338,8 @@ func TestFacultiesEndpoint(t *testing.T) {
 		Items []reference `json:"items"`
 	}
 	decodeJSON(t, response, &body)
-	if len(body.Items) != 1 || body.Items[0].ID != datatest.DemoFacultyID {
-		t.Fatalf("unexpected faculties: %s", response.Body.String())
-	}
+	expect.Equal(t, "faculties", len(body.Items), 1)
+	expect.Equal(t, "faculty", body.Items[0].ID, datatest.DemoFacultyID)
 	response = send(t, handler, http.MethodGet, "/api/v1/universities/unknown/faculties", "", nil)
 	assertProblem(t, response, http.StatusNotFound, "not_found")
 }
@@ -379,9 +376,9 @@ func TestProfileAgainstLocalPostgres(t *testing.T) {
 	const secondUniversityID = "10000000-0000-0000-0000-000000000002"
 	response := send(t, handler, http.MethodPatch, "/api/v1/me/profile", fmt.Sprintf(`{"universityId":%q}`, secondUniversityID), s)
 	expectStatus(t, response, http.StatusOK)
-	if moved := decodeProfile(t, response); moved.University.ID != secondUniversityID || moved.Faculty != nil {
-		t.Fatalf("unexpected profile after university change: %s", response.Body.String())
-	}
+	moved := decodeProfile(t, response)
+	expect.Equal(t, "university after the move", moved.University.ID, secondUniversityID)
+	expect.Equal(t, "faculty kept after the move", moved.Faculty != nil, false)
 	expectStatus(t, send(t, handler, http.MethodPatch, "/api/v1/me/profile",
 		fmt.Sprintf(`{"universityId":%q,"facultyId":%q}`, datatest.DemoUniversityID, facultyID), s), http.StatusOK)
 
@@ -404,12 +401,14 @@ func TestProfileAgainstLocalPostgres(t *testing.T) {
 	response = send(t, handler, http.MethodGet, "/api/v1/me/profile", "", s)
 	expectStatus(t, response, http.StatusOK)
 	p := decodeProfile(t, response)
-	if p.Faculty == nil || p.Faculty.ID != facultyID || p.Course == nil || *p.Course != 3 || p.City != "Київ" ||
-		len([]rune(p.Bio)) != 600 || strings.Join(p.Formats, ",") != "ONLINE,OFFLINE" {
-		t.Fatalf("profile fields were not kept: %s", response.Body.String())
-	}
-	if len(p.TeachingSkills) != 1 || p.TeachingSkills[0].Name != "Гітара" ||
-		len(p.LearningSkills) != 1 || p.LearningSkills[0].Level != "INTERMEDIATE" || !p.EligibleForMatching {
-		t.Fatalf("skill lists were not kept: %s", response.Body.String())
-	}
+	expect.Equal(t, "faculty", valueOf(p.Faculty).ID, facultyID)
+	expect.Equal(t, "course", valueOf(p.Course), 3)
+	expect.Equal(t, "city", p.City, "Київ")
+	expect.Equal(t, "bio length in characters", len([]rune(p.Bio)), 600)
+	expect.Slice(t, "formats", p.Formats, []string{"ONLINE", "OFFLINE"})
+	expect.Equal(t, "teaching skills", len(p.TeachingSkills), 1)
+	expect.Equal(t, "teaching skill", p.TeachingSkills[0].Name, "Гітара")
+	expect.Equal(t, "learning skills", len(p.LearningSkills), 1)
+	expect.Equal(t, "learning skill level", p.LearningSkills[0].Level, "INTERMEDIATE")
+	expect.Equal(t, "eligible for matching", p.EligibleForMatching, true)
 }

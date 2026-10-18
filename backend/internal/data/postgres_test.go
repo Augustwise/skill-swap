@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"skillswap/backend/internal/expect"
 )
 
 // demoUniversityID is the university created by the demo seed data.
@@ -54,13 +56,10 @@ func TestTransactionAgainstLocalPostgres(t *testing.T) {
 		}
 		return failure
 	})
-	if !errors.Is(err, failure) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "WithinTx", err, failure)
 	// After the rollback the user must not exist.
-	if _, _, err := store.UserByEmail(ctx, email); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("after rollback err = %v, want ErrNotFound", err)
-	}
+	_, _, err = store.UserByEmail(ctx, email)
+	expect.Error(t, "find the user after rollback", err, ErrNotFound)
 
 	// Part 2: the same steps without an error must be committed.
 	err = store.WithinTx(ctx, func(ctx context.Context) error {
@@ -78,9 +77,8 @@ func TestTransactionAgainstLocalPostgres(t *testing.T) {
 	}
 
 	// Part 3: creating a user with the same email again must fail.
-	if _, err := store.CreateUser(ctx, NewUser{UniversityID: demoUniversityID, Email: email, FirstName: "A", LastName: "B"}); !errors.Is(err, ErrEmailTaken) {
-		t.Fatalf("duplicate err = %v, want ErrEmailTaken", err)
-	}
+	_, err = store.CreateUser(ctx, NewUser{UniversityID: demoUniversityID, Email: email, FirstName: "A", LastName: "B"})
+	expect.Error(t, "create a user with a duplicate email", err, ErrEmailTaken)
 }
 
 // Checks teaching and learning skill lists on a real PostgreSQL database:
@@ -117,19 +115,16 @@ func TestSkillListsAgainstLocalPostgres(t *testing.T) {
 	if err := store.AddUserSkill(ctx, TeachingList, owner, guitarSkillID, "ADVANCED"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AddUserSkill(ctx, TeachingList, owner, guitarSkillID, "BEGINNER"); !errors.Is(err, ErrSkillAlreadyAdded) {
-		t.Fatalf("duplicate err = %v, want ErrSkillAlreadyAdded", err)
-	}
+	err = store.AddUserSkill(ctx, TeachingList, owner, guitarSkillID, "BEGINNER")
+	expect.Error(t, "add a duplicate teaching skill", err, ErrSkillAlreadyAdded)
 	if err := store.AddUserSkill(ctx, LearningList, owner, guitarSkillID, "BEGINNER"); err != nil {
 		t.Fatalf("the same skill in the other list: %v", err)
 	}
 	// Another user has no such skill in their list, so changing or removing it gives ErrNotFound.
-	if err := store.UpdateUserSkillLevel(ctx, TeachingList, other, guitarSkillID, "BEGINNER"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("other user's level change err = %v, want ErrNotFound", err)
-	}
-	if err := store.RemoveUserSkill(ctx, TeachingList, other, guitarSkillID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("other user's removal err = %v, want ErrNotFound", err)
-	}
+	err = store.UpdateUserSkillLevel(ctx, TeachingList, other, guitarSkillID, "BEGINNER")
+	expect.Error(t, "other user's level change", err, ErrNotFound)
+	err = store.RemoveUserSkill(ctx, TeachingList, other, guitarSkillID)
+	expect.Error(t, "other user's removal", err, ErrNotFound)
 
 	// Removing from the teaching list must leave the learning list unchanged.
 	if err := store.RemoveUserSkill(ctx, TeachingList, owner, guitarSkillID); err != nil {
@@ -139,9 +134,8 @@ func TestSkillListsAgainstLocalPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(profile.TeachingSkills) != 0 || len(profile.LearningSkills) != 1 {
-		t.Fatalf("teaching = %v, learning = %v", profile.TeachingSkills, profile.LearningSkills)
-	}
+	expect.Equal(t, "teaching skills", len(profile.TeachingSkills), 0)
+	expect.Equal(t, "learning skills", len(profile.LearningSkills), 1)
 	// The removed skill can be added again.
 	if err := store.AddUserSkill(ctx, TeachingList, owner, guitarSkillID, "INTERMEDIATE"); err != nil {
 		t.Fatalf("adding a removed skill again: %v", err)

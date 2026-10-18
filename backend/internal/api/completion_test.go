@@ -8,6 +8,7 @@ import (
 
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
+	"skillswap/backend/internal/expect"
 )
 
 type exchangeDetailsResponse struct {
@@ -23,14 +24,6 @@ type confirmationResponse struct {
 
 type exchangeEnvelope struct {
 	Exchange exchangeResponse `json:"exchange"`
-}
-
-// expectEqual stops the test with a readable message when a value is not the expected one.
-func expectEqual[T comparable](t *testing.T, name string, got, want T) {
-	t.Helper()
-	if got != want {
-		t.Fatalf("%s = %v, want %v", name, got, want)
-	}
 }
 
 // valueOf returns the value behind a nullable response field, or the zero value for null.
@@ -84,8 +77,8 @@ func TestConfirmSessionRoute(t *testing.T) {
 	e.store.SetSessionTime(lessonID, ended.Add(-time.Hour), ended)
 
 	before := getExchangeDetails(t, e, exchangeID, olha)
-	expectEqual(t, "sessions awaiting confirmation", before.Exchange.Progress.AwaitingConfirmationSessions, 1)
-	expectEqual(t, "Olha can confirm the lesson", before.Sessions[0].CanConfirmCompletion, true)
+	expect.Equal(t, "sessions awaiting confirmation", before.Exchange.Progress.AwaitingConfirmationSessions, 1)
+	expect.Equal(t, "Olha can confirm the lesson", before.Sessions[0].CanConfirmCompletion, true)
 
 	draftPath := "/api/v1/sessions/" + before.Sessions[1].ID + "/confirm"
 	assertProblem(t, send(t, e.handler, http.MethodPost, confirmPath, "", marko), http.StatusNotFound, "session_not_found")
@@ -93,20 +86,20 @@ func TestConfirmSessionRoute(t *testing.T) {
 
 	// Olha confirms first: the lesson waits for Andrii.
 	byOlha := sendAndDecode[confirmationResponse](t, e, http.MethodPost, confirmPath, "", olha, http.StatusOK)
-	expectEqual(t, "status after Olha's confirmation", byOlha.Session.Status, data.SessionScheduled)
-	expectEqual(t, "confirmed by Olha", byOlha.Session.CompletionConfirmedByMe, true)
-	expectEqual(t, "confirmed by Andrii", byOlha.Session.CompletionConfirmedByPartner, false)
-	expectEqual(t, "Olha can confirm again", byOlha.Session.CanConfirmCompletion, false)
-	expectEqual(t, "completed sessions after Olha's confirmation", byOlha.Exchange.Progress.CompletedSessions, 0)
+	expect.Equal(t, "status after Olha's confirmation", byOlha.Session.Status, data.SessionScheduled)
+	expect.Equal(t, "confirmed by Olha", byOlha.Session.CompletionConfirmedByMe, true)
+	expect.Equal(t, "confirmed by Andrii", byOlha.Session.CompletionConfirmedByPartner, false)
+	expect.Equal(t, "Olha can confirm again", byOlha.Session.CanConfirmCompletion, false)
+	expect.Equal(t, "completed sessions after Olha's confirmation", byOlha.Exchange.Progress.CompletedSessions, 0)
 
 	// Andrii confirms too: the lesson is completed and counts toward the progress.
 	byAndrii := sendAndDecode[confirmationResponse](t, e, http.MethodPost, confirmPath, "", andrii, http.StatusOK)
-	expectEqual(t, "status after both confirmations", byAndrii.Session.Status, data.SessionCompleted)
-	expectEqual(t, "completedAt is set", byAndrii.Session.CompletedAt != nil, true)
-	expectEqual(t, "confirmed by Olha, as Andrii sees it", byAndrii.Session.CompletionConfirmedByPartner, true)
-	expectEqual(t, "completed sessions after both confirmations", byAndrii.Exchange.Progress.CompletedSessions, 1)
-	expectEqual(t, "sessions awaiting confirmation", byAndrii.Exchange.Progress.AwaitingConfirmationSessions, 0)
-	expectEqual(t, "plan completed", byAndrii.Exchange.Progress.PlanCompleted, false)
+	expect.Equal(t, "status after both confirmations", byAndrii.Session.Status, data.SessionCompleted)
+	expect.Equal(t, "completedAt is set", byAndrii.Session.CompletedAt != nil, true)
+	expect.Equal(t, "confirmed by Olha, as Andrii sees it", byAndrii.Session.CompletionConfirmedByPartner, true)
+	expect.Equal(t, "completed sessions after both confirmations", byAndrii.Exchange.Progress.CompletedSessions, 1)
+	expect.Equal(t, "sessions awaiting confirmation", byAndrii.Exchange.Progress.AwaitingConfirmationSessions, 0)
+	expect.Equal(t, "plan completed", byAndrii.Exchange.Progress.PlanCompleted, false)
 }
 
 func TestCompleteExchangeRoute(t *testing.T) {
@@ -120,27 +113,27 @@ func TestCompleteExchangeRoute(t *testing.T) {
 		e.store.SetSessionStatus(s.ID, data.SessionCompleted)
 	}
 	before := getExchangeDetails(t, e, exchangeID, andrii).Exchange
-	expectEqual(t, "plan completed", before.Progress.PlanCompleted, true)
-	expectEqual(t, "percent", before.Progress.Percent, 100)
-	expectEqual(t, "Andrii can confirm the end", before.CanConfirmCompletion, true)
+	expect.Equal(t, "plan completed", before.Progress.PlanCompleted, true)
+	expect.Equal(t, "percent", before.Progress.Percent, 100)
+	expect.Equal(t, "Andrii can confirm the end", before.CanConfirmCompletion, true)
 
 	// Olha confirms the end first: the exchange waits for Andrii.
 	byOlha := sendAndDecode[exchangeEnvelope](t, e, http.MethodPost, completePath, "", olha, http.StatusOK).Exchange
-	expectEqual(t, "status after Olha's confirmation", byOlha.Status, data.ExchangeActive)
-	expectEqual(t, "confirmed by Olha", byOlha.CompletionConfirmedByMe, true)
-	expectEqual(t, "Olha can confirm again", byOlha.CanConfirmCompletion, false)
+	expect.Equal(t, "status after Olha's confirmation", byOlha.Status, data.ExchangeActive)
+	expect.Equal(t, "confirmed by Olha", byOlha.CompletionConfirmedByMe, true)
+	expect.Equal(t, "Olha can confirm again", byOlha.CanConfirmCompletion, false)
 
 	// Andrii confirms too: the exchange is completed.
 	byAndrii := sendAndDecode[exchangeEnvelope](t, e, http.MethodPost, completePath, "", andrii, http.StatusOK).Exchange
-	expectEqual(t, "status after both confirmations", byAndrii.Status, data.ExchangeCompleted)
-	expectEqual(t, "completedAt is set", byAndrii.CompletedAt != nil, true)
-	expectEqual(t, "confirmed by Olha, as Andrii sees it", byAndrii.CompletionConfirmedByPartner, true)
-	expectEqual(t, "a completed exchange can be cancelled", byAndrii.CanCancel, false)
+	expect.Equal(t, "status after both confirmations", byAndrii.Status, data.ExchangeCompleted)
+	expect.Equal(t, "completedAt is set", byAndrii.CompletedAt != nil, true)
+	expect.Equal(t, "confirmed by Olha, as Andrii sees it", byAndrii.CompletionConfirmedByPartner, true)
+	expect.Equal(t, "a completed exchange can be cancelled", byAndrii.CanCancel, false)
 
 	history := getExchangeDetails(t, e, exchangeID, olha).History
-	expectEqual(t, "history items", len(history), 2)
-	expectEqual(t, "last history status", history[1].Status, data.ExchangeCompleted)
-	expectEqual(t, "completion has an author", history[1].ChangedBy != nil, true)
+	expect.Equal(t, "history items", len(history), 2)
+	expect.Equal(t, "last history status", history[1].Status, data.ExchangeCompleted)
+	expect.Equal(t, "completion has an author", history[1].ChangedBy != nil, true)
 
 	cancelPath := "/api/v1/exchanges/" + exchangeID + "/cancel"
 	assertProblem(t, send(t, e.handler, http.MethodPost, cancelPath, `{"reason":"Пізно"}`, olha), http.StatusConflict, "exchange_not_active")
@@ -157,26 +150,26 @@ func TestCancelExchangeRoute(t *testing.T) {
 	assertProblem(t, send(t, e.handler, http.MethodPost, cancelPath, `{"reason":"Причина"}`, marko), http.StatusNotFound, "exchange_not_found")
 
 	cancelled := sendAndDecode[exchangeEnvelope](t, e, http.MethodPost, cancelPath, `{"reason":"Змінився розклад"}`, andrii, http.StatusOK).Exchange
-	expectEqual(t, "status", cancelled.Status, data.ExchangeCancelled)
-	expectEqual(t, "cancelledAt is set", cancelled.CancelledAt != nil, true)
-	expectEqual(t, "cancellation reason", valueOf(cancelled.CancellationReason), "Змінився розклад")
-	expectEqual(t, "a cancelled exchange can be cancelled", cancelled.CanCancel, false)
-	expectEqual(t, "cancelled sessions", cancelled.Progress.CancelledSessions, 3)
+	expect.Equal(t, "status", cancelled.Status, data.ExchangeCancelled)
+	expect.Equal(t, "cancelledAt is set", cancelled.CancelledAt != nil, true)
+	expect.Equal(t, "cancellation reason", valueOf(cancelled.CancellationReason), "Змінився розклад")
+	expect.Equal(t, "a cancelled exchange can be cancelled", cancelled.CanCancel, false)
+	expect.Equal(t, "cancelled sessions", cancelled.Progress.CancelledSessions, 3)
 
 	// A repeated cancellation returns the exchange as it is.
 	expectStatus(t, send(t, e.handler, http.MethodPost, cancelPath, `{"reason":"Ще раз"}`, olha), http.StatusOK)
 
 	details := getExchangeDetails(t, e, exchangeID, olha)
 	last := details.History[len(details.History)-1]
-	expectEqual(t, "last history status", last.Status, data.ExchangeCancelled)
-	expectEqual(t, "cancelled by", valueOf(last.ChangedBy).ID, andriiID)
-	expectEqual(t, "reason in history", valueOf(last.Reason), "Змінився розклад")
+	expect.Equal(t, "last history status", last.Status, data.ExchangeCancelled)
+	expect.Equal(t, "cancelled by", valueOf(last.ChangedBy).ID, andriiID)
+	expect.Equal(t, "reason in history", valueOf(last.Reason), "Змінився розклад")
 	for _, s := range details.Sessions {
-		expectEqual(t, "session status after cancellation", s.Status, data.SessionCancelled)
+		expect.Equal(t, "session status after cancellation", s.Status, data.SessionCancelled)
 	}
 
 	notifications := sendAndDecode[notificationPageResponse](t, e, http.MethodGet, "/api/v1/me/notifications", "", olha, http.StatusOK)
-	expectEqual(t, "Olha has notifications", len(notifications.Items) > 0, true)
-	expectEqual(t, "newest notification opens", notifications.Items[0].Target.Kind, "EXCHANGE")
-	expectEqual(t, "newest notification exchange", notifications.Items[0].Target.ID, exchangeID)
+	expect.Equal(t, "Olha has notifications", len(notifications.Items) > 0, true)
+	expect.Equal(t, "newest notification opens", notifications.Items[0].Target.Kind, "EXCHANGE")
+	expect.Equal(t, "newest notification exchange", notifications.Items[0].Target.ID, exchangeID)
 }

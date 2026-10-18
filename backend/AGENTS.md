@@ -21,7 +21,7 @@ Run `gofmt` on changed Go files. Use lowercase package names, exported names onl
 
 ## Tests and Database Changes
 
-Tests use Go's standard `testing` package and `httptest` for HTTP behavior. The catalog integration test runs when `TEST_DATABASE_URL` points to a migrated, demo-seeded local database; without it, the test skips. Add focused tests for changed endpoint, middleware, or configuration behavior. Create a new numbered Goose migration for schema changes instead of rewriting an applied migration, and keep demo inserts idempotent.
+Tests use Go's standard `testing` package and `httptest` for HTTP behavior. Check one value per line with `internal/expect` (`Equal`, `Slice`, `Error`, `NoError`) and a short name for what is checked, instead of long `||` conditions. The catalog integration test runs when `TEST_DATABASE_URL` points to a migrated, demo-seeded local database; without it, the test skips. Add focused tests for changed endpoint, middleware, or configuration behavior. Create a new numbered Goose migration for schema changes instead of rewriting an applied migration, and keep demo inserts idempotent.
 
 ## Review and Security
 

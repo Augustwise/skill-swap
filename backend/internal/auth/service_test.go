@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"skillswap/backend/internal/data/datatest"
+	"skillswap/backend/internal/expect"
 	"skillswap/backend/internal/mailer"
 	"skillswap/backend/internal/mailer/mailertest"
 )
@@ -58,9 +60,8 @@ func register(t *testing.T, s *Service, email string) {
 	_, sent, err := s.Register(context.Background(), RegisterInput{
 		Email: email, Password: testPassword, FirstName: "Олена", LastName: "Коваль",
 	})
-	if err != nil || !sent {
-		t.Fatalf("register: sent = %v, err = %v", sent, err)
-	}
+	expect.NoError(t, "register", err)
+	expect.Equal(t, "verification email sent", sent, true)
 }
 
 func lastToken(t *testing.T, mail *spyMailer) string {
@@ -107,15 +108,12 @@ func TestNormalizeEmail(t *testing.T) {
 func TestRegisterWritesInOneTransactionAndMailsAfterCommit(t *testing.T) {
 	s, tx, mail := newTestService(t)
 	register(t, s, "a@students.example.test")
-	if tx.count != 1 || mail.Count() != 1 {
-		t.Fatalf("transactions = %d, emails = %d", tx.count, mail.Count())
-	}
+	expect.Equal(t, "transactions", tx.count, 1)
+	expect.Equal(t, "emails", mail.Count(), 1)
 	_, _, err := s.Register(context.Background(), RegisterInput{
 		Email: "A@students.example.test", Password: testPassword, FirstName: "A", LastName: "B",
 	})
-	if !errors.Is(err, ErrEmailTaken) {
-		t.Fatalf("duplicate register err = %v", err)
-	}
+	expect.Error(t, "register the same email again", err, ErrEmailTaken)
 }
 
 func TestLoginLockoutLastsFortyMinutes(t *testing.T) {
@@ -124,17 +122,19 @@ func TestLoginLockoutLastsFortyMinutes(t *testing.T) {
 	ctx := context.Background()
 	for attempt := 1; attempt <= 5; attempt++ {
 		_, err := s.Login(ctx, LoginInput{Email: "a@students.example.test", Password: "wrong password!!"})
-		if !errors.Is(err, ErrInvalidCredentials) {
-			t.Fatalf("attempt %d err = %v", attempt, err)
-		}
+		expect.Error(t, fmt.Sprintf("login attempt %d", attempt), err, ErrInvalidCredentials)
 	}
 	_, err := s.Login(ctx, LoginInput{Email: "a@students.example.test", Password: testPassword})
 	var locked *LockedError
 	if !errors.As(err, &locked) {
 		t.Fatalf("err = %v, want LockedError", err)
 	}
-	if left := time.Until(locked.Until); left < 40*time.Minute-time.Minute || left > 40*time.Minute {
-		t.Fatalf("lockout left = %s, want 40m (NFR-08)", left)
+	left := time.Until(locked.Until)
+	if left < 40*time.Minute-time.Minute {
+		t.Fatalf("lockout left = %s, want at least 39m", left)
+	}
+	if left > 40*time.Minute {
+		t.Fatalf("lockout left = %s, want at most 40m", left)
 	}
 	if !tx.LockedUntil("a@students.example.test").Equal(locked.Until) {
 		t.Fatal("lockout was not stored")
@@ -149,21 +149,21 @@ func TestSessionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if session.CSRFToken != CSRFToken(session.Token) || !ValidCSRF(session.Token, session.CSRFToken) || ValidCSRF(session.Token, "x") {
-		t.Fatal("CSRF token does not match the session")
-	}
-	if user, err := s.Authenticate(ctx, session.Token); err != nil || user.Email != "a@students.example.test" {
-		t.Fatalf("authenticate: %+v, %v", user, err)
-	}
+	expect.Equal(t, "CSRF token", session.CSRFToken, CSRFToken(session.Token))
+	expect.Equal(t, "session CSRF token is valid", ValidCSRF(session.Token, session.CSRFToken), true)
+	expect.Equal(t, "wrong CSRF token is valid", ValidCSRF(session.Token, "x"), false)
+
+	user, err := s.Authenticate(ctx, session.Token)
+	expect.NoError(t, "authenticate", err)
+	expect.Equal(t, "authenticated email", user.Email, "a@students.example.test")
+
 	if err := s.Logout(ctx, session.Token); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Authenticate(ctx, session.Token); !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("after logout err = %v", err)
-	}
-	if _, err := s.Authenticate(ctx, "garbage"); !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("garbage token err = %v", err)
-	}
+	_, err = s.Authenticate(ctx, session.Token)
+	expect.Error(t, "authenticate after logout", err, ErrUnauthenticated)
+	_, err = s.Authenticate(ctx, "garbage")
+	expect.Error(t, "authenticate with a garbage token", err, ErrUnauthenticated)
 }
 
 func TestPasswordResetRevokesSessionsInOneTransaction(t *testing.T) {
@@ -182,15 +182,12 @@ func TestPasswordResetRevokesSessionsInOneTransaction(t *testing.T) {
 	if err := s.ResetPassword(ctx, token, "a brand new passphrase"); err != nil {
 		t.Fatal(err)
 	}
-	if tx.count != before+1 {
-		t.Fatalf("reset used %d transactions, want 1", tx.count-before)
-	}
-	if _, err := s.Authenticate(ctx, old.Token); !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("old session err = %v", err)
-	}
-	if err := s.ResetPassword(ctx, token, "another new passphrase"); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("reused token err = %v", err)
-	}
+	expect.Equal(t, "transactions used by the reset", tx.count-before, 1)
+
+	_, err = s.Authenticate(ctx, old.Token)
+	expect.Error(t, "authenticate with the old session", err, ErrUnauthenticated)
+	err = s.ResetPassword(ctx, token, "another new passphrase")
+	expect.Error(t, "reuse the reset token", err, ErrInvalidToken)
 	if err := s.ForgotPassword(ctx, "nobody@students.example.test"); err != nil {
 		t.Fatalf("unknown email err = %v", err)
 	}

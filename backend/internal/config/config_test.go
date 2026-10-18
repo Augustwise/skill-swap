@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"testing"
+
+	"skillswap/backend/internal/expect"
 )
 
 func TestLoadEnvFile(t *testing.T) {
@@ -59,9 +61,8 @@ func TestLoadAcceptsLocalAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.SMTP.Addr != "127.0.0.1:1025" || cfg.SMTP.From != "no-reply@students.example.test" {
-		t.Fatalf("unexpected SMTP config: %+v", cfg.SMTP)
-	}
+	expect.Equal(t, "SMTP address", cfg.SMTP.Addr, "127.0.0.1:1025")
+	expect.Equal(t, "mail sender", cfg.SMTP.From, "no-reply@students.example.test")
 }
 
 func TestLoadRequiresTLSForRemoteDatabase(t *testing.T) {
@@ -81,9 +82,8 @@ func TestLoadSMTPDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Addr != "127.0.0.1:1025" || cfg.From != "no-reply@students.example.test" {
-		t.Fatalf("unexpected SMTP defaults: %+v", cfg)
-	}
+	expect.Equal(t, "default SMTP address", cfg.Addr, "127.0.0.1:1025")
+	expect.Equal(t, "default mail sender", cfg.From, "no-reply@students.example.test")
 }
 
 func TestLoadSMTPRejectsInvalidAddress(t *testing.T) {
@@ -127,18 +127,14 @@ func TestLoadAllowedEmailDomains(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(cfg.AllowedEmailDomains) != 1 || cfg.AllowedEmailDomains[0] != "students.example.test" {
-		t.Fatalf("default domains = %v", cfg.AllowedEmailDomains)
-	}
+	expect.Slice(t, "default domains", cfg.AllowedEmailDomains, []string{"students.example.test"})
 
 	t.Setenv("ALLOWED_EMAIL_DOMAINS", " Students.Example.Test , kpi.ua ")
 	cfg, err = Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(cfg.AllowedEmailDomains) != 2 || cfg.AllowedEmailDomains[0] != "students.example.test" || cfg.AllowedEmailDomains[1] != "kpi.ua" {
-		t.Fatalf("domains = %v", cfg.AllowedEmailDomains)
-	}
+	expect.Slice(t, "domains", cfg.AllowedEmailDomains, []string{"students.example.test", "kpi.ua"})
 
 	for _, invalid := range []string{"user@kpi.ua", "localhost", " , "} {
 		t.Setenv("ALLOWED_EMAIL_DOMAINS", invalid)

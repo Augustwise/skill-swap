@@ -2,30 +2,14 @@ package session
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/exchange"
+	"skillswap/backend/internal/expect"
 )
-
-// expectEqual stops the test with a readable message when a value is not the expected one.
-func expectEqual[T comparable](t *testing.T, name string, got, want T) {
-	t.Helper()
-	if got != want {
-		t.Fatalf("%s = %v, want %v", name, got, want)
-	}
-}
-
-// expectError stops the test when an action did not fail with the expected error.
-func expectError(t *testing.T, action string, err, want error) {
-	t.Helper()
-	if !errors.Is(err, want) {
-		t.Fatalf("%s: err = %v, want %v", action, err, want)
-	}
-}
 
 func (f *fixture) scheduleSession(t *testing.T, exchangeID, proposerID, responderID, teacherID string, startsAt time.Time) data.Session {
 	t.Helper()
@@ -87,7 +71,7 @@ func TestConfirmSessionCompletionErrors(t *testing.T) {
 		return err
 	}
 
-	expectError(t, "confirm before the lesson ends", confirm(f.olha, lesson.ID), ErrSessionNotFinished)
+	expect.Error(t, "confirm before the lesson ends", confirm(f.olha, lesson.ID), ErrSessionNotFinished)
 
 	f.service.now = func() time.Time { return f.baseTime.Add(26 * time.Hour) }
 	var draftID string
@@ -96,16 +80,16 @@ func TestConfirmSessionCompletionErrors(t *testing.T) {
 			draftID = id
 		}
 	}
-	expectError(t, "confirm someone else's lesson", confirm(f.marko, lesson.ID), ErrSessionNotFound)
-	expectError(t, "confirm an unknown lesson", confirm(f.olha, "81000000-0000-0000-0000-000000000999"), ErrSessionNotFound)
-	expectError(t, "confirm with an invalid ID", confirm(f.olha, "not-a-uuid"), ErrSessionNotFound)
-	expectError(t, "confirm a lesson without a time", confirm(f.andrii, draftID), ErrSessionNotConfirmable)
+	expect.Error(t, "confirm someone else's lesson", confirm(f.marko, lesson.ID), ErrSessionNotFound)
+	expect.Error(t, "confirm an unknown lesson", confirm(f.olha, "81000000-0000-0000-0000-000000000999"), ErrSessionNotFound)
+	expect.Error(t, "confirm with an invalid ID", confirm(f.olha, "not-a-uuid"), ErrSessionNotFound)
+	expect.Error(t, "confirm a lesson without a time", confirm(f.andrii, draftID), ErrSessionNotConfirmable)
 
 	f.store.SetBlocked(f.andrii, f.olha)
-	expectError(t, "confirm after a block", confirm(f.olha, lesson.ID), ErrExchangeBlocked)
+	expect.Error(t, "confirm after a block", confirm(f.olha, lesson.ID), ErrExchangeBlocked)
 
 	f.store.SetExchangeStatus(ex.ID, data.ExchangeCompleted)
-	expectError(t, "confirm in a finished exchange", confirm(f.olha, lesson.ID), ErrExchangeNotActive)
+	expect.Error(t, "confirm in a finished exchange", confirm(f.olha, lesson.ID), ErrExchangeNotActive)
 }
 
 func TestConfirmSessionCompletionByBothParticipants(t *testing.T) {
@@ -120,17 +104,17 @@ func TestConfirmSessionCompletionByBothParticipants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectEqual(t, "status after Olha's confirmation", first.Session.Status, data.SessionScheduled)
-	expectEqual(t, "confirmations after Olha's confirmation", len(first.Session.CompletionConfirmedUserIDs), 1)
-	expectEqual(t, "completed sessions after Olha's confirmation", first.Exchange.Progress.CompletedSessions, 0)
+	expect.Equal(t, "status after Olha's confirmation", first.Session.Status, data.SessionScheduled)
+	expect.Equal(t, "confirmations after Olha's confirmation", len(first.Session.CompletionConfirmedUserIDs), 1)
+	expect.Equal(t, "completed sessions after Olha's confirmation", first.Exchange.Progress.CompletedSessions, 0)
 
 	// A repeated confirmation changes nothing and does not notify Andrii twice.
 	again, err := f.service.ConfirmSessionCompletion(ctx, f.olha, lesson.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectEqual(t, "confirmations after a repeat", len(again.Session.CompletionConfirmedUserIDs), 1)
-	expectEqual(t, "Andrii's requests to confirm", f.notificationCount(t, f.andrii, "session-completion:"), 1)
+	expect.Equal(t, "confirmations after a repeat", len(again.Session.CompletionConfirmedUserIDs), 1)
+	expect.Equal(t, "Andrii's requests to confirm", f.notificationCount(t, f.andrii, "session-completion:"), 1)
 
 	// Andrii confirms too: the lesson is completed and counts toward the progress.
 	second, err := f.service.ConfirmSessionCompletion(ctx, f.andrii, lesson.ID)
@@ -138,24 +122,24 @@ func TestConfirmSessionCompletionByBothParticipants(t *testing.T) {
 		t.Fatal(err)
 	}
 	session, progress := second.Session, second.Exchange.Progress
-	expectEqual(t, "status after both confirmations", session.Status, data.SessionCompleted)
-	expectEqual(t, "completedAt is set", session.CompletedAt != nil, true)
-	expectEqual(t, "confirmations after both confirmations", len(session.CompletionConfirmedUserIDs), 2)
-	expectEqual(t, "completed sessions", progress.CompletedSessions, 1)
-	expectEqual(t, "sessions Olha has taught", progress.RequesterCompletedSessions, 1)
-	expectEqual(t, "sessions Andrii has taught", progress.RecipientCompletedSessions, 0)
-	expectEqual(t, "percent", progress.Percent, 50)
-	expectEqual(t, "plan completed", progress.PlanCompleted(), false)
-	expectEqual(t, "Olha's notices that the lesson counts", f.notificationCount(t, f.olha, "session-completed:"+lesson.ID), 1)
+	expect.Equal(t, "status after both confirmations", session.Status, data.SessionCompleted)
+	expect.Equal(t, "completedAt is set", session.CompletedAt != nil, true)
+	expect.Equal(t, "confirmations after both confirmations", len(session.CompletionConfirmedUserIDs), 2)
+	expect.Equal(t, "completed sessions", progress.CompletedSessions, 1)
+	expect.Equal(t, "sessions Olha has taught", progress.RequesterCompletedSessions, 1)
+	expect.Equal(t, "sessions Andrii has taught", progress.RecipientCompletedSessions, 0)
+	expect.Equal(t, "percent", progress.Percent, 50)
+	expect.Equal(t, "plan completed", progress.PlanCompleted(), false)
+	expect.Equal(t, "Olha's notices that the lesson counts", f.notificationCount(t, f.olha, "session-completed:"+lesson.ID), 1)
 
 	// Confirming a completed lesson again is harmless, but it can no longer be cancelled.
 	repeated, err := f.service.ConfirmSessionCompletion(ctx, f.andrii, lesson.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectEqual(t, "status after a repeat", repeated.Session.Status, data.SessionCompleted)
+	expect.Equal(t, "status after a repeat", repeated.Session.Status, data.SessionCompleted)
 	_, err = f.service.CancelSession(ctx, f.olha, lesson.ID, "")
-	expectError(t, "cancel a completed lesson", err, ErrSessionNotCancellable)
+	expect.Error(t, "cancel a completed lesson", err, ErrSessionNotCancellable)
 }
 
 func TestRescheduleClearsCompletionConfirmations(t *testing.T) {
@@ -179,7 +163,7 @@ func TestRescheduleClearsCompletionConfirmations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectEqual(t, "confirmations after rescheduling", len(rescheduled.Session.CompletionConfirmedUserIDs), 0)
+	expect.Equal(t, "confirmations after rescheduling", len(rescheduled.Session.CompletionConfirmedUserIDs), 0)
 
 	// After the new lesson Olha confirms again, and Andrii is asked again.
 	if _, err := f.service.AcceptSessionProposal(ctx, f.olha, lesson.ID); err != nil {
@@ -189,7 +173,7 @@ func TestRescheduleClearsCompletionConfirmations(t *testing.T) {
 	if _, err := f.service.ConfirmSessionCompletion(ctx, f.olha, lesson.ID); err != nil {
 		t.Fatal(err)
 	}
-	expectEqual(t, "Andrii's requests to confirm", f.notificationCount(t, f.andrii, "session-completion:"), 2)
+	expect.Equal(t, "Andrii's requests to confirm", f.notificationCount(t, f.andrii, "session-completion:"), 2)
 }
 
 func TestCompleteExchangeAfterConfirmedPlan(t *testing.T) {
@@ -213,32 +197,32 @@ func TestCompleteExchangeAfterConfirmedPlan(t *testing.T) {
 	}
 
 	progress := confirmByBoth(olhaLesson.ID)
-	expectEqual(t, "plan completed after Olha's lesson", progress.PlanCompleted(), false)
+	expect.Equal(t, "plan completed after Olha's lesson", progress.PlanCompleted(), false)
 	_, err := f.exchanges.CompleteExchange(ctx, f.olha, ex.ID)
-	expectError(t, "complete while Andrii's lesson is left", err, exchange.ErrPlanNotCompleted)
+	expect.Error(t, "complete while Andrii's lesson is left", err, exchange.ErrPlanNotCompleted)
 
 	progress = confirmByBoth(andriiLesson.ID)
-	expectEqual(t, "plan completed after both lessons", progress.PlanCompleted(), true)
-	expectEqual(t, "percent", progress.Percent, 100)
+	expect.Equal(t, "plan completed after both lessons", progress.PlanCompleted(), true)
+	expect.Equal(t, "percent", progress.Percent, 100)
 
 	// Andrii confirms the end first: the exchange waits for Olha.
 	half, err := f.exchanges.CompleteExchange(ctx, f.andrii, ex.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectEqual(t, "status after Andrii's confirmation", half.Status, data.ExchangeActive)
-	expectEqual(t, "confirmations after Andrii's confirmation", len(half.ConfirmedUserIDs), 1)
-	expectEqual(t, "Olha's requests to confirm", f.notificationCount(t, f.olha, "exchange-completion:"+ex.ID+":"+f.andrii), 1)
+	expect.Equal(t, "status after Andrii's confirmation", half.Status, data.ExchangeActive)
+	expect.Equal(t, "confirmations after Andrii's confirmation", len(half.ConfirmedUserIDs), 1)
+	expect.Equal(t, "Olha's requests to confirm", f.notificationCount(t, f.olha, "exchange-completion:"+ex.ID+":"+f.andrii), 1)
 
 	// Olha confirms too: the exchange is completed.
 	done, err := f.exchanges.CompleteExchange(ctx, f.olha, ex.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectEqual(t, "status after both confirmations", done.Status, data.ExchangeCompleted)
-	expectEqual(t, "completedAt is set", done.CompletedAt != nil, true)
-	expectEqual(t, "confirmations after both confirmations", len(done.ConfirmedUserIDs), 2)
-	expectEqual(t, "Andrii's notices that the exchange is completed", f.notificationCount(t, f.andrii, "exchange-completed:"+ex.ID), 1)
+	expect.Equal(t, "status after both confirmations", done.Status, data.ExchangeCompleted)
+	expect.Equal(t, "completedAt is set", done.CompletedAt != nil, true)
+	expect.Equal(t, "confirmations after both confirmations", len(done.ConfirmedUserIDs), 2)
+	expect.Equal(t, "Andrii's notices that the exchange is completed", f.notificationCount(t, f.andrii, "exchange-completed:"+ex.ID), 1)
 }
 
 func TestCancelExchangeCancelsOpenSessions(t *testing.T) {
@@ -270,31 +254,31 @@ func TestCancelExchangeCancelsOpenSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectEqual(t, "exchange status", cancelled.Status, data.ExchangeCancelled)
-	expectEqual(t, "cancellation reason", cancelled.CancellationReason, reason)
-	expectEqual(t, "completed sessions", cancelled.Progress.CompletedSessions, 1)
-	expectEqual(t, "cancelled sessions", cancelled.Progress.CancelledSessions, 3)
-	expectEqual(t, "scheduled sessions", cancelled.Progress.ScheduledSessions, 0)
-	expectEqual(t, "draft sessions", cancelled.Progress.DraftSessions, 0)
+	expect.Equal(t, "exchange status", cancelled.Status, data.ExchangeCancelled)
+	expect.Equal(t, "cancellation reason", cancelled.CancellationReason, reason)
+	expect.Equal(t, "completed sessions", cancelled.Progress.CompletedSessions, 1)
+	expect.Equal(t, "cancelled sessions", cancelled.Progress.CancelledSessions, 3)
+	expect.Equal(t, "scheduled sessions", cancelled.Progress.ScheduledSessions, 0)
+	expect.Equal(t, "draft sessions", cancelled.Progress.DraftSessions, 0)
 
 	// The completed lesson stays; the lessons that have not taken place are cancelled.
 	sessions := f.sessionsByID(t, ex.ID)
-	expectEqual(t, "completed lesson status", sessions[completed.ID].Status, data.SessionCompleted)
-	expectEqual(t, "scheduled lesson status", sessions[scheduled.ID].Status, data.SessionCancelled)
-	expectEqual(t, "scheduled lesson reason", sessions[scheduled.ID].CancellationReason, reason)
-	expectEqual(t, "proposed lesson status", sessions[proposed.Session.ID].Status, data.SessionCancelled)
+	expect.Equal(t, "completed lesson status", sessions[completed.ID].Status, data.SessionCompleted)
+	expect.Equal(t, "scheduled lesson status", sessions[scheduled.ID].Status, data.SessionCancelled)
+	expect.Equal(t, "scheduled lesson reason", sessions[scheduled.ID].CancellationReason, reason)
+	expect.Equal(t, "proposed lesson status", sessions[proposed.Session.ID].Status, data.SessionCancelled)
 
 	details, err := f.service.SessionDetails(ctx, f.olha, proposed.Session.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectEqual(t, "pending proposal status", details.Proposals[0].Status, data.ProposalSuperseded)
+	expect.Equal(t, "pending proposal status", details.Proposals[0].Status, data.ProposalSuperseded)
 
 	_, err = f.service.ProposeSession(ctx, f.olha, scheduled.ID, ProposalInput{
 		StartsAt:   start.Format(time.RFC3339),
 		EndsAt:     start.Add(time.Hour).Format(time.RFC3339),
 		MeetingURL: "https://meet.example.test/lesson",
 	})
-	expectError(t, "propose in a cancelled exchange", err, ErrExchangeNotActive)
-	expectEqual(t, "Olha's notices about the cancellation", f.notificationCount(t, f.olha, "exchange-cancelled:"+ex.ID), 1)
+	expect.Error(t, "propose in a cancelled exchange", err, ErrExchangeNotActive)
+	expect.Equal(t, "Olha's notices about the cancellation", f.notificationCount(t, f.olha, "exchange-cancelled:"+ex.ID), 1)
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"skillswap/backend/internal/data/datatest"
+	"skillswap/backend/internal/expect"
 )
 
 const requestsPath = "/api/v1/exchange-requests"
@@ -37,18 +38,25 @@ func TestCreateRequest(t *testing.T) {
 	}
 	decodeJSON(t, response, &created)
 	r := created.Request
-	if r.ID == "" || r.Status != "PENDING" || r.Format != "ONLINE" || r.TotalSessions != 3 ||
-		r.Message == nil || *r.Message != "Привіт!" || r.ExchangeID != nil || r.RespondedAt != nil || r.CreatedAt.IsZero() {
-		t.Fatalf("request = %+v", r)
-	}
-	if r.Requester.ID != e.meID(t, olha) || r.Recipient.ID != andriiID || r.Recipient.City != "Київ" || r.Recipient.University.Name == "" {
-		t.Fatalf("requester = %+v, recipient = %+v", r.Requester, r.Recipient)
-	}
+	expect.Equal(t, "request ID is set", r.ID != "", true)
+	expect.Equal(t, "status", r.Status, "PENDING")
+	expect.Equal(t, "format", r.Format, "ONLINE")
+	expect.Equal(t, "total sessions", r.TotalSessions, 3)
+	expect.Equal(t, "message", valueOf(r.Message), "Привіт!")
+	expect.Equal(t, "exchange ID is set", r.ExchangeID != nil, false)
+	expect.Equal(t, "respondedAt is set", r.RespondedAt != nil, false)
+	expect.Equal(t, "createdAt is set", !r.CreatedAt.IsZero(), true)
+
+	expect.Equal(t, "requester", r.Requester.ID, e.meID(t, olha))
+	expect.Equal(t, "recipient", r.Recipient.ID, andriiID)
+	expect.Equal(t, "recipient city", r.Recipient.City, "Київ")
+	expect.Equal(t, "recipient university is set", r.Recipient.University.Name != "", true)
+
 	want := requestTerms{Skill: requestSkill{SkillID: datatest.GuitarSkillID, CategoryID: "20000000-0000-0000-0000-000000000001",
 		Name: "Гітара"}, TeacherLevel: "ADVANCED", LearnerLevel: "BEGINNER", Sessions: 2, DurationMinutes: 60}
-	if r.RequesterTeaches != want || r.RecipientTeaches.Skill.Name != "Photoshop" || r.RecipientTeaches.DurationMinutes != 120 {
-		t.Fatalf("terms: %+v, %+v", r.RequesterTeaches, r.RecipientTeaches)
-	}
+	expect.Equal(t, "terms Olha teaches", r.RequesterTeaches, want)
+	expect.Equal(t, "skill Andrii teaches", r.RecipientTeaches.Skill.Name, "Photoshop")
+	expect.Equal(t, "length of Andrii's lessons", r.RecipientTeaches.DurationMinutes, 120)
 
 	// Without a message both optional values are null, not omitted.
 	e, olha, _, andriiID = newRequestEnv(t)
@@ -83,9 +91,8 @@ func TestCreateRequestAccess(t *testing.T) {
 	assertProblem(t, send(t, e.handler, http.MethodPost, requestsPath, body, pending), http.StatusForbidden, "email_not_verified")
 
 	response = send(t, e.handler, http.MethodGet, requestsPath, "", olha)
-	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodPost {
-		t.Fatalf("GET status = %d, Allow = %q", response.Code, response.Header().Get("Allow"))
-	}
+	expect.Equal(t, "GET status", response.Code, http.StatusMethodNotAllowed)
+	expect.Equal(t, "Allow header", response.Header().Get("Allow"), http.MethodPost)
 }
 
 func TestCreateRequestErrors(t *testing.T) {
@@ -121,11 +128,7 @@ type requestPageResponse struct {
 
 func (e *discoveryEnv) requests(t *testing.T, s *session, query string) requestPageResponse {
 	t.Helper()
-	response := send(t, e.handler, http.MethodGet, "/api/v1/me/exchange-requests"+query, "", s)
-	expectStatus(t, response, http.StatusOK)
-	var body requestPageResponse
-	decodeJSON(t, response, &body)
-	return body
+	return sendAndDecode[requestPageResponse](t, e, http.MethodGet, "/api/v1/me/exchange-requests"+query, "", s, http.StatusOK)
 }
 
 func TestRequestLists(t *testing.T) {
@@ -138,16 +141,21 @@ func TestRequestLists(t *testing.T) {
 	decodeJSON(t, response, &created)
 
 	sent := e.requests(t, olha, "?direction=outgoing")
-	if len(sent.Items) != 1 || sent.Items[0].ID != created.Request.ID || sent.Items[0].Recipient.ID != andriiID ||
-		sent.Page != 1 || sent.PageSize != 20 || sent.Total != 1 {
-		t.Fatalf("Olha's sent requests = %+v", sent)
-	}
-	if incoming := e.requests(t, andrii, "?direction=incoming&status=PENDING"); len(incoming.Items) != 1 || incoming.Total != 1 {
-		t.Fatalf("Andrii's incoming requests = %+v", incoming)
-	}
-	if declined := e.requests(t, andrii, "?direction=incoming&status=DECLINED"); len(declined.Items) != 0 || declined.Total != 0 {
-		t.Fatalf("Andrii's declined requests = %+v", declined)
-	}
+	expect.Equal(t, "Olha's sent requests", len(sent.Items), 1)
+	expect.Equal(t, "sent request", sent.Items[0].ID, created.Request.ID)
+	expect.Equal(t, "sent request recipient", sent.Items[0].Recipient.ID, andriiID)
+	expect.Equal(t, "page", sent.Page, 1)
+	expect.Equal(t, "page size", sent.PageSize, 20)
+	expect.Equal(t, "total sent requests", sent.Total, 1)
+
+	incoming := e.requests(t, andrii, "?direction=incoming&status=PENDING")
+	expect.Equal(t, "Andrii's incoming requests", len(incoming.Items), 1)
+	expect.Equal(t, "total incoming requests", incoming.Total, 1)
+
+	declined := e.requests(t, andrii, "?direction=incoming&status=DECLINED")
+	expect.Equal(t, "Andrii's declined requests", len(declined.Items), 0)
+	expect.Equal(t, "total declined requests", declined.Total, 0)
+
 	// An empty page is an empty array, not null.
 	response = send(t, e.handler, http.MethodGet, "/api/v1/me/exchange-requests?direction=incoming&page=2", "", andrii)
 	expectStatus(t, response, http.StatusOK)
@@ -159,9 +167,8 @@ func TestRequestLists(t *testing.T) {
 	assertFieldError(t, send(t, e.handler, http.MethodGet, path+"?direction=incoming&status=EXPIRED", "", olha), "status")
 	assertProblem(t, send(t, e.handler, http.MethodGet, path+"?direction=incoming&page=0", "", olha), http.StatusBadRequest, "invalid_page")
 	response = send(t, e.handler, http.MethodPost, path, "{}", olha)
-	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet {
-		t.Fatalf("POST status = %d, Allow = %q", response.Code, response.Header().Get("Allow"))
-	}
+	expect.Equal(t, "POST status", response.Code, http.StatusMethodNotAllowed)
+	expect.Equal(t, "Allow header", response.Header().Get("Allow"), http.MethodGet)
 }
 
 func TestRequestDetails(t *testing.T) {
@@ -173,21 +180,26 @@ func TestRequestDetails(t *testing.T) {
 	}
 	decodeJSON(t, response, &created)
 	path := requestsPath + "/" + created.Request.ID
+	olhaID := e.meID(t, olha)
 
-	for _, s := range []*session{olha, andrii} {
-		response := send(t, e.handler, http.MethodGet, path, "", s)
+	for _, viewer := range []struct {
+		name    string
+		session *session
+	}{{"Olha", olha}, {"Andrii", andrii}} {
+		response := send(t, e.handler, http.MethodGet, path, "", viewer.session)
 		expectStatus(t, response, http.StatusOK)
 		var body struct {
 			Request exchangeRequest       `json:"request"`
 			History []requestStatusChange `json:"history"`
 		}
 		decodeJSON(t, response, &body)
-		if body.Request.ID != created.Request.ID || body.Request.Status != "PENDING" || len(body.History) != 1 {
-			t.Fatalf("details = %+v", body)
-		}
-		if h := body.History[0]; h.Status != "PENDING" || h.ChangedBy == nil || h.ChangedBy.ID != e.meID(t, olha) || h.CreatedAt.IsZero() {
-			t.Fatalf("history = %+v", h)
-		}
+		expect.Equal(t, viewer.name+": request", body.Request.ID, created.Request.ID)
+		expect.Equal(t, viewer.name+": status", body.Request.Status, "PENDING")
+		expect.Equal(t, viewer.name+": history items", len(body.History), 1)
+		h := body.History[0]
+		expect.Equal(t, viewer.name+": history status", h.Status, "PENDING")
+		expect.Equal(t, viewer.name+": history author", valueOf(h.ChangedBy).ID, olhaID)
+		expect.Equal(t, viewer.name+": history createdAt is set", !h.CreatedAt.IsZero(), true)
 	}
 
 	stranger := e.student(t, "marko@students.example.test", `["ONLINE"]`, "Київ", datatest.PhotoshopSkillID, datatest.GuitarSkillID)
@@ -224,20 +236,21 @@ func TestAnswerRequest(t *testing.T) {
 	declinePath := requestsPath + "/" + create() + "/decline"
 	assertProblem(t, send(t, e.handler, http.MethodPost, declinePath, "", olha), http.StatusForbidden, "action_not_allowed")
 	declined := answer(andrii, declinePath)
-	if declined.Status != "DECLINED" || declined.RespondedAt == nil {
-		t.Fatalf("declined = %+v", declined)
-	}
-	if again := answer(andrii, declinePath); again.Status != "DECLINED" || !again.RespondedAt.Equal(*declined.RespondedAt) {
-		t.Fatalf("declined again = %+v", again)
-	}
+	expect.Equal(t, "status after decline", declined.Status, "DECLINED")
+	expect.Equal(t, "respondedAt is set after decline", declined.RespondedAt != nil, true)
+
+	// A repeated decline keeps the first answer time.
+	again := answer(andrii, declinePath)
+	expect.Equal(t, "status after a repeated decline", again.Status, "DECLINED")
+	expect.Equal(t, "respondedAt unchanged by a repeated decline", valueOf(again.RespondedAt).Equal(*declined.RespondedAt), true)
 	assertProblem(t, send(t, e.handler, http.MethodPost, strings.Replace(declinePath, "decline", "withdraw", 1), "", olha),
 		http.StatusConflict, "request_not_pending")
 
 	withdrawPath := requestsPath + "/" + create() + "/withdraw"
 	assertProblem(t, send(t, e.handler, http.MethodPost, withdrawPath, "", andrii), http.StatusForbidden, "action_not_allowed")
-	if withdrawn := answer(olha, withdrawPath); withdrawn.Status != "WITHDRAWN" || withdrawn.RespondedAt == nil {
-		t.Fatalf("withdrawn = %+v", withdrawn)
-	}
+	withdrawn := answer(olha, withdrawPath)
+	expect.Equal(t, "status after withdrawal", withdrawn.Status, "WITHDRAWN")
+	expect.Equal(t, "respondedAt is set after withdrawal", withdrawn.RespondedAt != nil, true)
 	answer(olha, withdrawPath)
 	assertProblem(t, send(t, e.handler, http.MethodPost, strings.Replace(withdrawPath, "withdraw", "decline", 1), "", andrii),
 		http.StatusConflict, "request_not_pending")
@@ -248,9 +261,9 @@ func TestAnswerRequest(t *testing.T) {
 		History []requestStatusChange `json:"history"`
 	}
 	decodeJSON(t, response, &details)
-	if len(details.History) != 2 || details.History[1].Status != "WITHDRAWN" || details.History[1].ChangedBy.ID != e.meID(t, olha) {
-		t.Fatalf("history = %+v", details.History)
-	}
+	expect.Equal(t, "history items", len(details.History), 2)
+	expect.Equal(t, "last history status", details.History[1].Status, "WITHDRAWN")
+	expect.Equal(t, "withdrawn by", valueOf(details.History[1].ChangedBy).ID, e.meID(t, olha))
 }
 
 func TestAnswerRequestAccess(t *testing.T) {
@@ -269,9 +282,8 @@ func TestAnswerRequestAccess(t *testing.T) {
 	assertProblem(t, send(t, e.handler, http.MethodPost, path, "", stranger), http.StatusNotFound, "request_not_found")
 	assertProblem(t, send(t, e.handler, http.MethodPost, requestsPath+"/latest/withdraw", "", olha), http.StatusNotFound, "request_not_found")
 	response = send(t, e.handler, http.MethodGet, path, "", andrii)
-	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodPost {
-		t.Fatalf("GET status = %d, Allow = %q", response.Code, response.Header().Get("Allow"))
-	}
+	expect.Equal(t, "GET status", response.Code, http.StatusMethodNotAllowed)
+	expect.Equal(t, "Allow header", response.Header().Get("Allow"), http.MethodPost)
 }
 
 func TestAcceptRequest(t *testing.T) {
@@ -294,46 +306,43 @@ func TestAcceptRequest(t *testing.T) {
 	}
 	accept := func() acceptance {
 		t.Helper()
-		response := send(t, e.handler, http.MethodPost, path, "", andrii)
-		expectStatus(t, response, http.StatusOK)
-		var body acceptance
-		decodeJSON(t, response, &body)
-		return body
+		return sendAndDecode[acceptance](t, e, http.MethodPost, path, "", andrii, http.StatusOK)
 	}
 	first := accept()
 	r, x := first.Request, first.Exchange
-	if r.Status != "ACCEPTED" || r.RespondedAt == nil || r.ExchangeID == nil || *r.ExchangeID != x.ID {
-		t.Fatalf("request = %+v", r)
-	}
-	if x.ID == "" || x.RequestID == nil || *x.RequestID != r.ID || x.Status != "ACTIVE" || x.Format != "ONLINE" ||
-		x.TotalSessions != 3 || x.StartedAt == nil || x.Requester.ID != e.meID(t, olha) || x.Recipient.ID != andriiID ||
-		x.RequesterTeaches != created.Request.RequesterTeaches || x.RecipientTeaches != created.Request.RecipientTeaches {
-		t.Fatalf("exchange = %+v", x)
-	}
-	if again := accept(); again.Exchange.ID != x.ID {
-		t.Fatalf("accepted again: exchange %s, want %s", again.Exchange.ID, x.ID)
-	}
+	expect.Equal(t, "request status", r.Status, "ACCEPTED")
+	expect.Equal(t, "respondedAt is set", r.RespondedAt != nil, true)
+	expect.Equal(t, "exchange ID in the request", valueOf(r.ExchangeID), x.ID)
+
+	expect.Equal(t, "exchange ID is set", x.ID != "", true)
+	expect.Equal(t, "request ID in the exchange", valueOf(x.RequestID), r.ID)
+	expect.Equal(t, "exchange status", x.Status, "ACTIVE")
+	expect.Equal(t, "exchange format", x.Format, "ONLINE")
+	expect.Equal(t, "exchange total sessions", x.TotalSessions, 3)
+	expect.Equal(t, "startedAt is set", x.StartedAt != nil, true)
+	expect.Equal(t, "exchange requester", x.Requester.ID, e.meID(t, olha))
+	expect.Equal(t, "exchange recipient", x.Recipient.ID, andriiID)
+	expect.Equal(t, "terms Olha teaches", x.RequesterTeaches, created.Request.RequesterTeaches)
+	expect.Equal(t, "terms Andrii teaches", x.RecipientTeaches, created.Request.RecipientTeaches)
+
+	expect.Equal(t, "exchange after a repeated acceptance", accept().Exchange.ID, x.ID)
 
 	exchangePath := "/api/v1/exchanges/" + x.ID
-	for _, s := range []*session{olha, andrii} {
-		response := send(t, e.handler, http.MethodGet, exchangePath, "", s)
-		expectStatus(t, response, http.StatusOK)
-		var body struct {
-			Exchange exchangeResponse `json:"exchange"`
-		}
-		decodeJSON(t, response, &body)
-		if body.Exchange.ID != x.ID || body.Exchange.RequesterTeaches != x.RequesterTeaches {
-			t.Fatalf("exchange details = %+v", body.Exchange)
-		}
+	for _, viewer := range []struct {
+		name    string
+		session *session
+	}{{"Olha", olha}, {"Andrii", andrii}} {
+		body := sendAndDecode[exchangeEnvelope](t, e, http.MethodGet, exchangePath, "", viewer.session, http.StatusOK)
+		expect.Equal(t, viewer.name+": exchange", body.Exchange.ID, x.ID)
+		expect.Equal(t, viewer.name+": terms Olha teaches", body.Exchange.RequesterTeaches, x.RequesterTeaches)
 	}
 	stranger := e.student(t, "marko@students.example.test", `["ONLINE"]`, "Київ", datatest.PhotoshopSkillID, datatest.GuitarSkillID)
 	assertProblem(t, send(t, e.handler, http.MethodGet, exchangePath, "", stranger), http.StatusNotFound, "exchange_not_found")
 	assertProblem(t, send(t, e.handler, http.MethodGet, "/api/v1/exchanges/latest", "", olha), http.StatusNotFound, "exchange_not_found")
 	assertProblem(t, send(t, e.handler, http.MethodGet, exchangePath, "", nil), http.StatusUnauthorized, "unauthenticated")
 	response = send(t, e.handler, http.MethodPost, exchangePath, "", olha)
-	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet {
-		t.Fatalf("POST status = %d, Allow = %q", response.Code, response.Header().Get("Allow"))
-	}
+	expect.Equal(t, "POST status", response.Code, http.StatusMethodNotAllowed)
+	expect.Equal(t, "Allow header", response.Header().Get("Allow"), http.MethodGet)
 }
 
 func TestAcceptRequestErrors(t *testing.T) {

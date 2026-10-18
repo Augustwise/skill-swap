@@ -17,6 +17,7 @@ import (
 
 	"skillswap/backend/internal/auth"
 	"skillswap/backend/internal/data/datatest"
+	"skillswap/backend/internal/expect"
 	"skillswap/backend/internal/mailer/mailertest"
 )
 
@@ -89,18 +90,15 @@ func tokenFromMail(t *testing.T, mail *mailertest.Recorder) string {
 func login(t *testing.T, handler http.Handler, email, password string) *session {
 	t.Helper()
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/login", loginBody(email, password), nil)
-	if response.Code != http.StatusOK {
-		t.Fatalf("login status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, response, http.StatusOK)
 	var body struct {
 		User      user   `json:"user"`
 		CSRFToken string `json:"csrfToken"`
 	}
 	decodeJSON(t, response, &body)
 	cookie := sessionCookie(response)
-	if cookie == nil || body.CSRFToken == "" {
-		t.Fatalf("login did not return a session: %s", response.Body.String())
-	}
+	expect.Equal(t, "session cookie is set", cookie != nil, true)
+	expect.Equal(t, "CSRF token is set", body.CSRFToken != "", true)
 	return &session{cookie: cookie, csrf: body.CSRFToken}
 }
 
@@ -120,23 +118,20 @@ func TestRegisterSendsVerificationEmail(t *testing.T) {
 	handler, _, mail := newAuthHandler()
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/register",
 		registerBody("  Olena.Koval@Students.Example.Test ", testPassword), nil)
-	if response.Code != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, response, http.StatusCreated)
 	var body struct {
 		User                  user `json:"user"`
 		VerificationEmailSent bool `json:"verificationEmailSent"`
 	}
 	decodeJSON(t, response, &body)
-	if body.User.Email != "olena.koval@students.example.test" || body.User.EmailVerified || !body.VerificationEmailSent {
-		t.Fatalf("unexpected body: %s", response.Body.String())
-	}
+	expect.Equal(t, "normalized email", body.User.Email, "olena.koval@students.example.test")
+	expect.Equal(t, "email verified", body.User.EmailVerified, false)
+	expect.Equal(t, "verification email sent", body.VerificationEmailSent, true)
 	if strings.Contains(response.Body.String(), "password") {
 		t.Fatal("response must not contain password data")
 	}
-	if mail.Count() != 1 || mail.Last().To[0] != "olena.koval@students.example.test" {
-		t.Fatalf("unexpected mail: %+v", mail.Last())
-	}
+	expect.Equal(t, "emails sent", mail.Count(), 1)
+	expect.Equal(t, "email recipient", mail.Last().To[0], "olena.koval@students.example.test")
 	if !strings.Contains(mail.Last().TextBody, "http://localhost:3000/verify-email?token=") {
 		t.Fatalf("email has no verification link: %q", mail.Last().TextBody)
 	}
@@ -152,8 +147,9 @@ func TestRegisterStillSucceedsWhenMailIsDown(t *testing.T) {
 	mail.Err = errors.New("smtp down")
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/register",
 		registerBody("student@students.example.test", testPassword), nil)
-	if response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), `"verificationEmailSent":false`) {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	expectStatus(t, response, http.StatusCreated)
+	if !strings.Contains(response.Body.String(), `"verificationEmailSent":false`) {
+		t.Fatalf("response does not report the unsent email: %s", response.Body.String())
 	}
 }
 
@@ -175,16 +171,7 @@ func TestRegisterValidation(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			response := send(t, handler, http.MethodPost, "/api/v1/auth/register", test.body, nil)
-			assertProblem(t, response, http.StatusUnprocessableEntity, "validation_failed")
-			var body struct {
-				Error struct {
-					Fields map[string]string `json:"fields"`
-				} `json:"error"`
-			}
-			decodeJSON(t, response, &body)
-			if body.Error.Fields[test.field] == "" {
-				t.Fatalf("missing %s field error: %s", test.field, response.Body.String())
-			}
+			assertFieldError(t, response, test.field)
 		})
 	}
 }
@@ -224,9 +211,7 @@ func TestVerifyEmailLinkWorksOnce(t *testing.T) {
 	token := tokenFromMail(t, mail)
 
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/verify-email", fmt.Sprintf(`{"token":%q}`, token), nil)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, response, http.StatusOK)
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/verify-email", fmt.Sprintf(`{"token":%q}`, token), nil)
 	assertProblem(t, response, http.StatusBadRequest, "invalid_token")
 
@@ -263,19 +248,20 @@ func TestLoginSessionAndLogout(t *testing.T) {
 	// The email is normalized on login. The cookie must be HttpOnly and SameSite=Lax
 	// (not Secure, because tests run over plain HTTP).
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/login", loginBody(" A@Students.Example.Test", testPassword), nil)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, response, http.StatusOK)
 	cookie := sessionCookie(response)
-	if cookie == nil || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode || cookie.Path != "/" || cookie.Secure {
-		t.Fatalf("unexpected cookie: %+v", cookie)
-	}
+	expect.Equal(t, "session cookie is set", cookie != nil, true)
+	expect.Equal(t, "cookie HttpOnly", cookie.HttpOnly, true)
+	expect.Equal(t, "cookie SameSite", cookie.SameSite, http.SameSiteLaxMode)
+	expect.Equal(t, "cookie path", cookie.Path, "/")
+	expect.Equal(t, "cookie Secure", cookie.Secure, false)
 	s := login(t, handler, "a@students.example.test", testPassword)
 
 	// /me works with the session and fails without it.
 	response = send(t, handler, http.MethodGet, "/api/v1/auth/me", "", s)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"email":"a@students.example.test"`) {
-		t.Fatalf("me status = %d, body = %s", response.Code, response.Body.String())
+	expectStatus(t, response, http.StatusOK)
+	if !strings.Contains(response.Body.String(), `"email":"a@students.example.test"`) {
+		t.Fatalf("me returned another user: %s", response.Body.String())
 	}
 	response = send(t, handler, http.MethodGet, "/api/v1/auth/me", "", nil)
 	assertProblem(t, response, http.StatusUnauthorized, "unauthenticated")
@@ -288,12 +274,10 @@ func TestLoginSessionAndLogout(t *testing.T) {
 
 	// Logout clears the cookie and ends the session on the server.
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/logout", "", s)
-	if response.Code != http.StatusNoContent {
-		t.Fatalf("logout status = %d, body = %s", response.Code, response.Body.String())
-	}
-	if cleared := sessionCookie(response); cleared == nil || cleared.MaxAge >= 0 {
-		t.Fatalf("logout did not clear cookie: %+v", cleared)
-	}
+	expectStatus(t, response, http.StatusNoContent)
+	cleared := sessionCookie(response)
+	expect.Equal(t, "clearing cookie is set", cleared != nil, true)
+	expect.Equal(t, "clearing cookie MaxAge is negative", cleared.MaxAge < 0, true)
 	response = send(t, handler, http.MethodGet, "/api/v1/auth/me", "", s)
 	assertProblem(t, response, http.StatusUnauthorized, "unauthenticated")
 }
@@ -314,20 +298,15 @@ func TestLoginRememberMeControlsCookiePersistence(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			body := fmt.Sprintf(`{"email":"a@students.example.test","password":%q,"rememberMe":%t}`, testPassword, test.rememberMe)
 			response := send(t, handler, http.MethodPost, "/api/v1/auth/login", body, nil)
-			if response.Code != http.StatusOK {
-				t.Fatalf("login status = %d, body = %s", response.Code, response.Body.String())
-			}
+			expectStatus(t, response, http.StatusOK)
 			cookie := sessionCookie(response)
-			if cookie == nil {
-				t.Fatal("session cookie missing")
-			}
+			expect.Equal(t, "session cookie is set", cookie != nil, true)
+			wantMaxAge := 0
 			if test.rememberMe {
-				if cookie.MaxAge != int(auth.SessionTTL.Seconds()) || cookie.Expires.IsZero() {
-					t.Fatalf("expected persistent cookie, got %+v", cookie)
-				}
-			} else if cookie.MaxAge != 0 || !cookie.Expires.IsZero() {
-				t.Fatalf("expected browser-session cookie, got %+v", cookie)
+				wantMaxAge = int(auth.SessionTTL.Seconds())
 			}
+			expect.Equal(t, "cookie MaxAge", cookie.MaxAge, wantMaxAge)
+			expect.Equal(t, "cookie has an expiry date", !cookie.Expires.IsZero(), test.rememberMe)
 		})
 	}
 }
@@ -344,8 +323,9 @@ func TestLoginLockoutAfterFiveFailures(t *testing.T) {
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/login", loginBody("a@students.example.test", testPassword), nil)
 	assertProblem(t, response, http.StatusTooManyRequests, "login_locked")
 	retryAfter, err := strconv.Atoi(response.Header().Get("Retry-After"))
-	if err != nil || retryAfter < 40*60-60 || retryAfter > 40*60+1 {
-		t.Fatalf("Retry-After = %q", response.Header().Get("Retry-After"))
+	expect.NoError(t, "parse Retry-After", err)
+	if retryAfter < 40*60-60 || retryAfter > 40*60+1 {
+		t.Fatalf("Retry-After = %d seconds, want about 40 minutes", retryAfter)
 	}
 }
 
@@ -358,16 +338,13 @@ func TestResendVerification(t *testing.T) {
 	s := login(t, handler, "a@students.example.test", testPassword)
 
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/resend-verification", "", s)
-	if response.Code != http.StatusAccepted || mail.Count() != 2 {
-		t.Fatalf("status = %d, mails = %d", response.Code, mail.Count())
-	}
+	expectStatus(t, response, http.StatusAccepted)
+	expect.Equal(t, "emails after resending", mail.Count(), 2)
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/verify-email", fmt.Sprintf(`{"token":%q}`, firstToken), nil)
 	assertProblem(t, response, http.StatusBadRequest, "invalid_token")
 
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/verify-email", fmt.Sprintf(`{"token":%q}`, tokenFromMail(t, mail)), nil)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, response, http.StatusOK)
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/resend-verification", "", s)
 	assertProblem(t, response, http.StatusConflict, "email_already_verified")
 }
@@ -381,13 +358,11 @@ func TestPasswordReset(t *testing.T) {
 
 	// An unknown email gets the same 202 answer but no mail is sent, so accounts cannot be discovered.
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/forgot-password", `{"email":"nobody@students.example.test"}`, nil)
-	if response.Code != http.StatusAccepted || mail.Count() != 1 {
-		t.Fatalf("unknown email: status = %d, mails = %d", response.Code, mail.Count())
-	}
+	expectStatus(t, response, http.StatusAccepted)
+	expect.Equal(t, "emails after an unknown email", mail.Count(), 1)
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/forgot-password", `{"email":"A@students.example.test"}`, nil)
-	if response.Code != http.StatusAccepted || mail.Count() != 2 {
-		t.Fatalf("known email: status = %d, mails = %d", response.Code, mail.Count())
-	}
+	expectStatus(t, response, http.StatusAccepted)
+	expect.Equal(t, "emails after a known email", mail.Count(), 2)
 	if !strings.Contains(mail.Last().TextBody, "http://localhost:3000/reset-password?token=") {
 		t.Fatalf("email has no reset link: %q", mail.Last().TextBody)
 	}
@@ -400,9 +375,7 @@ func TestPasswordReset(t *testing.T) {
 	const newPassword = "a brand new passphrase"
 	body := fmt.Sprintf(`{"token":%q,"password":%q}`, token, newPassword)
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/reset-password", body, nil)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, response, http.StatusOK)
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/reset-password", body, nil)
 	assertProblem(t, response, http.StatusBadRequest, "invalid_token")
 
@@ -432,33 +405,28 @@ func TestAuthAgainstLocalPostgres(t *testing.T) {
 	email := fmt.Sprintf("it-%d@students.example.test", time.Now().UnixNano())
 
 	response := send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody(email, testPassword), nil)
-	if response.Code != http.StatusCreated {
-		t.Fatalf("register status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, response, http.StatusCreated)
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/register", registerBody(strings.ToUpper(email), testPassword), nil)
 	assertProblem(t, response, http.StatusConflict, "email_taken")
 
 	// Verify the email; the token cannot be reused.
 	verifyBody := fmt.Sprintf(`{"token":%q}`, tokenFromMail(t, mail))
-	if response = send(t, handler, http.MethodPost, "/api/v1/auth/verify-email", verifyBody, nil); response.Code != http.StatusOK {
-		t.Fatalf("verify status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/verify-email", verifyBody, nil), http.StatusOK)
 	response = send(t, handler, http.MethodPost, "/api/v1/auth/verify-email", verifyBody, nil)
 	assertProblem(t, response, http.StatusBadRequest, "invalid_token")
 
 	s := login(t, handler, email, testPassword)
 	response = send(t, handler, http.MethodGet, "/api/v1/auth/me", "", s)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"emailVerified":true`) {
-		t.Fatalf("me status = %d, body = %s", response.Code, response.Body.String())
+	expectStatus(t, response, http.StatusOK)
+	if !strings.Contains(response.Body.String(), `"emailVerified":true`) {
+		t.Fatalf("user is not verified: %s", response.Body.String())
 	}
 
 	// Reset the password; the old session must stop working.
 	send(t, handler, http.MethodPost, "/api/v1/auth/forgot-password", fmt.Sprintf(`{"email":%q}`, email), nil)
 	const newPassword = "a brand new passphrase"
 	resetBody := fmt.Sprintf(`{"token":%q,"password":%q}`, tokenFromMail(t, mail), newPassword)
-	if response = send(t, handler, http.MethodPost, "/api/v1/auth/reset-password", resetBody, nil); response.Code != http.StatusOK {
-		t.Fatalf("reset status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/reset-password", resetBody, nil), http.StatusOK)
 	response = send(t, handler, http.MethodGet, "/api/v1/auth/me", "", s)
 	assertProblem(t, response, http.StatusUnauthorized, "unauthenticated")
 
@@ -474,9 +442,7 @@ func TestAuthAgainstLocalPostgres(t *testing.T) {
 	}
 
 	s = login(t, handler, email, newPassword)
-	if response = send(t, handler, http.MethodPost, "/api/v1/auth/logout", "", s); response.Code != http.StatusNoContent {
-		t.Fatalf("logout status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, send(t, handler, http.MethodPost, "/api/v1/auth/logout", "", s), http.StatusNoContent)
 	response = send(t, handler, http.MethodGet, "/api/v1/auth/me", "", s)
 	assertProblem(t, response, http.StatusUnauthorized, "unauthenticated")
 }

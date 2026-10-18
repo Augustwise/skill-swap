@@ -10,6 +10,7 @@ import (
 
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
+	"skillswap/backend/internal/expect"
 )
 
 type exchangePageResponse struct {
@@ -57,36 +58,34 @@ func TestExchangesSessionsAndScheduleFlow(t *testing.T) {
 	e, olha, andrii, olhaID, andriiID, exchangeID := newExchangeEnv(t)
 
 	// 1. GET /api/v1/me/exchanges shows the active exchange with partner, progress and null nextSession.
-	response := send(t, e.handler, http.MethodGet, "/api/v1/me/exchanges?status=ACTIVE", "", olha)
-	expectStatus(t, response, http.StatusOK)
-	var exPage exchangePageResponse
-	decodeJSON(t, response, &exPage)
-	if exPage.Total != 1 || len(exPage.Items) != 1 || exPage.PageSize != 20 {
-		t.Fatalf("exchanges page = %+v", exPage)
-	}
+	exPage := sendAndDecode[exchangePageResponse](t, e, http.MethodGet, "/api/v1/me/exchanges?status=ACTIVE", "", olha, http.StatusOK)
+	expect.Equal(t, "active exchanges total", exPage.Total, 1)
+	expect.Equal(t, "active exchanges", len(exPage.Items), 1)
+	expect.Equal(t, "page size", exPage.PageSize, 20)
 	ex := exPage.Items[0]
-	if ex.ID != exchangeID || ex.Partner.ID != andriiID || ex.Progress.TotalSessions != 3 ||
-		ex.Progress.DraftSessions != 3 || ex.Progress.CompletedSessions != 0 ||
-		ex.Progress.Percent != 0 || ex.NextSession != nil {
-		t.Fatalf("exchange item = %+v", ex)
-	}
+	expect.Equal(t, "exchange", ex.ID, exchangeID)
+	expect.Equal(t, "Olha's partner", ex.Partner.ID, andriiID)
+	expect.Equal(t, "total sessions", ex.Progress.TotalSessions, 3)
+	expect.Equal(t, "draft sessions", ex.Progress.DraftSessions, 3)
+	expect.Equal(t, "completed sessions", ex.Progress.CompletedSessions, 0)
+	expect.Equal(t, "percent", ex.Progress.Percent, 0)
+	expect.Equal(t, "next session is set", ex.NextSession != nil, false)
 
 	// 2. GET /api/v1/exchanges/{exchangeId}/sessions lists the 3 initial DRAFT slots.
 	sessionsPath := "/api/v1/exchanges/" + exchangeID + "/sessions"
-	response = send(t, e.handler, http.MethodGet, sessionsPath, "", andrii)
+	response := send(t, e.handler, http.MethodGet, sessionsPath, "", andrii)
 	expectStatus(t, response, http.StatusOK)
 	var exSessions struct {
 		Exchange exchangeResponse  `json:"exchange"`
 		Items    []sessionResponse `json:"items"`
 	}
 	decodeJSON(t, response, &exSessions)
-	if exSessions.Exchange.Partner.ID != olhaID || len(exSessions.Items) != 3 {
-		t.Fatalf("exchange sessions = %+v", exSessions)
-	}
-	if exSessions.Items[0].Role != "LEARNER" || exSessions.Items[0].Teacher.ID != olhaID ||
-		exSessions.Items[2].Role != "TEACHER" || exSessions.Items[2].Teacher.ID != andriiID {
-		t.Fatalf("roles and teachers = %+v", exSessions.Items)
-	}
+	expect.Equal(t, "Andrii's partner", exSessions.Exchange.Partner.ID, olhaID)
+	expect.Equal(t, "exchange sessions", len(exSessions.Items), 3)
+	expect.Equal(t, "Andrii's role in session 1", exSessions.Items[0].Role, "LEARNER")
+	expect.Equal(t, "session 1 teacher", exSessions.Items[0].Teacher.ID, olhaID)
+	expect.Equal(t, "Andrii's role in session 3", exSessions.Items[2].Role, "TEACHER")
+	expect.Equal(t, "session 3 teacher", exSessions.Items[2].Teacher.ID, andriiID)
 
 	// 3. Olha proposes Session 1 online via POST /api/v1/exchanges/{exchangeId}/sessions.
 	t1Start := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Minute)
@@ -109,13 +108,16 @@ func TestExchangesSessionsAndScheduleFlow(t *testing.T) {
 	}
 	decodeJSON(t, response, &proposed)
 	s1 := proposed.Session
-	if s1.Status != "PROPOSED" || s1.Title != "Акорди та ритм" ||
-		s1.Description == nil || *s1.Description != "Розберемо переходи між Am, Dm, E." ||
-		s1.MeetingURL == nil || *s1.MeetingURL != "https://meet.example.test/skillswap-guitar-1" ||
-		s1.MeetingPlace != nil || s1.DurationMinutes == nil || *s1.DurationMinutes != 60 ||
-		!s1.ScheduleConfirmedByMe || s1.ScheduleConfirmedByPartner || s1.CanRespondToProposal || !s1.CanCancel {
-		t.Fatalf("proposed session (Olha view) = %+v", s1)
-	}
+	expect.Equal(t, "status after proposal", s1.Status, "PROPOSED")
+	expect.Equal(t, "title", s1.Title, "Акорди та ритм")
+	expect.Equal(t, "description", valueOf(s1.Description), "Розберемо переходи між Am, Dm, E.")
+	expect.Equal(t, "meeting URL", valueOf(s1.MeetingURL), "https://meet.example.test/skillswap-guitar-1")
+	expect.Equal(t, "meeting place is set", s1.MeetingPlace != nil, false)
+	expect.Equal(t, "duration in minutes", valueOf(s1.DurationMinutes), 60)
+	expect.Equal(t, "time confirmed by Olha", s1.ScheduleConfirmedByMe, true)
+	expect.Equal(t, "time confirmed by Andrii, as Olha sees it", s1.ScheduleConfirmedByPartner, false)
+	expect.Equal(t, "Olha can respond to her proposal", s1.CanRespondToProposal, false)
+	expect.Equal(t, "Olha can cancel", s1.CanCancel, true)
 
 	// 4. Andrii inspects GET /api/v1/sessions/{sessionId} and sees CanRespondToProposal = true.
 	s1Path := "/api/v1/sessions/" + s1.ID
@@ -126,19 +128,16 @@ func TestExchangesSessionsAndScheduleFlow(t *testing.T) {
 		Proposals []sessionProposalResponse `json:"proposals"`
 	}
 	decodeJSON(t, response, &details)
-	if !details.Session.CanRespondToProposal || details.Session.ScheduleConfirmedByMe ||
-		!details.Session.ScheduleConfirmedByPartner || len(details.Proposals) != 1 {
-		t.Fatalf("Andrii session details = %+v", details)
-	}
+	expect.Equal(t, "Andrii can respond to the proposal", details.Session.CanRespondToProposal, true)
+	expect.Equal(t, "time confirmed by Andrii", details.Session.ScheduleConfirmedByMe, false)
+	expect.Equal(t, "time confirmed by Olha, as Andrii sees it", details.Session.ScheduleConfirmedByPartner, true)
+	expect.Equal(t, "proposals", len(details.Proposals), 1)
 
 	// Andrii sees pendingProposalsCount = 1 on GET /api/v1/me/schedule.
-	response = send(t, e.handler, http.MethodGet, "/api/v1/me/schedule", "", andrii)
-	expectStatus(t, response, http.StatusOK)
-	var sched schedulePageResponse
-	decodeJSON(t, response, &sched)
-	if sched.Total != 0 || sched.PendingProposalsCount != 1 || sched.Timezone != "Europe/Kyiv" {
-		t.Fatalf("Andrii schedule before accept = %+v", sched)
-	}
+	sched := sendAndDecode[schedulePageResponse](t, e, http.MethodGet, "/api/v1/me/schedule", "", andrii, http.StatusOK)
+	expect.Equal(t, "Andrii's scheduled sessions before accept", sched.Total, 0)
+	expect.Equal(t, "Andrii's pending proposals", sched.PendingProposalsCount, 1)
+	expect.Equal(t, "timezone", sched.Timezone, "Europe/Kyiv")
 
 	// 5. Olha cannot accept her own proposal (403 action_not_allowed); Andrii accepts it.
 	assertProblem(t, send(t, e.handler, http.MethodPost, s1Path+"/accept", "", olha),
@@ -147,36 +146,30 @@ func TestExchangesSessionsAndScheduleFlow(t *testing.T) {
 	response = send(t, e.handler, http.MethodPost, s1Path+"/accept", "", andrii)
 	expectStatus(t, response, http.StatusOK)
 	decodeJSON(t, response, &proposed)
-	if proposed.Session.Status != "SCHEDULED" || !proposed.Session.ScheduleConfirmedByMe ||
-		!proposed.Session.ScheduleConfirmedByPartner || proposed.Session.CanRespondToProposal ||
-		proposed.Proposal.Status != "ACCEPTED" || proposed.Proposal.RespondedBy == nil ||
-		proposed.Proposal.RespondedBy.ID != andriiID {
-		t.Fatalf("accepted session = %+v, proposal = %+v", proposed.Session, proposed.Proposal)
-	}
+	expect.Equal(t, "status after accept", proposed.Session.Status, "SCHEDULED")
+	expect.Equal(t, "time confirmed by Andrii after accept", proposed.Session.ScheduleConfirmedByMe, true)
+	expect.Equal(t, "time confirmed by Olha after accept", proposed.Session.ScheduleConfirmedByPartner, true)
+	expect.Equal(t, "Andrii can respond to the proposal after accept", proposed.Session.CanRespondToProposal, false)
+	expect.Equal(t, "proposal status after accept", proposed.Proposal.Status, "ACCEPTED")
+	expect.Equal(t, "proposal accepted by", valueOf(proposed.Proposal.RespondedBy).ID, andriiID)
 
 	// 6. Both participants now see the scheduled meeting in GET /api/v1/me/schedule and in exchange NextSession.
-	for _, s := range []*session{olha, andrii} {
-		response = send(t, e.handler, http.MethodGet, "/api/v1/me/schedule?upcoming=true", "", s)
-		expectStatus(t, response, http.StatusOK)
-		decodeJSON(t, response, &sched)
-		if sched.Total != 1 || len(sched.Items) != 1 || sched.Items[0].ID != s1.ID ||
-			sched.Items[0].MeetingURL == nil || *sched.Items[0].MeetingURL != "https://meet.example.test/skillswap-guitar-1" ||
-			sched.PendingProposalsCount != 0 {
-			t.Fatalf("schedule after accept = %+v", sched)
-		}
+	for _, viewer := range []struct {
+		name    string
+		session *session
+	}{{"Olha", olha}, {"Andrii", andrii}} {
+		sched = sendAndDecode[schedulePageResponse](t, e, http.MethodGet, "/api/v1/me/schedule?upcoming=true", "", viewer.session, http.StatusOK)
+		expect.Equal(t, viewer.name+": scheduled sessions", sched.Total, 1)
+		expect.Equal(t, viewer.name+": schedule items", len(sched.Items), 1)
+		expect.Equal(t, viewer.name+": scheduled session", sched.Items[0].ID, s1.ID)
+		expect.Equal(t, viewer.name+": meeting URL", valueOf(sched.Items[0].MeetingURL), "https://meet.example.test/skillswap-guitar-1")
+		expect.Equal(t, viewer.name+": pending proposals", sched.PendingProposalsCount, 0)
 	}
 
-	response = send(t, e.handler, http.MethodGet, "/api/v1/exchanges/"+exchangeID, "", olha)
-	expectStatus(t, response, http.StatusOK)
-	var exDetail struct {
-		Exchange exchangeResponse  `json:"exchange"`
-		Sessions []sessionResponse `json:"sessions"`
-	}
-	decodeJSON(t, response, &exDetail)
-	if exDetail.Exchange.NextSession == nil || exDetail.Exchange.NextSession.ID != s1.ID ||
-		exDetail.Exchange.Progress.ScheduledSessions != 1 || len(exDetail.Sessions) != 3 {
-		t.Fatalf("exchange detail = %+v", exDetail)
-	}
+	exDetail := getExchangeDetails(t, e, exchangeID, olha)
+	expect.Equal(t, "next session", valueOf(exDetail.Exchange.NextSession).ID, s1.ID)
+	expect.Equal(t, "scheduled sessions", exDetail.Exchange.Progress.ScheduledSessions, 1)
+	expect.Equal(t, "sessions in exchange details", len(exDetail.Sessions), 3)
 
 	// 7. Overlapping proposal [t1Start+30m, t1End+30m) is rejected with 409 session_conflict.
 	conflictBody := fmt.Sprintf(`{
@@ -204,17 +197,15 @@ func TestExchangesSessionsAndScheduleFlow(t *testing.T) {
 	response = send(t, e.handler, http.MethodPost, "/api/v1/sessions/"+s3ID+"/proposals", offlineBody, andrii)
 	expectStatus(t, response, http.StatusCreated)
 	decodeJSON(t, response, &proposed)
-	if proposed.Session.Format != "OFFLINE" || proposed.Session.MeetingPlace == nil ||
-		*proposed.Session.MeetingPlace != "Бібліотека КПІ, зал 4" || proposed.Session.MeetingURL != nil {
-		t.Fatalf("offline proposal = %+v", proposed.Session)
-	}
+	expect.Equal(t, "offline proposal format", proposed.Session.Format, "OFFLINE")
+	expect.Equal(t, "meeting place", valueOf(proposed.Session.MeetingPlace), "Бібліотека КПІ, зал 4")
+	expect.Equal(t, "meeting URL is set for an offline session", proposed.Session.MeetingURL != nil, false)
 
 	response = send(t, e.handler, http.MethodPost, "/api/v1/sessions/"+s3ID+"/decline", "", olha)
 	expectStatus(t, response, http.StatusOK)
 	decodeJSON(t, response, &proposed)
-	if proposed.Session.Status != "DRAFT" || proposed.Proposal.Status != "DECLINED" {
-		t.Fatalf("declined session = %+v, proposal = %+v", proposed.Session, proposed.Proposal)
-	}
+	expect.Equal(t, "status after decline", proposed.Session.Status, "DRAFT")
+	expect.Equal(t, "proposal status after decline", proposed.Proposal.Status, "DECLINED")
 
 	// 9. Cancel Session 1 with a reason -> removed from active schedule and does not increase progress.
 	response = send(t, e.handler, http.MethodPost, s1Path+"/cancel", `{"reason":"Захворів"}`, andrii)
@@ -223,30 +214,25 @@ func TestExchangesSessionsAndScheduleFlow(t *testing.T) {
 		Session sessionResponse `json:"session"`
 	}
 	decodeJSON(t, response, &cancelResp)
-	if cancelResp.Session.Status != "CANCELLED" || cancelResp.Session.CancellationReason == nil ||
-		*cancelResp.Session.CancellationReason != "Захворів" || cancelResp.Session.CanCancel {
-		t.Fatalf("cancelled session = %+v", cancelResp.Session)
-	}
+	expect.Equal(t, "status after cancel", cancelResp.Session.Status, "CANCELLED")
+	expect.Equal(t, "cancellation reason", valueOf(cancelResp.Session.CancellationReason), "Захворів")
+	expect.Equal(t, "a cancelled session can be cancelled", cancelResp.Session.CanCancel, false)
 
 	// Cancel again without a body is idempotent.
 	expectStatus(t, send(t, e.handler, http.MethodPost, s1Path+"/cancel", "", andrii), http.StatusOK)
 
-	response = send(t, e.handler, http.MethodGet, "/api/v1/me/schedule", "", olha)
-	expectStatus(t, response, http.StatusOK)
-	decodeJSON(t, response, &sched)
-	if sched.Total != 0 || len(sched.Items) != 0 {
-		t.Fatalf("schedule after cancel = %+v", sched)
-	}
+	sched = sendAndDecode[schedulePageResponse](t, e, http.MethodGet, "/api/v1/me/schedule", "", olha, http.StatusOK)
+	expect.Equal(t, "Olha's scheduled sessions after cancel", sched.Total, 0)
+	expect.Equal(t, "Olha's schedule items after cancel", len(sched.Items), 0)
 
 	// Mark one session COMPLETED in the store and check progress on /me/exchanges.
 	e.store.SetSessionStatus(exSessions.Items[1].ID, data.SessionCompleted)
-	response = send(t, e.handler, http.MethodGet, "/api/v1/me/exchanges", "", olha)
-	expectStatus(t, response, http.StatusOK)
-	decodeJSON(t, response, &exPage)
+	exPage = sendAndDecode[exchangePageResponse](t, e, http.MethodGet, "/api/v1/me/exchanges", "", olha, http.StatusOK)
 	prog := exPage.Items[0].Progress
-	if prog.CompletedSessions != 1 || prog.CancelledSessions != 1 || prog.TotalSessions != 3 || prog.Percent != 33 {
-		t.Fatalf("progress = %+v", prog)
-	}
+	expect.Equal(t, "final completed sessions", prog.CompletedSessions, 1)
+	expect.Equal(t, "final cancelled sessions", prog.CancelledSessions, 1)
+	expect.Equal(t, "final total sessions", prog.TotalSessions, 3)
+	expect.Equal(t, "final percent", prog.Percent, 33)
 }
 
 func TestSessionAccessAndValidationErrors(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
 	"skillswap/backend/internal/exchange"
+	"skillswap/backend/internal/expect"
 )
 
 const (
@@ -184,7 +185,7 @@ func (env *postgresEnv) text(t *testing.T, query string, args ...any) string {
 	return value
 }
 
-// Checks LR2 5.3 and NFR-05 against PostgreSQL:
+// Checks against PostgreSQL:
 // 1. Two concurrent acceptances of the same proposal return the same SCHEDULED session and create one notification.
 // 2. Two concurrent acceptances of overlapping proposals serialize via LockUsers so only one succeeds and the other gets ErrSessionConflict.
 func TestAcceptSessionProposalConcurrentlyAgainstPostgres(t *testing.T) {
@@ -221,8 +222,8 @@ func TestAcceptSessionProposalConcurrentlyAgainstPostgres(t *testing.T) {
 		if errs[i] != nil {
 			t.Fatalf("acceptance %d: err = %v", i, errs[i])
 		}
-		expectEqual(t, "session status after acceptance", results[i].Session.Status, data.SessionScheduled)
-		expectEqual(t, "accepted proposal", results[i].Proposal.ID, prop1.Proposal.ID)
+		expect.Equal(t, "session status after acceptance", results[i].Session.Status, data.SessionScheduled)
+		expect.Equal(t, "accepted proposal", results[i].Proposal.ID, prop1.Proposal.ID)
 	}
 
 	// Part 2: two overlapping proposals accepted concurrently -> only one can become SCHEDULED.
@@ -270,8 +271,8 @@ func TestAcceptSessionProposalConcurrentlyAgainstPostgres(t *testing.T) {
 			t.Fatalf("overlapping acceptance: err = %v", err)
 		}
 	}
-	expectEqual(t, "accepted overlapping proposals", accepted, 1)
-	expectEqual(t, "rejected overlapping proposals", conflicts, 1)
+	expect.Equal(t, "accepted overlapping proposals", accepted, 1)
+	expect.Equal(t, "rejected overlapping proposals", conflicts, 1)
 }
 
 // Both participants confirming a session or the whole exchange at the same time complete it
@@ -302,13 +303,13 @@ func TestCompletionConcurrentlyAgainstPostgres(t *testing.T) {
 				t.Fatalf("confirmation of %s: err = %v", lesson.ID, err)
 			}
 		}
-		expectEqual(t, "lesson status",
+		expect.Equal(t, "lesson status",
 			env.text(t, `SELECT status::text FROM sessions WHERE id = $1`, lesson.ID), data.SessionCompleted)
-		expectEqual(t, "completed lessons without completedAt",
+		expect.Equal(t, "completed lessons without completedAt",
 			env.count(t, `SELECT count(*) FROM sessions WHERE id = $1 AND completed_at IS NULL`, lesson.ID), 0)
-		expectEqual(t, "completion confirmations",
+		expect.Equal(t, "completion confirmations",
 			env.count(t, `SELECT count(*) FROM session_confirmations WHERE session_id = $1 AND kind = 'COMPLETION'`, lesson.ID), 2)
-		expectEqual(t, "notices that the lesson counts",
+		expect.Equal(t, "notices that the lesson counts",
 			env.count(t, `SELECT count(*) FROM notifications WHERE event_key = $1`, "session-completed:"+lesson.ID), 1)
 	}
 
@@ -328,10 +329,10 @@ func TestCompletionConcurrentlyAgainstPostgres(t *testing.T) {
 			completedBy++
 		}
 	}
-	expectEqual(t, "calls that completed the exchange", completedBy, 1)
-	expectEqual(t, "exchange confirmations",
+	expect.Equal(t, "calls that completed the exchange", completedBy, 1)
+	expect.Equal(t, "exchange confirmations",
 		env.count(t, `SELECT count(*) FROM exchange_confirmations WHERE exchange_id = $1`, ex.ID), 2)
-	expectEqual(t, "COMPLETED history items",
+	expect.Equal(t, "COMPLETED history items",
 		env.count(t, `SELECT count(*) FROM exchange_status_history WHERE exchange_id = $1 AND status = 'COMPLETED'`, ex.ID), 1)
 }
 
@@ -366,20 +367,20 @@ func TestCancelExchangeAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectEqual(t, "exchange status", cancelled.Status, data.ExchangeCancelled)
-	expectEqual(t, "cancelledAt is set", cancelled.CancelledAt != nil, true)
-	expectEqual(t, "cancellation reason", cancelled.CancellationReason, reason)
-	expectEqual(t, "completed sessions", cancelled.Progress.CompletedSessions, 1)
-	expectEqual(t, "cancelled sessions", cancelled.Progress.CancelledSessions, 3)
+	expect.Equal(t, "exchange status", cancelled.Status, data.ExchangeCancelled)
+	expect.Equal(t, "cancelledAt is set", cancelled.CancelledAt != nil, true)
+	expect.Equal(t, "cancellation reason", cancelled.CancellationReason, reason)
+	expect.Equal(t, "completed sessions", cancelled.Progress.CompletedSessions, 1)
+	expect.Equal(t, "cancelled sessions", cancelled.Progress.CancelledSessions, 3)
 
 	for _, id := range []string{scheduled.ID, proposed.Session.ID} {
-		expectEqual(t, "lesson status", env.text(t, `SELECT status::text FROM sessions WHERE id = $1`, id), data.SessionCancelled)
-		expectEqual(t, "lesson reason", env.text(t, `SELECT cancellation_reason FROM sessions WHERE id = $1`, id), reason)
+		expect.Equal(t, "lesson status", env.text(t, `SELECT status::text FROM sessions WHERE id = $1`, id), data.SessionCancelled)
+		expect.Equal(t, "lesson reason", env.text(t, `SELECT cancellation_reason FROM sessions WHERE id = $1`, id), reason)
 	}
-	expectEqual(t, "pending proposals",
+	expect.Equal(t, "pending proposals",
 		env.count(t, `SELECT count(*) FROM session_schedule_proposals WHERE session_id = $1 AND status = 'PENDING'`, proposed.Session.ID), 0)
-	expectEqual(t, "cancelled by",
+	expect.Equal(t, "cancelled by",
 		env.text(t, `SELECT changed_by_user_id::text FROM exchange_status_history WHERE exchange_id = $1 AND status = 'CANCELLED'`, ex.ID), userB)
-	expectEqual(t, "reason in history",
+	expect.Equal(t, "reason in history",
 		env.text(t, `SELECT reason FROM exchange_status_history WHERE exchange_id = $1 AND status = 'CANCELLED'`, ex.ID), reason)
 }

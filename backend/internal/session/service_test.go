@@ -3,7 +3,7 @@ package session
 import (
 	"context"
 	"errors"
-	"slices"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +12,7 @@ import (
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
 	"skillswap/backend/internal/exchange"
+	"skillswap/backend/internal/expect"
 	"skillswap/backend/internal/profile"
 )
 
@@ -121,31 +122,34 @@ func TestExchangeSessionsAndInitialDraftPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Exchange.ID != ex.ID || res.Exchange.Progress.TotalSessions != 4 ||
-		res.Exchange.Progress.DraftSessions != 4 || res.Exchange.Progress.CompletedSessions != 0 ||
-		len(res.Items) != 4 {
-		t.Fatalf("exchange sessions = %+v", res)
-	}
+	progress := res.Exchange.Progress
+	expect.Equal(t, "exchange", res.Exchange.ID, ex.ID)
+	expect.Equal(t, "total sessions", progress.TotalSessions, 4)
+	expect.Equal(t, "draft sessions", progress.DraftSessions, 4)
+	expect.Equal(t, "completed sessions", progress.CompletedSessions, 0)
+	expect.Equal(t, "sessions", len(res.Items), 4)
+
+	var teachers []string
 	for i, s := range res.Items {
-		if s.PlanOrder != i+1 || s.Status != data.SessionDraft || s.StartsAt != nil || s.EndsAt != nil ||
-			s.PlannedDurationMinutes != 60 || s.Format != data.FormatOnline {
-			t.Fatalf("draft session %d = %+v", i, s)
-		}
+		name := fmt.Sprintf("draft session %d", i)
+		expect.Equal(t, name+": plan order", s.PlanOrder, i+1)
+		expect.Equal(t, name+": status", s.Status, data.SessionDraft)
+		expect.Equal(t, name+": startsAt is set", s.StartsAt != nil, false)
+		expect.Equal(t, name+": endsAt is set", s.EndsAt != nil, false)
+		expect.Equal(t, name+": planned duration", s.PlannedDurationMinutes, 60)
+		expect.Equal(t, name+": format", s.Format, data.FormatOnline)
+		teachers = append(teachers, s.Teacher.UserID)
 	}
-	if res.Items[0].Teacher.UserID != f.olha || res.Items[1].Teacher.UserID != f.olha ||
-		res.Items[2].Teacher.UserID != f.andrii || res.Items[3].Teacher.UserID != f.andrii {
-		t.Fatalf("unexpected draft teachers: %+v", res.Items)
-	}
+	expect.Slice(t, "draft teachers", teachers, []string{f.olha, f.olha, f.andrii, f.andrii})
 
 	// Stranger and unknown IDs are rejected with ErrExchangeNotFound.
-	for _, test := range []struct{ user, id string }{
-		{f.marko, ex.ID},
-		{f.olha, "80000000-0000-0000-0000-000000000999"},
-		{f.olha, "not-a-uuid"},
+	for _, test := range []struct{ name, user, id string }{
+		{"not a participant", f.marko, ex.ID},
+		{"unknown exchange", f.olha, "80000000-0000-0000-0000-000000000999"},
+		{"not a UUID", f.olha, "not-a-uuid"},
 	} {
-		if _, err := f.service.ExchangeSessions(ctx, test.user, test.id); !errors.Is(err, ErrExchangeNotFound) {
-			t.Fatalf("ExchangeSessions(%s, %s): err = %v", test.user, test.id, err)
-		}
+		_, err := f.service.ExchangeSessions(ctx, test.user, test.id)
+		expect.Error(t, test.name, err, ErrExchangeNotFound)
 	}
 }
 
@@ -170,46 +174,42 @@ func TestProposeAcceptDeclineAndRescheduleFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if proposed.Session.PlanOrder != 1 || proposed.Session.Status != data.SessionProposed ||
-		proposed.Session.Title != "Акорди для початківців" ||
-		proposed.Session.Description != "Розберемо Am, Dm, E." ||
-		proposed.Session.MeetingURL != "https://meet.example.test/guitar-lesson-1" ||
-		!slices.Equal(proposed.Session.ConfirmedUserIDs, []string{f.olha}) {
-		t.Fatalf("proposed session = %+v", proposed.Session)
-	}
-	if proposed.Proposal.Status != data.ProposalPending || proposed.Proposal.ProposedByID != f.olha {
-		t.Fatalf("proposal = %+v", proposed.Proposal)
-	}
+	expect.Equal(t, "plan order", proposed.Session.PlanOrder, 1)
+	expect.Equal(t, "status after proposal", proposed.Session.Status, data.SessionProposed)
+	expect.Equal(t, "title", proposed.Session.Title, "Акорди для початківців")
+	expect.Equal(t, "description", proposed.Session.Description, "Розберемо Am, Dm, E.")
+	expect.Equal(t, "meeting URL", proposed.Session.MeetingURL, "https://meet.example.test/guitar-lesson-1")
+	expect.Slice(t, "confirmations after proposal", proposed.Session.ConfirmedUserIDs, []string{f.olha})
+	expect.Equal(t, "proposal status", proposed.Proposal.Status, data.ProposalPending)
+	expect.Equal(t, "proposed by", proposed.Proposal.ProposedByID, f.olha)
 
 	// Andrii receives a SESSION_UPDATED notification.
 	notifs, err := f.comm.Notifications(ctx, f.andrii, true, 1)
-	if err != nil || notifs.UnreadCount < 1 || notifs.Items[0].EventType != data.EventSessionUpdated ||
-		notifs.Items[0].SessionID != proposed.Session.ID {
-		t.Fatalf("Andrii notifications = %+v, err %v", notifs, err)
-	}
+	expect.NoError(t, "load Andrii's notifications", err)
+	expect.Equal(t, "Andrii has unread notifications", notifs.UnreadCount >= 1, true)
+	expect.Equal(t, "Andrii's latest notification type", notifs.Items[0].EventType, data.EventSessionUpdated)
+	expect.Equal(t, "Andrii's latest notification session", notifs.Items[0].SessionID, proposed.Session.ID)
 
 	// Olha (the proposer) cannot accept or decline her own proposal.
-	if _, err := f.service.AcceptSessionProposal(ctx, f.olha, proposed.Session.ID); !errors.Is(err, ErrActionNotAllowed) {
-		t.Fatalf("proposer accept: err = %v", err)
-	}
-	if _, err := f.service.DeclineSessionProposal(ctx, f.olha, proposed.Session.ID); !errors.Is(err, ErrActionNotAllowed) {
-		t.Fatalf("proposer decline: err = %v", err)
-	}
+	_, err = f.service.AcceptSessionProposal(ctx, f.olha, proposed.Session.ID)
+	expect.Error(t, "proposer accepts", err, ErrActionNotAllowed)
+	_, err = f.service.DeclineSessionProposal(ctx, f.olha, proposed.Session.ID)
+	expect.Error(t, "proposer declines", err, ErrActionNotAllowed)
 
 	// Andrii declines the first proposal -> session returns to DRAFT and confirmations are cleared.
 	declined, err := f.service.DeclineSessionProposal(ctx, f.andrii, proposed.Session.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if declined.Session.Status != data.SessionDraft || declined.Session.StartsAt != nil ||
-		len(declined.Session.ConfirmedUserIDs) != 0 || declined.Proposal.Status != data.ProposalDeclined {
-		t.Fatalf("declined = %+v", declined)
-	}
+	expect.Equal(t, "status after decline", declined.Session.Status, data.SessionDraft)
+	expect.Equal(t, "startsAt is set after decline", declined.Session.StartsAt != nil, false)
+	expect.Equal(t, "confirmations after decline", len(declined.Session.ConfirmedUserIDs), 0)
+	expect.Equal(t, "proposal status after decline", declined.Proposal.Status, data.ProposalDeclined)
+
 	// Repeating DeclineSessionProposal is idempotent.
-	if again, err := f.service.DeclineSessionProposal(ctx, f.andrii, proposed.Session.ID); err != nil ||
-		again.Proposal.ID != declined.Proposal.ID {
-		t.Fatalf("declined again = %+v, err %v", again, err)
-	}
+	declinedAgain, err := f.service.DeclineSessionProposal(ctx, f.andrii, proposed.Session.ID)
+	expect.NoError(t, "decline again", err)
+	expect.Equal(t, "proposal after a repeated decline", declinedAgain.Proposal.ID, declined.Proposal.ID)
 
 	// Andrii now proposes an offline session on the same slot.
 	start2 := f.baseTime.Add(48 * time.Hour).Format(time.RFC3339)
@@ -224,27 +224,27 @@ func TestProposeAcceptDeclineAndRescheduleFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if proposed2.Session.Status != data.SessionProposed || proposed2.Session.Format != data.FormatOffline ||
-		proposed2.Session.MeetingPlace != "Бібліотека КПІ, 1 поверх" || proposed2.Session.MeetingURL != "" {
-		t.Fatalf("proposed2 = %+v", proposed2.Session)
-	}
+	expect.Equal(t, "status of Andrii's proposal", proposed2.Session.Status, data.SessionProposed)
+	expect.Equal(t, "format of Andrii's proposal", proposed2.Session.Format, data.FormatOffline)
+	expect.Equal(t, "meeting place of Andrii's proposal", proposed2.Session.MeetingPlace, "Бібліотека КПІ, 1 поверх")
+	expect.Equal(t, "meeting URL of Andrii's proposal", proposed2.Session.MeetingURL, "")
 
 	// Olha accepts Andrii's proposal -> session becomes SCHEDULED with both confirmations.
 	accepted, err := f.service.AcceptSessionProposal(ctx, f.olha, proposed.Session.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if accepted.Session.Status != data.SessionScheduled || accepted.Proposal.Status != data.ProposalAccepted ||
-		len(accepted.Session.ConfirmedUserIDs) != 2 {
-		t.Fatalf("accepted = %+v", accepted)
-	}
-	// Repeating AcceptSessionProposal is idempotent.
-	if again, err := f.service.AcceptSessionProposal(ctx, f.olha, proposed.Session.ID); err != nil ||
-		again.Proposal.ID != accepted.Proposal.ID || len(again.Session.ConfirmedUserIDs) != 2 {
-		t.Fatalf("accepted again = %+v, err %v", again, err)
-	}
+	expect.Equal(t, "status after accept", accepted.Session.Status, data.SessionScheduled)
+	expect.Equal(t, "proposal status after accept", accepted.Proposal.Status, data.ProposalAccepted)
+	expect.Equal(t, "confirmations after accept", len(accepted.Session.ConfirmedUserIDs), 2)
 
-	// Rescheduling a SCHEDULED session clears the previous partner confirmation and requires new agreement (FR-09, LR2 5.3).
+	// Repeating AcceptSessionProposal is idempotent.
+	acceptedAgain, err := f.service.AcceptSessionProposal(ctx, f.olha, proposed.Session.ID)
+	expect.NoError(t, "accept again", err)
+	expect.Equal(t, "proposal after a repeated accept", acceptedAgain.Proposal.ID, accepted.Proposal.ID)
+	expect.Equal(t, "confirmations after a repeated accept", len(acceptedAgain.Session.ConfirmedUserIDs), 2)
+
+	// Rescheduling a SCHEDULED session clears the previous partner confirmation and requires new agreement.
 	start3 := f.baseTime.Add(72 * time.Hour).Format(time.RFC3339)
 	end3 := f.baseTime.Add(73 * time.Hour).Format(time.RFC3339)
 	rescheduled, err := f.service.ProposeSession(ctx, f.olha, proposed.Session.ID, ProposalInput{
@@ -256,22 +256,18 @@ func TestProposeAcceptDeclineAndRescheduleFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rescheduled.Session.Status != data.SessionProposed ||
-		!slices.Equal(rescheduled.Session.ConfirmedUserIDs, []string{f.olha}) {
-		t.Fatalf("rescheduled = %+v", rescheduled.Session)
-	}
+	expect.Equal(t, "status after rescheduling", rescheduled.Session.Status, data.SessionProposed)
+	expect.Slice(t, "confirmations after rescheduling", rescheduled.Session.ConfirmedUserIDs, []string{f.olha})
 
 	// SessionDetails shows all 3 proposals in chronological order.
 	details, err := f.service.SessionDetails(ctx, f.andrii, proposed.Session.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(details.Proposals) != 3 ||
-		details.Proposals[0].Status != data.ProposalDeclined ||
-		details.Proposals[1].Status != data.ProposalAccepted ||
-		details.Proposals[2].Status != data.ProposalPending {
-		t.Fatalf("proposals history = %+v", details.Proposals)
-	}
+	expect.Equal(t, "proposals in history", len(details.Proposals), 3)
+	expect.Equal(t, "first proposal status", details.Proposals[0].Status, data.ProposalDeclined)
+	expect.Equal(t, "second proposal status", details.Proposals[1].Status, data.ProposalAccepted)
+	expect.Equal(t, "third proposal status", details.Proposals[2].Status, data.ProposalPending)
 }
 
 func TestScheduleConflictsAndHalfOpenIntervals(t *testing.T) {
@@ -309,9 +305,7 @@ func TestScheduleConflictsAndHalfOpenIntervals(t *testing.T) {
 		Format:     data.FormatOnline,
 		MeetingURL: "https://meet.example.test/2",
 	})
-	if !errors.Is(err, ErrSessionConflict) {
-		t.Fatalf("overlapping proposal in same exchange: err = %v, want ErrSessionConflict", err)
-	}
+	expect.Error(t, "overlapping proposal in the same exchange", err, ErrSessionConflict)
 
 	// Overlapping time [14:30, 15:30) in ANOTHER exchange (Olha <-> Marko) is also rejected because Olha is busy.
 	_, err = f.service.ProposeExchangeSession(ctx, f.marko, ex2.ID, ProposalInput{
@@ -322,11 +316,9 @@ func TestScheduleConflictsAndHalfOpenIntervals(t *testing.T) {
 		Format:     data.FormatOnline,
 		MeetingURL: "https://meet.example.test/marko",
 	})
-	if !errors.Is(err, ErrSessionConflict) {
-		t.Fatalf("overlapping proposal across exchanges: err = %v, want ErrSessionConflict", err)
-	}
+	expect.Error(t, "overlapping proposal across exchanges", err, ErrSessionConflict)
 
-	// Half-open interval [15:00, 16:00) starting at the exact end of [14:00, 15:00) is allowed (LR2 5.3).
+	// Half-open interval [15:00, 16:00) starting at the exact end of [14:00, 15:00) is allowed.
 	prop2, err := f.service.ProposeExchangeSession(ctx, f.andrii, ex1.ID, ProposalInput{
 		Title:      "Photoshop одразу після гітари",
 		TeacherID:  f.andrii,
@@ -353,9 +345,8 @@ func TestCancelSessionProgressAndReplacementSlot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.CancelSession(ctx, f.olha, sessions.Items[0].ID, "Ще не заплановано"); !errors.Is(err, ErrSessionNotCancellable) {
-		t.Fatalf("cancel DRAFT: err = %v", err)
-	}
+	_, err = f.service.CancelSession(ctx, f.olha, sessions.Items[0].ID, "Ще не заплановано")
+	expect.Error(t, "cancel a draft session", err, ErrSessionNotCancellable)
 
 	// Propose and accept Session 1.
 	tStart := f.baseTime.Add(24 * time.Hour).Format(time.RFC3339)
@@ -379,27 +370,26 @@ func TestCancelSessionProgressAndReplacementSlot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cancelled.Status != data.SessionCancelled || cancelled.CancelledAt == nil ||
-		cancelled.CancellationReason != "Перенесли через іспит" {
-		t.Fatalf("cancelled = %+v", cancelled)
-	}
+	expect.Equal(t, "status after cancel", cancelled.Status, data.SessionCancelled)
+	expect.Equal(t, "cancelledAt is set", cancelled.CancelledAt != nil, true)
+	expect.Equal(t, "cancellation reason", cancelled.CancellationReason, "Перенесли через іспит")
+
 	// Repeating CancelSession is idempotent and does not create another replacement slot.
-	if again, err := f.service.CancelSession(ctx, f.andrii, prop.Session.ID, ""); err != nil || again.ID != cancelled.ID {
-		t.Fatalf("cancel again = %+v, err %v", again, err)
-	}
+	again, err := f.service.CancelSession(ctx, f.andrii, prop.Session.ID, "")
+	expect.NoError(t, "cancel again", err)
+	expect.Equal(t, "session after a repeated cancel", again.ID, cancelled.ID)
 
 	// Cancelled session does NOT increase progress, and a replacement DRAFT slot exists so Olha can propose again.
 	afterCancel, err := f.service.ExchangeSessions(ctx, f.olha, ex.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if afterCancel.Exchange.Progress.CompletedSessions != 0 ||
-		afterCancel.Exchange.Progress.CancelledSessions != 1 ||
-		afterCancel.Exchange.Progress.DraftSessions != 2 ||
-		afterCancel.Exchange.Progress.Percent != 0 ||
-		len(afterCancel.Items) != 3 {
-		t.Fatalf("after cancel = %+v", afterCancel)
-	}
+	progress := afterCancel.Exchange.Progress
+	expect.Equal(t, "completed sessions after cancel", progress.CompletedSessions, 0)
+	expect.Equal(t, "cancelled sessions after cancel", progress.CancelledSessions, 1)
+	expect.Equal(t, "draft sessions after cancel", progress.DraftSessions, 2)
+	expect.Equal(t, "percent after cancel", progress.Percent, 0)
+	expect.Equal(t, "sessions after cancel", len(afterCancel.Items), 3)
 
 	// Olha can still propose her 1 planned session using the replacement DRAFT slot.
 	replacement, err := f.service.ProposeExchangeSession(ctx, f.olha, ex.ID, ProposalInput{
@@ -422,9 +412,7 @@ func TestCancelSessionProgressAndReplacementSlot(t *testing.T) {
 		Format:     data.FormatOnline,
 		MeetingURL: "https://meet.example.test/extra",
 	})
-	if !errors.Is(err, ErrPlanLimitReached) {
-		t.Fatalf("exceeding plan limit: err = %v, want ErrPlanLimitReached", err)
-	}
+	expect.Error(t, "exceeding plan limit", err, ErrPlanLimitReached)
 
 	// Mark the replacement session COMPLETED and verify progress updates while cancelled session does not count.
 	f.store.SetSessionStatus(replacement.Session.ID, data.SessionCompleted)
@@ -432,12 +420,11 @@ func TestCancelSessionProgressAndReplacementSlot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if withCompleted.Exchange.Progress.CompletedSessions != 1 ||
-		withCompleted.Exchange.Progress.RequesterCompletedSessions != 1 ||
-		withCompleted.Exchange.Progress.CancelledSessions != 1 ||
-		withCompleted.Exchange.Progress.Percent != 50 {
-		t.Fatalf("progress with 1 completed and 1 cancelled = %+v", withCompleted.Exchange.Progress)
-	}
+	progress = withCompleted.Exchange.Progress
+	expect.Equal(t, "completed sessions", progress.CompletedSessions, 1)
+	expect.Equal(t, "sessions Olha has taught", progress.RequesterCompletedSessions, 1)
+	expect.Equal(t, "cancelled sessions", progress.CancelledSessions, 1)
+	expect.Equal(t, "percent", progress.Percent, 50)
 }
 
 func TestScheduleChronologicalOrderAndPrivacy(t *testing.T) {
@@ -480,15 +467,15 @@ func TestScheduleChronologicalOrderAndPrivacy(t *testing.T) {
 	}
 
 	// Both Olha and Andrii see the two sessions in chronological order (earlier first).
-	for _, user := range []string{f.olha, f.andrii} {
-		sched, err := f.service.Schedule(ctx, user, data.ScheduleFilter{UpcomingOnly: true}, 1)
+	for _, user := range []struct{ name, id string }{{"Olha", f.olha}, {"Andrii", f.andrii}} {
+		sched, err := f.service.Schedule(ctx, user.id, data.ScheduleFilter{UpcomingOnly: true}, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if sched.Total != 2 || len(sched.Items) != 2 ||
-			sched.Items[0].ID != pEarlier.Session.ID || sched.Items[1].ID != pLater.Session.ID {
-			t.Fatalf("Schedule(%s) = %+v", user, sched)
-		}
+		expect.Equal(t, user.name+": total sessions", sched.Total, 2)
+		expect.Equal(t, user.name+": listed sessions", len(sched.Items), 2)
+		expect.Equal(t, user.name+": first session", sched.Items[0].ID, pEarlier.Session.ID)
+		expect.Equal(t, user.name+": second session", sched.Items[1].ID, pLater.Session.ID)
 	}
 
 	// Exchange NextSession points to the earliest upcoming scheduled session.
@@ -497,14 +484,14 @@ func TestScheduleChronologicalOrderAndPrivacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := details.Exchange.NextSession
-	expectEqual(t, "next session is set", next != nil, true)
-	expectEqual(t, "next session", next.ID, pEarlier.Session.ID)
+	expect.Equal(t, "next session is set", next != nil, true)
+	expect.Equal(t, "next session", next.ID, pEarlier.Session.ID)
 
-	// Marko (a third student) has an empty schedule and cannot see Olha & Andrii's sessions (FR-10).
+	// Marko (a third student) has an empty schedule and cannot see Olha & Andrii's sessions.
 	markoSched, err := f.service.Schedule(ctx, f.marko, data.ScheduleFilter{}, 1)
-	if err != nil || markoSched.Total != 0 || len(markoSched.Items) != 0 {
-		t.Fatalf("Marko schedule = %+v, err %v", markoSched, err)
-	}
+	expect.NoError(t, "load Marko's schedule", err)
+	expect.Equal(t, "Marko's total sessions", markoSched.Total, 0)
+	expect.Equal(t, "Marko's listed sessions", len(markoSched.Items), 0)
 }
 
 func TestValidationAndStateErrors(t *testing.T) {
@@ -568,13 +555,11 @@ func TestValidationAndStateErrors(t *testing.T) {
 
 	// Block between participants prevents proposing or accepting sessions.
 	f.store.SetBlocked(f.andrii, f.olha)
-	if _, err := f.service.ProposeExchangeSession(ctx, f.olha, ex.ID, valid); !errors.Is(err, ErrExchangeBlocked) {
-		t.Fatalf("blocked ProposeExchangeSession: err = %v", err)
-	}
+	_, err := f.service.ProposeExchangeSession(ctx, f.olha, ex.ID, valid)
+	expect.Error(t, "propose after a block", err, ErrExchangeBlocked)
 
 	// Completed or cancelled exchange rejects session proposals.
 	f.store.SetExchangeStatus(ex.ID, data.ExchangeCompleted)
-	if _, err := f.service.ProposeExchangeSession(ctx, f.olha, ex.ID, valid); !errors.Is(err, ErrExchangeNotActive) {
-		t.Fatalf("completed exchange: err = %v", err)
-	}
+	_, err = f.service.ProposeExchangeSession(ctx, f.olha, ex.ID, valid)
+	expect.Error(t, "propose in a completed exchange", err, ErrExchangeNotActive)
 }

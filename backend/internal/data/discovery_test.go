@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"skillswap/backend/internal/expect"
 )
 
 // Demo students
@@ -71,7 +73,7 @@ func skillIDs(skills []UserSkill) []string {
 	return ids
 }
 
-// Checks LR1 3.2 on the demo students: who is a mutual match, in which order,
+// Checks mutual matches on the demo students: who is a match, in which order,
 // with which skills and formats, and how pages work.
 func TestMutualMatchesOnDemoData(t *testing.T) {
 	store := openTestStore(t)
@@ -99,9 +101,8 @@ func TestMutualMatchesOnDemoData(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := demoOnly(matchIDs(matches)); !slices.Equal(got, test.want) || total != len(matches) {
-				t.Fatalf("matches = %v (total %d), want %v", got, total, test.want)
-			}
+			expect.Slice(t, "matches", demoOnly(matchIDs(matches)), test.want)
+			expect.Equal(t, "total", total, len(matches))
 		})
 	}
 
@@ -119,31 +120,28 @@ func TestMutualMatchesOnDemoData(t *testing.T) {
 		return matches[i]
 	}
 	andrii, taras := byID(demoAndrii), byID(demoTaras)
-	if !slices.Equal(skillIDs(andrii.CanTeach), []string{photoshop}) || andrii.CanTeach[0].Level != "ADVANCED" {
-		t.Fatalf("Andrii can teach %+v", andrii.CanTeach)
-	}
-	if !slices.Equal(skillIDs(andrii.WantsToLearn), []string{guitarSkill}) || andrii.WantsToLearn[0].Level != "BEGINNER" {
-		t.Fatalf("Andrii wants to learn %+v", andrii.WantsToLearn)
-	}
-	if !slices.Equal(andrii.CommonFormats, []string{"ONLINE", "OFFLINE"}) || !slices.Equal(taras.CommonFormats, []string{"OFFLINE"}) {
-		t.Fatalf("common formats: Andrii %v, Taras %v", andrii.CommonFormats, taras.CommonFormats)
-	}
-	if andrii.FirstName != "Андрій" || andrii.UniversityName == "" || andrii.City != "Київ" {
-		t.Fatalf("Andrii = %+v", andrii)
-	}
+	expect.Slice(t, "skills Andrii can teach", skillIDs(andrii.CanTeach), []string{photoshop})
+	expect.Equal(t, "Andrii's Photoshop level", andrii.CanTeach[0].Level, "ADVANCED")
+	expect.Slice(t, "skills Andrii wants to learn", skillIDs(andrii.WantsToLearn), []string{guitarSkill})
+	expect.Equal(t, "Andrii's guitar level", andrii.WantsToLearn[0].Level, "BEGINNER")
+	expect.Slice(t, "common formats with Andrii", andrii.CommonFormats, []string{"ONLINE", "OFFLINE"})
+	expect.Slice(t, "common formats with Taras", taras.CommonFormats, []string{"OFFLINE"})
+	expect.Equal(t, "Andrii's first name", andrii.FirstName, "Андрій")
+	expect.Equal(t, "Andrii's university is set", andrii.UniversityName != "", true)
+	expect.Equal(t, "Andrii's city", andrii.City, "Київ")
 
-	// A page past the end is empty but still reports the total.
+	// The second page has the next match; a page past the end is empty but still reports the total.
 	page, total, err := store.MutualMatches(ctx, demoOlha, 1, 1)
-	if err != nil || !slices.Equal(matchIDs(page), matchIDs(matches[1:2])) || total != len(matches) {
-		t.Fatalf("second page = %v, total %d, err %v", matchIDs(page), total, err)
-	}
+	expect.NoError(t, "load the second page", err)
+	expect.Slice(t, "second page", matchIDs(page), matchIDs(matches[1:2]))
+	expect.Equal(t, "total on the second page", total, len(matches))
 	page, total, err = store.MutualMatches(ctx, demoOlha, 20, 400)
-	if err != nil || len(page) != 0 || total != len(matches) {
-		t.Fatalf("page past the end = %v, total %d, err %v", matchIDs(page), total, err)
-	}
+	expect.NoError(t, "load a page past the end", err)
+	expect.Equal(t, "matches past the end", len(page), 0)
+	expect.Equal(t, "total past the end", total, len(matches))
 }
 
-// Checks that the list follows the current data (FR-05): a match appears once both
+// Checks that the list follows the current data: a match appears once both
 // sides fit, and disappears after a skill is removed or the profile is hidden.
 func TestMutualMatchesFollowCurrentData(t *testing.T) {
 	store := openTestStore(t)
@@ -172,38 +170,34 @@ func TestMutualMatchesFollowCurrentData(t *testing.T) {
 			}
 			return id
 		}
-		expect := func(step, viewer string, want ...string) {
+		expectMatches := func(step, viewer string, want ...string) {
 			t.Helper()
 			matches, _, err := store.MutualMatches(ctx, viewer, 20, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := matchIDs(matches); !slices.Equal(got, append([]string{}, want...)) {
-				t.Fatalf("%s: matches = %v, want %v", step, got, want)
-			}
+			expect.NoError(t, step+": load matches", err)
+			expect.Slice(t, step+": matches", matchIDs(matches), want)
 		}
 
 		a := newStudent("a", typography, branding)
 		b := newStudent("b", branding, typography)
-		expect("both sides fit", a, b)
-		expect("both sides fit, other side", b, a)
+		expectMatches("both sides fit", a, b)
+		expectMatches("both sides fit, other side", b, a)
 
 		// One-sided: B no longer teaches what A wants.
 		if err := store.RemoveUserSkill(ctx, TeachingList, b, branding); err != nil {
 			t.Fatal(err)
 		}
-		expect("after removing a skill", a)
+		expectMatches("after removing a skill", a)
 		if err := store.AddUserSkill(ctx, TeachingList, b, branding, "INTERMEDIATE"); err != nil {
 			t.Fatal(err)
 		}
-		expect("after adding it back", a, b)
+		expectMatches("after adding it back", a, b)
 
 		// No shared format: B switches to offline only.
 		if err := store.UpdateProfile(ctx, b, ProfileUpdate{FirstName: "b", LastName: "Test", City: "Київ",
 			Formats: []string{FormatOffline}}); err != nil {
 			t.Fatal(err)
 		}
-		expect("without a shared format", a)
+		expectMatches("without a shared format", a)
 		if err := store.UpdateProfile(ctx, b, ProfileUpdate{FirstName: "b", LastName: "Test", City: "Київ",
 			Formats: []string{FormatOnline}}); err != nil {
 			t.Fatal(err)
@@ -214,12 +208,10 @@ func TestMutualMatchesFollowCurrentData(t *testing.T) {
 			VALUES ($1, false)`, b); err != nil {
 			t.Fatal(err)
 		}
-		expect("after hiding the profile", a)
+		expectMatches("after hiding the profile", a)
 		return rollback
 	})
-	if !errors.Is(err, rollback) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "roll back test data", err, rollback)
 }
 
 func cardIDs(cards []StudentCard) []string {
@@ -263,9 +255,8 @@ func TestSearchStudentsOnDemoData(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := demoOnly(cardIDs(cards)); !slices.Equal(got, test.want) || total != len(cards) {
-				t.Fatalf("students = %v (total %d), want %v", got, total, test.want)
-			}
+			expect.Slice(t, "students", demoOnly(cardIDs(cards)), test.want)
+			expect.Equal(t, "total", total, len(cards))
 		})
 	}
 
@@ -282,24 +273,22 @@ func TestSearchStudentsOnDemoData(t *testing.T) {
 		return cards[i]
 	}
 	andrii, marko := byID(demoAndrii), byID(demoMarko)
-	if !andrii.Mutual || marko.Mutual {
-		t.Fatalf("mutual: Andrii %v, Marko %v", andrii.Mutual, marko.Mutual)
-	}
-	if got := skillIDs(andrii.TeachingSkills); len(got) != 2 || andrii.TeachingSkills[0].Name != "Illustrator" {
-		t.Fatalf("Andrii teaches %+v", andrii.TeachingSkills)
-	}
-	if !slices.Equal(andrii.Formats, []string{"ONLINE", "OFFLINE"}) || andrii.City != "Київ" || andrii.UniversityName == "" {
-		t.Fatalf("Andrii = %+v", andrii)
-	}
+	expect.Equal(t, "Andrii is a mutual match", andrii.Mutual, true)
+	expect.Equal(t, "Marko is a mutual match", marko.Mutual, false)
+	expect.Equal(t, "skills Andrii teaches", len(andrii.TeachingSkills), 2)
+	expect.Equal(t, "first skill Andrii teaches", andrii.TeachingSkills[0].Name, "Illustrator")
+	expect.Slice(t, "Andrii's formats", andrii.Formats, []string{"ONLINE", "OFFLINE"})
+	expect.Equal(t, "Andrii's city", andrii.City, "Київ")
+	expect.Equal(t, "Andrii's university is set", andrii.UniversityName != "", true)
 
 	page, total, err := store.SearchStudents(ctx, demoOlha, StudentFilter{Query: "Photoshop"}, 2, 2)
-	if err != nil || !slices.Equal(cardIDs(page), cardIDs(cards[2:4])) || total != len(cards) {
-		t.Fatalf("second page = %v, total %d, err %v", cardIDs(page), total, err)
-	}
+	expect.NoError(t, "load the second page", err)
+	expect.Slice(t, "second page", cardIDs(page), cardIDs(cards[2:4]))
+	expect.Equal(t, "total on the second page", total, len(cards))
 	page, total, err = store.SearchStudents(ctx, demoOlha, StudentFilter{Query: "Photoshop"}, 20, 400)
-	if err != nil || len(page) != 0 || total != len(cards) {
-		t.Fatalf("page past the end = %v, total %d, err %v", cardIDs(page), total, err)
-	}
+	expect.NoError(t, "load a page past the end", err)
+	expect.Equal(t, "students past the end", len(page), 0)
+	expect.Equal(t, "total past the end", total, len(cards))
 }
 
 // Skipped unless TEST_DATABASE_URL points to a migrated, demo-seeded database.
@@ -311,19 +300,21 @@ func TestStudentProfileOnDemoData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if andrii.FirstName != "Андрій" || andrii.Bio == "" || andrii.FacultyName == "" || andrii.Course != 3 ||
-		len(andrii.TeachingSkills) != 2 || len(andrii.LearningSkills) != 1 || !slices.Equal(andrii.Formats, []string{"ONLINE", "OFFLINE"}) {
-		t.Fatalf("Andrii = %+v", andrii.Profile)
-	}
-	if andrii.Match == nil || !slices.Equal(skillIDs(andrii.Match.CanTeach), []string{photoshop}) ||
-		!slices.Equal(skillIDs(andrii.Match.WantsToLearn), []string{guitarSkill}) {
-		t.Fatalf("Andrii's match = %+v", andrii.Match)
-	}
+	expect.Equal(t, "Andrii's first name", andrii.FirstName, "Андрій")
+	expect.Equal(t, "Andrii's bio is set", andrii.Bio != "", true)
+	expect.Equal(t, "Andrii's faculty is set", andrii.FacultyName != "", true)
+	expect.Equal(t, "Andrii's course", andrii.Course, 3)
+	expect.Equal(t, "skills Andrii teaches", len(andrii.TeachingSkills), 2)
+	expect.Equal(t, "skills Andrii learns", len(andrii.LearningSkills), 1)
+	expect.Slice(t, "Andrii's formats", andrii.Formats, []string{"ONLINE", "OFFLINE"})
+	expect.Equal(t, "Andrii's match is set", andrii.Match != nil, true)
+	expect.Slice(t, "skills Andrii can teach Olha", skillIDs(andrii.Match.CanTeach), []string{photoshop})
+	expect.Slice(t, "skills Andrii wants to learn from Olha", skillIDs(andrii.Match.WantsToLearn), []string{guitarSkill})
 
 	marko, err := store.StudentProfile(ctx, demoOlha, demoMarko)
-	if err != nil || marko.Match != nil || marko.Reviews == nil {
-		t.Fatalf("Marko: match %+v, reviews %v, err %v", marko.Match, marko.Reviews, err)
-	}
+	expect.NoError(t, "load Marko's profile", err)
+	expect.Equal(t, "Marko's match is set", marko.Match != nil, false)
+	expect.Equal(t, "Marko's review list is set", marko.Reviews != nil, true)
 
 	for _, test := range []struct{ name, viewer, student string }{
 		{"hidden profile", demoOlha, "60000000-0000-0000-0000-000000000008"},
@@ -334,14 +325,13 @@ func TestStudentProfileOnDemoData(t *testing.T) {
 		{"no such user", demoOlha, "60000000-0000-0000-0000-000000000999"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := store.StudentProfile(ctx, test.viewer, test.student); !errors.Is(err, ErrNotFound) {
-				t.Fatalf("err = %v, want ErrNotFound", err)
-			}
+			_, err := store.StudentProfile(ctx, test.viewer, test.student)
+			expect.Error(t, "load the profile", err, ErrNotFound)
 		})
 	}
 }
 
-// Reviews need a finished exchange, which later sprints create; here the rows are
+// Reviews come in a later sprint, so the completed exchange and its reviews are
 // inserted directly inside a transaction that is rolled back.
 // Skipped unless TEST_DATABASE_URL is set.
 func TestStudentProfileReviews(t *testing.T) {
@@ -349,8 +339,8 @@ func TestStudentProfileReviews(t *testing.T) {
 	rollback := errors.New("roll back test data")
 	err := store.WithinTx(context.Background(), func(ctx context.Context) error {
 		var exchangeID string
-		if err := store.conn(ctx).QueryRow(ctx, `INSERT INTO exchanges (user_a_id, user_b_id, status, total_sessions, format)
-			VALUES ($1, $2, 'COMPLETED', 2, 'ONLINE') RETURNING id`, demoIryna, demoMarko).Scan(&exchangeID); err != nil {
+		if err := store.conn(ctx).QueryRow(ctx, `INSERT INTO exchanges (user_a_id, user_b_id, status, total_sessions, format, completed_at)
+			VALUES ($1, $2, 'COMPLETED', 2, 'ONLINE', now()) RETURNING id`, demoIryna, demoMarko).Scan(&exchangeID); err != nil {
 			t.Fatal(err)
 		}
 		for _, review := range []struct {
@@ -368,16 +358,15 @@ func TestStudentProfileReviews(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if marko.ReviewCount != 2 || marko.AverageRating != 4.5 || len(marko.Reviews) != 2 {
-			t.Fatalf("count %d, average %v, reviews %+v", marko.ReviewCount, marko.AverageRating, marko.Reviews)
-		}
+		expect.Equal(t, "review count", marko.ReviewCount, 2)
+		expect.Equal(t, "average rating", marko.AverageRating, 4.5)
+		expect.Equal(t, "reviews", len(marko.Reviews), 2)
 		newest := marko.Reviews[0]
-		if newest.AuthorID != demoDmytro || newest.AuthorFirstName != "Дмитро" || newest.Rating != 4 || newest.Comment != "Дуже корисно" {
-			t.Fatalf("newest review = %+v", newest)
-		}
+		expect.Equal(t, "newest review author", newest.AuthorID, demoDmytro)
+		expect.Equal(t, "newest review author's first name", newest.AuthorFirstName, "Дмитро")
+		expect.Equal(t, "newest review rating", newest.Rating, 4)
+		expect.Equal(t, "newest review comment", newest.Comment, "Дуже корисно")
 		return rollback
 	})
-	if !errors.Is(err, rollback) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "WithinTx", err, rollback)
 }

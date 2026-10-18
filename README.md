@@ -33,6 +33,7 @@ skill-swap/
 │   ├── internal/mailer/         # IMailer contract and SMTP adapter
 │   ├── internal/config/         # Configuration loading and validation
 │   ├── internal/validate/       # Shared input validation
+│   ├── internal/expect/         # Readable test assertions
 │   ├── migrations/              # Versioned Goose SQL migrations
 │   ├── seeds/                   # Repeatable demo data
 │   └── docs/                    # OpenAPI specification

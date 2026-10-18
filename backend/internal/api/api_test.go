@@ -22,6 +22,7 @@ import (
 	"skillswap/backend/internal/data/datatest"
 	"skillswap/backend/internal/discovery"
 	"skillswap/backend/internal/exchange"
+	"skillswap/backend/internal/expect"
 	"skillswap/backend/internal/mailer"
 	"skillswap/backend/internal/mailer/mailertest"
 	"skillswap/backend/internal/profile"
@@ -105,9 +106,7 @@ func request(t *testing.T, handler http.Handler, method, target string) *httptes
 func TestHealthAndOrigin(t *testing.T) {
 	handler := testHandler(&fakeApp{})
 	response := request(t, handler, http.MethodGet, "/api/v1/health")
-	if response.Code != http.StatusOK {
-		t.Fatalf("health status = %d", response.Code)
-	}
+	expectStatus(t, response, http.StatusOK)
 
 	foreignRequest := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	foreignRequest.Header.Set("Origin", "https://example.org")
@@ -118,12 +117,8 @@ func TestHealthAndOrigin(t *testing.T) {
 
 func TestOpenAPIContract(t *testing.T) {
 	response := request(t, testHandler(&fakeApp{}), http.MethodGet, "/api/v1/openapi.yaml")
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	if got := response.Header().Get("Content-Type"); got != "application/yaml; charset=utf-8" {
-		t.Fatalf("Content-Type = %q", got)
-	}
+	expectStatus(t, response, http.StatusOK)
+	expect.Equal(t, "Content-Type", response.Header().Get("Content-Type"), "application/yaml; charset=utf-8")
 	for _, fragment := range []string{"openapi: 3.0.3", "/universities:", "/skills:", "/auth/login:", "/auth/reset-password:",
 		"/universities/{universityId}/faculties:", "/me/profile:", "/me/teaching-skills/{skillId}:", "/me/learning-skills:", "/me/matches:", "/students:", "/students/{userId}:", "/exchange-requests:",
 		"/me/exchange-requests:", "/exchange-requests/{requestId}:",
@@ -145,9 +140,7 @@ func TestOpenAPIContract(t *testing.T) {
 func TestReady(t *testing.T) {
 	t.Run("ready", func(t *testing.T) {
 		response := request(t, testHandler(&fakeApp{}), http.MethodGet, "/api/v1/ready")
-		if response.Code != http.StatusOK {
-			t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-		}
+		expectStatus(t, response, http.StatusOK)
 		assertJSONEqual(t, response.Body.Bytes(), `{"status":"ready"}`)
 	})
 
@@ -167,16 +160,13 @@ func TestUniversities(t *testing.T) {
 		City:        "Київ",
 	}}}
 	response := request(t, testHandler(store), http.MethodGet, "/api/v1/universities")
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, response, http.StatusOK)
 	var body struct {
 		Items []university `json:"items"`
 	}
 	decodeJSON(t, response, &body)
-	if len(body.Items) != 1 || body.Items[0].EmailDomain != "students.example.test" {
-		t.Fatalf("unexpected response: %+v", body.Items)
-	}
+	expect.Equal(t, "universities", len(body.Items), 1)
+	expect.Equal(t, "university email domain", body.Items[0].EmailDomain, "students.example.test")
 }
 
 func TestSkillCategories(t *testing.T) {
@@ -184,16 +174,13 @@ func TestSkillCategories(t *testing.T) {
 		ID: "20000000-0000-0000-0000-000000000001", Name: "Музика", Slug: "music",
 	}}}
 	response := request(t, testHandler(store), http.MethodGet, "/api/v1/skill-categories")
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, response, http.StatusOK)
 	var body struct {
 		Items []skillCategory `json:"items"`
 	}
 	decodeJSON(t, response, &body)
-	if len(body.Items) != 1 || body.Items[0].Slug != "music" {
-		t.Fatalf("unexpected response: %+v", body.Items)
-	}
+	expect.Equal(t, "categories", len(body.Items), 1)
+	expect.Equal(t, "category slug", body.Items[0].Slug, "music")
 }
 
 func TestSkillsSearchAndLimit(t *testing.T) {
@@ -204,25 +191,20 @@ func TestSkillsSearchAndLimit(t *testing.T) {
 		Slug:       "go",
 	}}}
 	response := request(t, testHandler(store), http.MethodGet, "/api/v1/skills?q=%20Go%20&limit=1")
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	if store.lastQuery != "Go" || store.lastLimit != 1 {
-		t.Fatalf("query = %q, limit = %d", store.lastQuery, store.lastLimit)
-	}
+	expectStatus(t, response, http.StatusOK)
+	expect.Equal(t, "trimmed query", store.lastQuery, "Go")
+	expect.Equal(t, "limit", store.lastLimit, 1)
 	var body struct {
 		Items []skill `json:"items"`
 	}
 	decodeJSON(t, response, &body)
-	if len(body.Items) != 1 || body.Items[0].Name != "Go" {
-		t.Fatalf("unexpected response: %+v", body.Items)
-	}
+	expect.Equal(t, "skills", len(body.Items), 1)
+	expect.Equal(t, "skill name", body.Items[0].Name, "Go")
 
 	store = &fakeApp{skills: []data.Skill{}}
 	response = request(t, testHandler(store), http.MethodGet, "/api/v1/skills")
-	if response.Code != http.StatusOK || store.lastLimit != 50 {
-		t.Fatalf("default limit = %d, status = %d", store.lastLimit, response.Code)
-	}
+	expectStatus(t, response, http.StatusOK)
+	expect.Equal(t, "default limit", store.lastLimit, 50)
 }
 
 func TestSkillsRejectsInvalidQuery(t *testing.T) {
@@ -248,9 +230,7 @@ func TestRoutingErrorsUseProblemJSON(t *testing.T) {
 
 	response = request(t, handler, http.MethodPost, "/api/v1/skills")
 	assertProblem(t, response, http.StatusMethodNotAllowed, "method_not_allowed")
-	if got := response.Header().Get("Allow"); got != http.MethodGet {
-		t.Fatalf("Allow = %q", got)
-	}
+	expect.Equal(t, "Allow", response.Header().Get("Allow"), http.MethodGet)
 }
 
 func TestCORSPreflight(t *testing.T) {
@@ -260,12 +240,8 @@ func TestCORSPreflight(t *testing.T) {
 	preflight.Header.Set("Access-Control-Request-Method", http.MethodGet)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, preflight)
-	if response.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	if got := response.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:3000" {
-		t.Fatalf("Access-Control-Allow-Origin = %q", got)
-	}
+	expectStatus(t, response, http.StatusNoContent)
+	expect.Equal(t, "Access-Control-Allow-Origin", response.Header().Get("Access-Control-Allow-Origin"), "http://localhost:3000")
 	if got := response.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, http.MethodGet) {
 		t.Fatalf("Access-Control-Allow-Methods = %q", got)
 	}
@@ -305,9 +281,7 @@ func TestCatalogAgainstLocalPostgres(t *testing.T) {
 	handler := postgresHandler(pool, &mailertest.Recorder{})
 
 	response := request(t, handler, http.MethodGet, "/api/v1/ready")
-	if response.Code != http.StatusOK {
-		t.Fatalf("readiness status = %d, body = %s", response.Code, response.Body.String())
-	}
+	expectStatus(t, response, http.StatusOK)
 
 	for _, test := range []struct {
 		path      string
@@ -322,28 +296,20 @@ func TestCatalogAgainstLocalPostgres(t *testing.T) {
 	} {
 		t.Run(test.path, func(t *testing.T) {
 			response := request(t, handler, http.MethodGet, test.path)
-			if response.Code != http.StatusOK {
-				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-			}
+			expectStatus(t, response, http.StatusOK)
 			var body struct {
 				Items []json.RawMessage `json:"items"`
 			}
 			decodeJSON(t, response, &body)
-			if len(body.Items) != test.wantCount {
-				t.Fatalf("item count = %d, want %d", len(body.Items), test.wantCount)
-			}
+			expect.Equal(t, "item count", len(body.Items), test.wantCount)
 		})
 	}
 }
 
 func assertProblem(t *testing.T, response *httptest.ResponseRecorder, status int, code string) {
 	t.Helper()
-	if response.Code != status {
-		t.Fatalf("status = %d, want %d; body = %s", response.Code, status, response.Body.String())
-	}
-	if got := response.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
-		t.Fatalf("Content-Type = %q", got)
-	}
+	expectStatus(t, response, status)
+	expect.Equal(t, "Content-Type", response.Header().Get("Content-Type"), "application/json; charset=utf-8")
 	var body struct {
 		Error struct {
 			Code    string `json:"code"`
@@ -351,9 +317,8 @@ func assertProblem(t *testing.T, response *httptest.ResponseRecorder, status int
 		} `json:"error"`
 	}
 	decodeJSON(t, response, &body)
-	if body.Error.Code != code || body.Error.Message == "" {
-		t.Fatalf("unexpected problem: %+v", body.Error)
-	}
+	expect.Equal(t, "problem code", body.Error.Code, code)
+	expect.Equal(t, "problem message is set", body.Error.Message != "", true)
 }
 
 func decodeJSON(t *testing.T, response *httptest.ResponseRecorder, target any) {
