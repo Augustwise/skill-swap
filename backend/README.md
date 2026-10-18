@@ -402,6 +402,10 @@ two participants see it; anyone else, an unknown ID or a value that is not a UUI
 
 With the demo data, Olha can accept Taras's request and open the exchange. Do this only
 on your own database: the seed does not reset an answered demo request.
+
+The web client covers these routes at <http://localhost:3000/requests>,
+`/requests/{id}`, `/exchanges/{id}` and the "Запропонувати обмін" dialog on
+`/students/{id}`; the frontend checklist is in [`frontend/SPRINT5.md`](../frontend/SPRINT5.md).
 `TestAcceptRequestConcurrentlyAgainstPostgres` commits its data, because two parallel
 acceptances need separate transactions; it creates its own students and deletes them
 afterwards.

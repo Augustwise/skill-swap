@@ -18,6 +18,7 @@ import {
 } from "./OnboardingApi";
 import { OnboardingProfile } from "./OnboardingProfile";
 import { OnboardingIcon as Icon, OnboardingSkills } from "./OnboardingSkills";
+import { OnboardingSkeleton } from "./Skeleton";
 
 const steps = ["Профіль", "Що я вмію", "Що хочу вивчити", "Формат"];
 const fieldMessages: Record<string, string> = {
@@ -251,24 +252,20 @@ export function Onboarding() {
     }
   }
 
+  if (status === "loading") return <OnboardingSkeleton />;
+
   if (status !== "ready") {
     return (
       <main className="onboarding-page onboarding-page--message">
-        <div className="onboarding-message" role={status === "loading" ? "status" : "alert"}>
+        <div className="onboarding-message" role="alert">
           <Image src="/figma/onboarding/mark.svg" alt="" width={30} height={30} />
           <h1>
-            {status === "loading"
-              ? "Завантажуємо профіль…"
-              : status === "login"
-                ? "Увійди, щоб продовжити"
-                : "Не вдалося завантажити профіль"}
+            {status === "login" ? "Увійди, щоб продовжити" : "Не вдалося завантажити профіль"}
           </h1>
           <p>
-            {status === "loading"
-              ? "Зачекай, поки ми підготуємо твої дані."
-              : status === "login"
-                ? "Увійди в акаунт, щоб заповнити профіль і додати навички."
-                : "Перевір з’єднання із сервером і спробуй ще раз."}
+            {status === "login"
+              ? "Увійди в акаунт, щоб заповнити профіль і додати навички."
+              : "Перевір з’єднання із сервером і спробуй ще раз."}
           </p>
           {status === "error" ? (
             <button
@@ -282,7 +279,7 @@ export function Onboarding() {
               Спробувати ще раз
             </button>
           ) : (
-            status !== "loading" && <Link href="/login?next=/onboarding">Перейти до входу</Link>
+            <Link href="/login?next=/onboarding">Перейти до входу</Link>
           )}
         </div>
       </main>

@@ -1,5 +1,6 @@
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const pages = new Set(["/main", "/profile", "/onboarding", "/search", "/matches"]);
+const pages = new Set(["/main", "/profile", "/onboarding", "/search", "/matches", "/requests"]);
+const entityPage = /^\/(?:students|requests|exchanges)\/([^/]+)$/;
 
 export function isUuid(value: string) {
   return uuid.test(value);
@@ -17,8 +18,8 @@ export function safeAppPath(value: string | null | undefined, fallback: string) 
     return fallback;
   }
   if (url.origin !== "http://skillswap.local") return fallback;
-  const student = /^\/students\/([^/]+)$/.exec(url.pathname);
-  if (!pages.has(url.pathname) && !(student && isUuid(student[1]))) return fallback;
+  const entity = entityPage.exec(url.pathname);
+  if (!pages.has(url.pathname) && !(entity && isUuid(entity[1]))) return fallback;
   return `${url.pathname}${url.search}`;
 }
 

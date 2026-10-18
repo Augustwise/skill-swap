@@ -1,6 +1,6 @@
-import type { DashboardExchange, DashboardRequest } from "./DashboardData";
 import { DashboardIcon as Icon, type DashboardIconName } from "./DashboardIcon";
 import type { OpenDashboardModal } from "./DashboardModal";
+import { Skeleton } from "./Skeleton";
 
 type ModalActionProps = { onOpenModal: OpenDashboardModal };
 
@@ -40,25 +40,7 @@ export function DashboardAvatar({
   );
 }
 
-function SkillTag({ label, learn = false }: { label: string; learn?: boolean }) {
-  return (
-    <span className={`dashboard-skill ${learn ? "dashboard-skill--learn" : ""}`}>
-      <Icon name={learn ? "learn-dot" : "teach-dot"} />
-      {label}
-    </span>
-  );
-}
-
-function StatusBadge({ active = false }: { active?: boolean }) {
-  return (
-    <span className={`dashboard-status ${active ? "dashboard-status--active" : ""}`}>
-      <Icon name={active ? "active-dot" : "pending-dot"} />
-      {active ? "Активний" : "Очікує"}
-    </span>
-  );
-}
-
-function SectionAction({
+export function SectionAction({
   children,
   arrow = false,
   onOpenModal,
@@ -76,13 +58,20 @@ function SectionAction({
   );
 }
 
-export function DashboardStats() {
+export function DashboardStats({
+  activeExchanges = null,
+  loading = false,
+}: {
+  activeExchanges?: number | null;
+  loading?: boolean;
+}) {
   const stats: {
     icon: DashboardIconName;
     label: string;
     tone: string;
+    value?: number | null;
   }[] = [
-    { icon: "stat-swap", label: "Активні обміни", tone: "purple" },
+    { icon: "stat-swap", label: "Активні обміни", tone: "purple", value: activeExchanges },
     {
       icon: "stat-sparkles",
       label: "Нові збіги за тиждень",
@@ -93,7 +82,7 @@ export function DashboardStats() {
   ];
 
   return (
-    <section className="dashboard-stats" aria-label="Статистика за тиждень — даних поки немає">
+    <section className="dashboard-stats" aria-label="Статистика">
       {stats.map((stat) => (
         <article className="dashboard-stat" key={stat.label}>
           <div className="dashboard-stat__top">
@@ -102,62 +91,18 @@ export function DashboardStats() {
             </span>
           </div>
           <div>
-            <p className="dashboard-stat__value" aria-label="Даних поки немає">
-              —
-            </p>
+            {loading && stat.value !== undefined ? (
+              <span className="dashboard-stat__value skeleton-stat">
+                <Skeleton kind="title" width={36} height={30} />
+              </span>
+            ) : stat.value === undefined || stat.value === null ? (
+              <p className="dashboard-stat__value" aria-label="Даних поки немає">
+                —
+              </p>
+            ) : (
+              <p className="dashboard-stat__value">{stat.value}</p>
+            )}
             <p className="dashboard-stat__label">{stat.label}</p>
-          </div>
-        </article>
-      ))}
-    </section>
-  );
-}
-
-export function DashboardExchanges({
-  onOpenModal,
-  exchanges = [],
-}: ModalActionProps & { exchanges?: readonly DashboardExchange[] }) {
-  return (
-    <section className="dashboard-panel dashboard-exchanges" aria-labelledby="exchanges-title">
-      <div className="dashboard-section-heading">
-        <h2 id="exchanges-title">Активні обміни</h2>
-        <SectionAction arrow onOpenModal={onOpenModal}>
-          Усі обміни
-        </SectionAction>
-      </div>
-      {exchanges.length === 0 && (
-        <DashboardEmptyState
-          icon="nav-swap"
-          message="Тут з’являться твої активні обміни навичками."
-        />
-      )}
-      {exchanges.map((exchange) => (
-        <article className="dashboard-exchange" key={exchange.name}>
-          <DashboardAvatar initials={exchange.initials} color={exchange.color} />
-          <div className="dashboard-exchange__person">
-            <div className="dashboard-exchange__heading">
-              <h3>{exchange.name}</h3>
-              <StatusBadge active />
-            </div>
-            <div className="dashboard-tags">
-              <SkillTag label="Ти: Гітара" />
-              <Icon name="swap" />
-              <SkillTag label={exchange.learning} learn />
-            </div>
-          </div>
-          <div className="dashboard-exchange__progress">
-            <span>
-              {exchange.completed} з {exchange.total} занять
-            </span>
-            <progress
-              value={exchange.completed}
-              max={exchange.total}
-              aria-label={`Прогрес обміну: ${exchange.name}`}
-            />
-            <p>
-              <Icon name="clock" />
-              {exchange.time}
-            </p>
           </div>
         </article>
       ))}
@@ -173,72 +118,6 @@ export function DashboardSessions({ onOpenModal }: ModalActionProps) {
         <SectionAction onOpenModal={onOpenModal}>Календар</SectionAction>
       </div>
       <DashboardEmptyState icon="calendar" message="Тут з’являться заплановані сесії." />
-    </section>
-  );
-}
-
-export function DashboardRequests({
-  onOpenModal,
-  requests = [],
-}: ModalActionProps & { requests?: readonly DashboardRequest[] }) {
-  return (
-    <section
-      id="dashboard-requests"
-      className="dashboard-panel dashboard-requests"
-      aria-labelledby="requests-title"
-    >
-      <div className="dashboard-section-heading">
-        <h2 id="requests-title">Нові запити</h2>
-        <SectionAction onOpenModal={onOpenModal}>Усі запити</SectionAction>
-      </div>
-      {requests.length === 0 && (
-        <DashboardEmptyState icon="inbox" message="Тут з’являться нові запити на обмін." />
-      )}
-      {requests.map((request) => (
-        <article className="dashboard-request" key={request.name}>
-          <div className="dashboard-request__person">
-            <DashboardAvatar initials={request.initials} color={request.color} size={32} />
-            <div>
-              <h3>{request.name}</h3>
-              <p>{request.time}</p>
-            </div>
-            <StatusBadge />
-          </div>
-          <div className="dashboard-tags">
-            <SkillTag label={request.skill} learn />
-            <Icon name="swap" />
-            <SkillTag label="Гітара" />
-          </div>
-          <div className="dashboard-request__actions">
-            <button
-              className="dashboard-button dashboard-button--primary"
-              type="button"
-              onClick={() =>
-                onOpenModal({
-                  title: "Прийняти запит",
-                  description: `Прийняття запиту від ${request.name} буде доступне згодом. Поки що це демонстраційний запит.`,
-                })
-              }
-              aria-haspopup="dialog"
-            >
-              Прийняти
-            </button>
-            <button
-              className="dashboard-button"
-              type="button"
-              onClick={() =>
-                onOpenModal({
-                  title: "Відхилити запит",
-                  description: `Відхилення запиту від ${request.name} буде доступне згодом. Поки що це демонстраційний запит.`,
-                })
-              }
-              aria-haspopup="dialog"
-            >
-              Відхилити
-            </button>
-          </div>
-        </article>
-      ))}
     </section>
   );
 }

@@ -10,10 +10,12 @@ import type { Profile } from "./OnboardingApi";
 export function AccountMenu({
   profile,
   pending,
+  incoming = 0,
   onLogout,
 }: {
   profile: Profile;
   pending: boolean;
+  incoming?: number;
   onLogout: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -98,6 +100,19 @@ export function AccountMenu({
           onClick={() => setOpen(false)}
         >
           <Icon name="nav-sparkles" /> Мої збіги
+        </Link>
+        <Link
+          href="/requests"
+          aria-current={pathname === "/requests" ? "page" : undefined}
+          onClick={() => setOpen(false)}
+        >
+          <Icon name="inbox" /> Запити на обмін
+          {incoming > 0 && (
+            <span className="dashboard-nav-badge">
+              <span className="sr-only">, очікують відповіді: </span>
+              {incoming > 99 ? "99+" : incoming}
+            </span>
+          )}
         </Link>
         <button type="button" disabled={pending} onClick={onLogout}>
           <Icon name="logout" /> {pending ? "Виходимо…" : "Вийти"}

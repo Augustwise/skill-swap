@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppGate, type AppContext } from "./AppGate";
+import { pageShells } from "./AppNavigation";
 import { AppShell } from "./AppShell";
 import { DiscoveryEmpty, Pagination, StudentResultCard } from "./DiscoveryCards";
 import { DiscoveryError } from "./DiscoveryError";
@@ -17,6 +18,7 @@ import {
 } from "./DiscoveryApi";
 import { countLabel, studentForms } from "./DiscoveryFormat";
 import { SearchFilters } from "./SearchFilters";
+import { SkeletonCardGrid } from "./Skeleton";
 import { useApiQuery } from "./useApiQuery";
 
 const searchHref = (filters: Filters) => {
@@ -42,8 +44,8 @@ function SearchResults({ profile, session, filters }: AppContext & { filters: Fi
       profile={profile}
       csrfToken={session.csrfToken}
       section="search"
-      title="Пошук навичок"
-      subtitle="Знайди студента за навичкою або ім’ям"
+      title={pageShells.search.title}
+      subtitle={pageShells.search.subtitle}
       contentId="search-content"
       search={false}
     >
@@ -76,7 +78,7 @@ function SearchResults({ profile, session, filters }: AppContext & { filters: Fi
             {summary}
           </p>
         </div>
-        {results.state.status === "loading" && <div className="discovery-skeleton" />}
+        {results.state.status === "loading" && <SkeletonCardGrid count={6} />}
         {results.state.status === "error" && (
           <DiscoveryError
             error={results.state.error}
@@ -130,7 +132,7 @@ function SearchResults({ profile, session, filters }: AppContext & { filters: Fi
 export function StudentSearch() {
   const filters = readSearchFilters(useSearchParams());
   return (
-    <AppGate subject="пошук" path={searchHref(filters)}>
+    <AppGate page="search" path={searchHref(filters)}>
       {(context) => <SearchResults {...context} filters={filters} />}
     </AppGate>
   );

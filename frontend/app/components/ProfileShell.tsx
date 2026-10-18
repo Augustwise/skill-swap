@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { pageShells } from "./AppNavigation";
 import { AppShell } from "./AppShell";
 import type { Profile } from "./OnboardingApi";
 
@@ -18,8 +19,8 @@ export function ProfileShell({
       profile={profile}
       csrfToken={csrfToken}
       section="profile"
-      title="Мій профіль"
-      subtitle="Дані, які бачать студенти у твоєму профілі"
+      title={pageShells.profile.title}
+      subtitle={pageShells.profile.subtitle}
       contentId="profile-content"
       className="profile-shell"
       canLeave={() =>

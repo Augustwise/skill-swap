@@ -2,31 +2,33 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { AccountMenu } from "./AccountMenu";
 import { AuthError, authRequest, requestError } from "./AuthApi";
-import { DashboardIcon as Icon, type DashboardIconName } from "./DashboardIcon";
+import { navigation, type AppSection } from "./AppNavigation";
+import { DashboardIcon as Icon } from "./DashboardIcon";
 import { DashboardModal } from "./DashboardModal";
 import { normalizeQuery, searchQueryString, emptyFilters } from "./DiscoveryApi";
+import { pendingRequestCount } from "./ExchangeApi";
 import { Logo } from "./Logo";
 import type { Profile } from "./OnboardingApi";
 
-export type AppSection = "main" | "search" | "matches" | "profile";
+export type { AppSection };
 
-const navigation: {
-  label: string;
-  icon: DashboardIconName;
-  section?: AppSection;
-  href?: string;
-}[] = [
-  { label: "Головна", icon: "dashboard", section: "main", href: "/main" },
-  { label: "Пошук навичок", icon: "nav-search", section: "search", href: "/search" },
-  { label: "Мої збіги", icon: "nav-sparkles", section: "matches", href: "/matches" },
-  { label: "Запити на обмін", icon: "inbox" },
-  { label: "Активні обміни", icon: "nav-swap" },
-  { label: "Повідомлення", icon: "nav-chat" },
-  { label: "Календар", icon: "calendar" },
-];
+const RequestsChanged = createContext<() => void>(() => {});
+
+// Pages call this after answering or sending a request so the navigation counter stays current.
+export function useRequestsChanged() {
+  return useContext(RequestsChanged);
+}
 
 export function AppShell({
   profile,
@@ -59,6 +61,14 @@ export function AppShell({
   const [pending, setPending] = useState(false);
   const [query, setQuery] = useState("");
   const logoutPending = useRef(false);
+  const [incoming, setIncoming] = useState(0);
+  const [requestsVersion, setRequestsVersion] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    pendingRequestCount("incoming", controller.signal).then(setIncoming, () => {});
+    return () => controller.abort();
+  }, [requestsVersion]);
 
   async function logout() {
     if (logoutPending.current || (canLeave && !canLeave())) return;
@@ -118,11 +128,20 @@ export function AppShell({
                 className={`dashboard-nav-item ${item.section === section ? "dashboard-nav-item--active" : ""}`}
                 href={item.href}
                 aria-current={item.section === section ? "page" : undefined}
-                aria-label={item.label}
+                aria-label={
+                  item.section === "requests" && incoming > 0
+                    ? `${item.label}: ${incoming} очікують відповіді`
+                    : item.label
+                }
                 key={item.label}
               >
                 <Icon name={item.icon} />
                 <span>{item.label}</span>
+                {item.section === "requests" && incoming > 0 && (
+                  <span className="dashboard-nav-badge" aria-hidden="true">
+                    {incoming > 99 ? "99+" : incoming}
+                  </span>
+                )}
               </Link>
             ) : (
               <button
@@ -190,10 +209,17 @@ export function AppShell({
             </form>
           )}
           {toolbar}
-          <AccountMenu profile={profile} pending={pending} onLogout={() => void logout()} />
+          <AccountMenu
+            profile={profile}
+            pending={pending}
+            incoming={incoming}
+            onLogout={() => void logout()}
+          />
         </header>
         <main className="dashboard-content" id={contentId} tabIndex={-1}>
-          {children}
+          <RequestsChanged.Provider value={() => setRequestsVersion((value) => value + 1)}>
+            {children}
+          </RequestsChanged.Provider>
         </main>
       </div>
       {modal && <DashboardModal title={modal} onClose={() => setModal("")} />}

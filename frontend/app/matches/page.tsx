@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { AppMessage } from "../components/AppMessage";
+import { AppSkeleton } from "../components/Skeleton";
 import { MutualMatches } from "../components/MutualMatches";
 import "../styles/dashboard.css";
 import "../styles/profile.css";
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function MatchesPage() {
   return (
-    <Suspense fallback={<AppMessage status="loading" subject="збіги" path="/matches" />}>
+    <Suspense fallback={<AppSkeleton page="matches" />}>
       <MutualMatches />
     </Suspense>
   );

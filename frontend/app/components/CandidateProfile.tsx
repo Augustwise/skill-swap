@@ -4,11 +4,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { AppGate, type AppContext } from "./AppGate";
+import { pageShells } from "./AppNavigation";
 import { safeAppPath, studentHref } from "./AppRoutes";
 import { AppShell, type AppSection } from "./AppShell";
 import { DashboardAvatar } from "./DashboardCards";
 import { DashboardIcon as Icon } from "./DashboardIcon";
-import { DashboardModal } from "./DashboardModal";
 import { DiscoveryEmpty, MutualBadge, SkillChips } from "./DiscoveryCards";
 import { DiscoveryError } from "./DiscoveryError";
 import {
@@ -30,13 +30,25 @@ import {
   studyDetails,
 } from "./DiscoveryFormat";
 import { skillLevels } from "./ProfileApi";
+import { proposalOptions, requestsHref } from "./ExchangeApi";
+import { ExchangeProposal } from "./ExchangeProposal";
+import { SkeletonDetail } from "./Skeleton";
 import { useApiQuery } from "./useApiQuery";
 
-const backLinks: Record<string, { label: string; section: AppSection }> = {
+const backLinks: Record<string, { label: string; section?: AppSection }> = {
   "/search": { label: "До результатів пошуку", section: "search" },
   "/matches": { label: "До взаємних збігів", section: "matches" },
   "/main": { label: "На головну", section: "main" },
+  "/requests": { label: "До запитів на обмін", section: "requests" },
+  "/requests/": { label: "До запиту на обмін", section: "requests" },
+  "/exchanges/": { label: "До обміну" },
 };
+
+function backLinkFor(path: string) {
+  const { pathname } = new URL(path, "http://skillswap.local");
+  const entity = /^\/(requests|exchanges)\/[^/]+$/.exec(pathname);
+  return backLinks[entity ? `/${entity[1]}/` : pathname] ?? backLinks["/search"];
+}
 
 function SkillList({
   title,
@@ -198,31 +210,37 @@ function CandidateView({
 }: AppContext & { studentId: string; from: string }) {
   const [modal, setModal] = useState(false);
   const back = safeAppPath(from, "/search");
-  const backLink =
-    backLinks[new URL(back, "http://skillswap.local").pathname] ?? backLinks["/search"];
+  const backLink = backLinkFor(back);
   const path = studentHref(studentId, from || undefined);
   const result = useApiQuery(`students/${studentId}`, (signal) =>
     studentProfile(studentId, signal),
   );
   const student = result.state.status === "ready" ? result.state.data : null;
   const overview = student ? (student.mutual ?? matchOverview(profile, student)) : null;
+  const options = overview ? proposalOptions(overview) : null;
+  const canPropose = Boolean(
+    options && options.teach.length && options.learn.length && options.formats.length,
+  );
 
   return (
     <AppShell
       profile={profile}
       csrfToken={session.csrfToken}
       section={backLink.section}
-      title="Профіль студента"
-      subtitle="Навички, рівні, формат занять і відгуки"
+      title={pageShells.student.title}
+      subtitle={pageShells.student.subtitle}
       contentId="student-content"
     >
       <Link className="discovery-back" href={back}>
         ← {backLink.label}
       </Link>
       {result.state.status === "loading" && (
-        <div className="discovery-skeleton" role="status">
-          <span className="sr-only">Завантажуємо профіль студента…</span>
-        </div>
+        <>
+          <p className="sr-only" role="status">
+            Завантажуємо профіль студента…
+          </p>
+          <SkeletonDetail />
+        </>
       )}
       {result.state.status === "error" && (
         <DiscoveryError
@@ -300,25 +318,47 @@ function CandidateView({
               <h2 id="candidate-formats-title">Формат занять</h2>
               <p>{formatList(student.formats, student.city) || "Формат ще не вказано."}</p>
             </section>
-            <section className="account-card profile-tip">
-              <h2>Хочеш обмінятися?</h2>
-              <p>Обери навички для обміну й запропонуй умови занять.</p>
-              <button
-                className="dashboard-button dashboard-button--primary"
-                type="button"
-                aria-haspopup="dialog"
-                onClick={() => setModal(true)}
-              >
-                Запропонувати обмін
-              </button>
+            <section className="account-card profile-tip" aria-labelledby="candidate-propose-title">
+              <h2 id="candidate-propose-title">Хочеш обмінятися?</h2>
+              {canPropose ? (
+                <>
+                  <p>
+                    Обери, чого навчиш і чого навчишся, формат і план занять. {student.firstName}{" "}
+                    отримає запит і зможе прийняти або відхилити його.
+                  </p>
+                  <button
+                    className="dashboard-button dashboard-button--primary"
+                    type="button"
+                    aria-haspopup="dialog"
+                    onClick={() => setModal(true)}
+                  >
+                    Запропонувати обмін
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p>
+                    Обмін можливий, коли кожен із вас навчає навички, яку хоче вивчити інший, і у
+                    вас є спільний формат занять. Онови списки навичок, щоб запропонувати обмін.
+                  </p>
+                  <Link className="dashboard-button" href="/profile">
+                    Перейти до мого профілю
+                  </Link>
+                </>
+              )}
+              <Link className="profile-tip__link" href={requestsHref({ direction: "outgoing" })}>
+                Мої надіслані запити
+              </Link>
             </section>
           </aside>
         </div>
       )}
-      {modal && student && (
-        <DashboardModal
-          title="Запропонувати обмін"
-          description={`Надсилання запиту на обмін студенту ${fullName(student)} з’явиться в розділі «Запити на обмін» наступного оновлення.`}
+      {modal && student && options && (
+        <ExchangeProposal
+          profile={profile}
+          student={student}
+          options={options}
+          csrfToken={session.csrfToken}
           onClose={() => setModal(false)}
         />
       )}
@@ -328,7 +368,11 @@ function CandidateView({
 
 export function CandidateProfile({ studentId, from }: { studentId: string; from: string }) {
   return (
-    <AppGate subject="профіль студента" path={studentHref(studentId, from || undefined)}>
+    <AppGate
+      page="student"
+      section={backLinkFor(safeAppPath(from, "/search")).section}
+      path={studentHref(studentId, from || undefined)}
+    >
       {(context) => <CandidateView {...context} studentId={studentId} from={from} />}
     </AppGate>
   );

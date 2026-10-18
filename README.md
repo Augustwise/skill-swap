@@ -11,7 +11,7 @@ Repository: [Augustwise/skill-swap](https://github.com/Augustwise/skill-swap).
 ```text
 skill-swap/
 ├── frontend/
-│   ├── app/                 # Next.js routes (search, matches, students/[id], ...) and layout
+│   ├── app/                 # Next.js routes (search, matches, students/[id], requests, exchanges/[id], ...)
 │   │   ├── components/      # Pages, shared shell, and *Api.ts HTTP client modules
 │   │   └── styles/          # Global and section CSS
 │   ├── public/              # Icons and static design assets
@@ -47,7 +47,7 @@ directory is not required. Detailed setup and API documentation are in
 [`backend/README.md`](backend/README.md) and
 [`backend/docs/openapi.yaml`](backend/docs/openapi.yaml). The web client, its routes and
 conventions are described in [`frontend/README.md`](frontend/README.md); sprint notes are
-in `frontend/SPRINT2.md`–`SPRINT4.md`.
+in `frontend/SPRINT2.md`–`SPRINT5.md`.
 
 ## Architecture and main components
 
@@ -70,9 +70,10 @@ classes and interfaces in the design.
 | `data.Postgres` | SQL repositories and `WithinTx` transaction boundaries. |
 | `mailer.SMTP` / `IMailer` | Sending verification and reset messages through `Send`. |
 | React form components | `RegistrationForm`, `LoginForm`, `ResetPasswordForm`, `Onboarding`, and `Profile`. |
-| `AppShell` / `AppGate` | Shared signed-in layout (navigation, top bar search, account menu) and the verified-session gate. |
+| `AppShell` / `AppGate` | Shared signed-in layout (navigation with the incoming-requests counter, top bar search, account menu) and the verified-session gate. |
 | Discovery pages | `StudentSearch`, `MutualMatches`, and `CandidateProfile` render FR-04/FR-05 through `DiscoveryApi`. |
-| `*Api.ts` client modules | `AuthApi`, `ProfileApi`, and `DiscoveryApi`: DTO types, requests, validation, and error mapping. |
+| Exchange pages | `ExchangeProposal`, `ExchangeRequests`, `RequestOverview`, `RequestActions`, and `ExchangeOverview` render FR-06/FR-07 (sending, accepting, declining, withdrawing, the started exchange) through `ExchangeApi`. |
+| `*Api.ts` client modules | `AuthApi`, `ProfileApi`, `DiscoveryApi`, and `ExchangeApi`: DTO types, requests, validation, and error mapping. |
 
 The web client is the presentation layer from Laboratory 2. Pages use only the HTTP
 API (through the `/api/v1/*` rewrite) and render its DTOs; matching, access, and state
@@ -99,7 +100,7 @@ paths are limited to known in-app pages.
 
 | Team member | Main role | Contribution to the current foundation |
 | --- | --- | --- |
-| Mykola Sheiko (Sheiko M. P.) | Backend developer | Go API, PostgreSQL schema and migrations, authentication, profile, discovery, exchange, session, and communication services, backend tests, local development tooling, and the sprint 4 web pages for search, mutual matches, and candidate profiles. |
+| Mykola Sheiko (Sheiko M. P.) | Backend developer | Go API, PostgreSQL schema and migrations, authentication, profile, discovery, exchange, session, and communication services, backend tests, local development tooling, and the sprint 4–5 web pages for search, mutual matches, candidate profiles, and exchange requests. |
 | Oleksandr Nesmiian (Nesmiian O. S.) | Frontend developer | Next.js/React interface, registration and login forms, onboarding screens, and integration with authentication and email verification. |
 | Both team members | Planning and quality assurance | Requirements, architecture, task estimation, integration checks, and mutual code review as the agreed workflow. |
 
@@ -113,8 +114,7 @@ either participant from helping with the other part of the application.
    where available, for example `feat/SCRUM-6-profile-backend`.
 2. Keep commits focused and use scoped subjects such as `feat(backend): ...` or
    `feat(frontend): ...`.
-3. Open a pull request with a description, setup notes, checks, and screenshots
-   for visible UI changes.
+3. Open a pull request with a description, setup notes, and checks.
 4. Ask the other team member to review the changes, address feedback, and record
    approval before merging into `main`.
 
@@ -219,7 +219,7 @@ npm start -- --hostname 127.0.0.1
 ```
 
 `npm test` runs `node:test` unit tests for the client modules (validation, request paths,
-URL filters, error mapping, and safe return paths) without a browser. The build checks
+URL filters, error mapping, exchange-request rules, and safe return paths) without a browser. The build checks
 TypeScript and creates the production bundle. Lint and formatting are separate checks
 and should all pass before merging. Root and frontend `.gitignore` files exclude secrets, dependencies,
 build outputs, logs, and local tools.

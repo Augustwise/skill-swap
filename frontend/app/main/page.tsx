@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Dashboard } from "../components/Dashboard";
 import "../styles/dashboard.css";
 import "../styles/discovery.css";
+import "../styles/exchange.css";
 
 export const metadata: Metadata = {
   title: "Головна — SkillSwap",

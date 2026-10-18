@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { authRequest } from "./AuthApi";
 import type { Skill, SkillLevel } from "./OnboardingApi";
 import { skillLevels } from "./ProfileApi";
+import { Skeleton } from "./Skeleton";
 
 export function ProfileSkillCatalog({
   existing,
@@ -66,7 +67,11 @@ export function ProfileSkillCatalog({
           />
         </label>
         {status === "loading" ? (
-          <p role="status">Завантажуємо каталог…</p>
+          <div className="profile-add-skill__fields" role="status">
+            <span className="sr-only">Завантажуємо каталог…</span>
+            <Skeleton kind="field" />
+            <Skeleton kind="field" />
+          </div>
         ) : status === "error" ? (
           <div role="alert">
             <p>Не вдалося завантажити каталог.</p>

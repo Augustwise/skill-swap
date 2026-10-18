@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AppGate, type AppContext } from "./AppGate";
+import { pageShells } from "./AppNavigation";
 import { AppShell } from "./AppShell";
 import { DiscoveryEmpty, MatchCard, Pagination } from "./DiscoveryCards";
 import { DiscoveryError } from "./DiscoveryError";
 import { mutualMatches, pageCount, readPage } from "./DiscoveryApi";
 import { countLabel, studentForms } from "./DiscoveryFormat";
+import { SkeletonCardGrid } from "./Skeleton";
 import { useApiQuery } from "./useApiQuery";
 
 const matchesHref = (page: number) => (page > 1 ? `/matches?page=${page}` : "/matches");
@@ -22,8 +24,8 @@ function MatchList({ profile, session, page }: AppContext & { page: number }) {
       profile={profile}
       csrfToken={session.csrfToken}
       section="matches"
-      title="Мої збіги"
-      subtitle="Студенти, з якими можна обмінятися навичками в обидва боки"
+      title={pageShells.matches.title}
+      subtitle={pageShells.matches.subtitle}
       contentId="matches-content"
     >
       <section className="account-card profile-tip discovery-notice" aria-label="Як працює підбір">
@@ -50,7 +52,7 @@ function MatchList({ profile, session, page }: AppContext & { page: number }) {
                 : "Не вдалося завантажити збіги"}
           </p>
         </div>
-        {matches.state.status === "loading" && <div className="discovery-skeleton" />}
+        {matches.state.status === "loading" && <SkeletonCardGrid count={4} />}
         {matches.state.status === "error" && (
           <DiscoveryError error={matches.state.error} path={path} onRetry={matches.retry} />
         )}
@@ -103,7 +105,7 @@ function MatchList({ profile, session, page }: AppContext & { page: number }) {
 export function MutualMatches() {
   const page = readPage(useSearchParams().get("page"));
   return (
-    <AppGate subject="збіги" path={matchesHref(page)}>
+    <AppGate page="matches" path={matchesHref(page)}>
       {(context) => <MatchList {...context} page={page} />}
     </AppGate>
   );

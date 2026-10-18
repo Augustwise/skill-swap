@@ -116,19 +116,6 @@
   font-weight: 600;
 }
 
-.discovery-skeleton {
-  min-height: 220px;
-  border-radius: 18px;
-  background: linear-gradient(90deg, #eef0f8 25%, #f7f8fc 50%, #eef0f8 75%) 0 0 / 200% 100%;
-  animation: discovery-shimmer 1.4s ease-in-out infinite;
-}
-
-@keyframes discovery-shimmer {
-  to {
-    background-position: -200% 0;
-  }
-}
-
 .discovery-alert {
   display: flex;
   flex-wrap: wrap;
@@ -281,11 +268,5 @@
 
   .candidate-skills .profile-skill-row strong {
     flex-basis: calc(100% - 50px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .discovery-skeleton {
-    animation: none;
   }
 }
