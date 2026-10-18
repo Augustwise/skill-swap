@@ -72,15 +72,6 @@ function DashboardContent({ profile, session }: AppContext) {
       title={pageShells.main.title}
       subtitle={pageShells.main.subtitle}
       contentId="dashboard-content"
-      toolbar={
-        <a
-          className="dashboard-notifications"
-          href="#dashboard-requests"
-          aria-label="Переглянути запити"
-        >
-          <Icon name="bell" />
-        </a>
-      }
     >
       <section className="dashboard-hero" aria-labelledby="dashboard-greeting">
         <span className="dashboard-hero__icon">

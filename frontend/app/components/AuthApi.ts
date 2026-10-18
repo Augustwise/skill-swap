@@ -60,6 +60,17 @@ export async function authRequest<T>(
   return data as T;
 }
 
+// A POST with the CSRF token; a stale token is refreshed from /auth/me and the call retried once.
+export async function writeRequest<T>(path: string, options: RequestInit, csrfToken: string) {
+  try {
+    return await authRequest<T>(path, { method: "POST", ...options }, csrfToken);
+  } catch (error) {
+    if (!(error instanceof AuthError) || error.code !== "csrf_invalid") throw error;
+    const session = await authRequest<AuthSession>("auth/me");
+    return authRequest<T>(path, { method: "POST", ...options }, session.csrfToken);
+  }
+}
+
 export function requestError(error: unknown) {
   return error instanceof AuthError
     ? error.message

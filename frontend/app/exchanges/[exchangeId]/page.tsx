@@ -4,6 +4,7 @@ import "../../styles/dashboard.css";
 import "../../styles/profile.css";
 import "../../styles/discovery.css";
 import "../../styles/exchange.css";
+import "../../styles/chat.css";
 
 export const metadata: Metadata = {
   title: "Обмін навичками — SkillSwap",

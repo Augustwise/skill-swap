@@ -13,17 +13,23 @@ const links = [
   { href: "/search", icon: "nav-search", label: "Пошук навичок" },
   { href: "/matches", icon: "nav-sparkles", label: "Мої збіги" },
   { href: "/requests", icon: "inbox", label: "Запити на обмін" },
+  { href: "/messages", icon: "nav-chat", label: "Повідомлення" },
 ] as const;
+
+const badgeLabels: Record<string, string> = {
+  "/requests": "очікують відповіді",
+  "/messages": "непрочитані",
+};
 
 export function AccountMenu({
   profile,
   pending,
-  incoming = 0,
+  badges = {},
   onLogout,
 }: {
   profile: Profile;
   pending: boolean;
-  incoming?: number;
+  badges?: Record<string, number>;
   onLogout: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -90,23 +96,26 @@ export function AccountMenu({
           </span>
         </div>
         <hr className="account-menu__divider" />
-        {links.map((link) => (
-          <Link
-            href={link.href}
-            aria-current={pathname === link.href ? "page" : undefined}
-            onClick={() => setOpen(false)}
-            key={link.href}
-          >
-            <Icon name={link.icon} />
-            <span className="account-menu__label">{link.label}</span>
-            {link.href === "/requests" && incoming > 0 && (
-              <span className="dashboard-nav-badge">
-                <span className="sr-only">, очікують відповіді: </span>
-                {incoming > 99 ? "99+" : incoming}
-              </span>
-            )}
-          </Link>
-        ))}
+        {links.map((link) => {
+          const badge = badges[link.href] ?? 0;
+          return (
+            <Link
+              href={link.href}
+              aria-current={pathname === link.href ? "page" : undefined}
+              onClick={() => setOpen(false)}
+              key={link.href}
+            >
+              <Icon name={link.icon} />
+              <span className="account-menu__label">{link.label}</span>
+              {badge > 0 && (
+                <span className="dashboard-nav-badge">
+                  <span className="sr-only">, {badgeLabels[link.href]}: </span>
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
+            </Link>
+          );
+        })}
         <hr className="account-menu__divider" />
         <button
           className="account-menu__logout"

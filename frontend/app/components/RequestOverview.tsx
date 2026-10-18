@@ -6,6 +6,8 @@ import { AppGate, type AppContext } from "./AppGate";
 import { pageShells } from "./AppNavigation";
 import { safeAppPath } from "./AppRoutes";
 import { AppShell } from "./AppShell";
+import { requestConversation } from "./ChatApi";
+import { ChatCard } from "./ChatCard";
 import { DashboardIcon as Icon } from "./DashboardIcon";
 import { DiscoveryEmpty } from "./DiscoveryCards";
 import { DiscoveryError } from "./DiscoveryError";
@@ -248,6 +250,11 @@ function RequestView({
               csrfToken={session.csrfToken}
               path={path}
               onChanged={changed}
+            />
+            <ChatCard
+              queryKey={`${path}/conversation`}
+              load={(signal) => requestConversation(requestId, signal)}
+              viewerId={profile.id}
             />
             <StatusHistory details={details} viewerId={profile.id} />
           </aside>

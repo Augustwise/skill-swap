@@ -26,24 +26,27 @@ the API and Mailpit as described in the root `README.md`.
 
 ## Routes
 
-| Route                     | Sprint | Page                                                      |
-| ------------------------- | ------ | --------------------------------------------------------- |
-| `/`, `/terms`             | —      | Landing page and data-handling terms                      |
-| `/register`, `/login`     | 2      | Registration, login and password recovery                 |
-| `/verify-email`           | 2      | Email verification and resend                             |
-| `/reset-password`         | 2      | New password from a one-time link                         |
-| `/onboarding`             | 3      | First profile, skill lists and lesson formats             |
-| `/profile`                | 3      | Own profile, skills and formats                           |
-| `/main`                   | 3–5    | Dashboard: mutual matches, new requests, active exchanges |
-| `/search`                 | 4      | Student search with filters                               |
-| `/matches`                | 4      | Mutual matches with explanations                          |
-| `/students/[studentId]`   | 4–5    | Candidate profile and the exchange proposal dialog        |
-| `/requests`               | 5      | Incoming and sent exchange requests with decisions        |
-| `/requests/[requestId]`   | 5      | Request terms, message, decision and status history       |
-| `/exchanges/[exchangeId]` | 5      | Started exchange: agreed terms and progress               |
+| Route                        | Sprint | Page                                                      |
+| ---------------------------- | ------ | --------------------------------------------------------- |
+| `/`, `/terms`                | —      | Landing page and data-handling terms                      |
+| `/register`, `/login`        | 2      | Registration, login and password recovery                 |
+| `/verify-email`              | 2      | Email verification and resend                             |
+| `/reset-password`            | 2      | New password from a one-time link                         |
+| `/onboarding`                | 3      | First profile, skill lists and lesson formats             |
+| `/profile`                   | 3      | Own profile, skills and formats                           |
+| `/main`                      | 3–5    | Dashboard: mutual matches, new requests, active exchanges |
+| `/search`                    | 4      | Student search with filters                               |
+| `/matches`                   | 4      | Mutual matches with explanations                          |
+| `/students/[studentId]`      | 4–5    | Candidate profile and the exchange proposal dialog        |
+| `/requests`                  | 5      | Incoming and sent exchange requests with decisions        |
+| `/requests/[requestId]`      | 5–6    | Request terms, decision, history and the request's chat   |
+| `/exchanges/[exchangeId]`    | 5–6    | Started exchange: agreed terms, progress and its chat     |
+| `/messages`                  | 6      | Conversations list; chats of requests and exchanges       |
+| `/messages/[conversationId]` | 6      | Private chat polled every 5 seconds                       |
+| `/notifications`             | 6      | All or unread notifications, mark one or all as read      |
 
 Sprint notes: [`SPRINT2.md`](SPRINT2.md), [`SPRINT3.md`](SPRINT3.md),
-[`SPRINT4.md`](SPRINT4.md), [`SPRINT5.md`](SPRINT5.md).
+[`SPRINT4.md`](SPRINT4.md), [`SPRINT5.md`](SPRINT5.md), [`SPRINT6.md`](SPRINT6.md).
 
 ## Structure
 
@@ -52,7 +55,7 @@ app/
 ├── <route>/page.tsx      # Server entry: metadata, Suspense, route params
 ├── components/
 │   ├── *Api.ts           # HTTP client modules: DTO types, requests, validation
-│   ├── AppShell.tsx      # Shared sidebar, top bar search, account menu, requests counter
+│   ├── AppShell.tsx      # Shared sidebar, top bar, notification bell, navigation counters
 │   ├── AppGate.tsx       # Signed-in, verified-email gate for private pages
 │   ├── AppDialog.tsx     # Native modal dialog for proposals and confirmations
 │   ├── AppNavigation.ts  # Navigation items and page titles shared with skeletons

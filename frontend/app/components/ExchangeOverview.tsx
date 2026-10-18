@@ -4,6 +4,8 @@ import Link from "next/link";
 import { AppGate, type AppContext } from "./AppGate";
 import { pageShells } from "./AppNavigation";
 import { AppShell } from "./AppShell";
+import { exchangeConversation } from "./ChatApi";
+import { ChatCard } from "./ChatCard";
 import { DashboardIcon as Icon } from "./DashboardIcon";
 import { DiscoveryEmpty } from "./DiscoveryCards";
 import { DiscoveryError } from "./DiscoveryError";
@@ -98,8 +100,8 @@ function NextStepsCard({ exchange }: { exchange: Exchange }) {
         </div>
       ) : (
         <p className="profile-hint">
-          Заняття ще не заплановані. Дату, час і місце ви погодите разом — планування занять і чат
-          з’являться в наступних оновленнях SkillSwap.
+          Заняття ще не заплановані. Узгодьте дату, час і місце в чаті — планування занять з’явиться
+          в наступному оновленні SkillSwap.
         </p>
       )}
     </section>
@@ -139,8 +141,9 @@ function ExchangeView({
           <div>
             <h2>Обмін розпочато!</h2>
             <p>
-              Умови збережено. Далі ви разом погоджуєте дати занять — кожне заняття зараховується
-              після підтвердження обох учасників.
+              Умови збережено, а чат запиту тепер належить обміну разом з усією історією. Далі ви
+              разом погоджуєте дати занять — кожне заняття зараховується після підтвердження обох
+              учасників.
             </p>
           </div>
         </section>
@@ -227,6 +230,11 @@ function ExchangeView({
           </div>
           <aside className="profile-rail" aria-label="Прогрес і заняття">
             <ProgressCard exchange={exchange} viewerId={profile.id} />
+            <ChatCard
+              queryKey={`${path}/conversation`}
+              load={(signal) => exchangeConversation(exchangeId, signal)}
+              viewerId={profile.id}
+            />
             <NextStepsCard exchange={exchange} />
           </aside>
         </div>
