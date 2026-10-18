@@ -25,6 +25,7 @@ import (
 	"skillswap/backend/internal/mailer"
 	"skillswap/backend/internal/mailer/mailertest"
 	"skillswap/backend/internal/profile"
+	sessionsvc "skillswap/backend/internal/session"
 )
 
 var errDatabaseUnavailable = errors.New("database unavailable")
@@ -81,15 +82,17 @@ func postgresHandler(pool *pgxpool.Pool, mail mailer.IMailer) http.Handler {
 	store := data.NewPostgres(pool)
 	access := auth.NewService(store, store, mail, testAuthConfig, discardLogger())
 	comm := communication.NewService(store, store, store)
+	sessions := sessionsvc.NewService(store, store, store, comm)
 	app := core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store),
-		exchange.NewService(store, store, store, comm), comm)
+		exchange.NewService(store, store, store, comm), comm, sessions)
 	return New(app, access, store, testSettings, discardLogger())
 }
 
 func memoryApp(store *datatest.Memory) *core.Application {
 	comm := communication.NewService(store, store, store)
+	sessions := sessionsvc.NewService(store, store, store, comm)
 	return core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store),
-		exchange.NewService(store, store, store, comm), comm)
+		exchange.NewService(store, store, store, comm), comm, sessions)
 }
 
 func request(t *testing.T, handler http.Handler, method, target string) *httptest.ResponseRecorder {
@@ -125,7 +128,10 @@ func TestOpenAPIContract(t *testing.T) {
 		"/universities/{universityId}/faculties:", "/me/profile:", "/me/teaching-skills/{skillId}:", "/me/learning-skills:", "/me/matches:", "/students:", "/students/{userId}:", "/exchange-requests:",
 		"/me/exchange-requests:", "/exchange-requests/{requestId}:",
 		"/exchange-requests/{requestId}/accept:", "/exchange-requests/{requestId}/decline:", "/exchange-requests/{requestId}/withdraw:",
-		"/exchange-requests/{requestId}/conversation:", "/exchanges/{exchangeId}:", "/exchanges/{exchangeId}/conversation:",
+		"/exchange-requests/{requestId}/conversation:", "/me/exchanges:", "/exchanges/{exchangeId}:",
+		"/exchanges/{exchangeId}/conversation:", "/exchanges/{exchangeId}/sessions:",
+		"/sessions/{sessionId}:", "/sessions/{sessionId}/proposals:", "/sessions/{sessionId}/accept:",
+		"/sessions/{sessionId}/decline:", "/sessions/{sessionId}/cancel:", "/me/schedule:",
 		"/me/conversations:", "/conversations/{conversationId}:", "/conversations/{conversationId}/messages:",
 		"/conversations/{conversationId}/read:", "/me/notifications:", "/me/notifications/{notificationId}/read:",
 		"/me/notifications/read-all:"} {

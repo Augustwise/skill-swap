@@ -126,6 +126,14 @@ type SessionUpdateEvent struct {
 // changes (FR-13).
 func (s *Service) RecordSessionUpdated(ctx context.Context, event SessionUpdateEvent) error {
 	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		convID := event.ConversationID
+		if convID == "" && event.ExchangeID != "" {
+			var err error
+			convID, err = s.comm.EnsureExchangeConversation(ctx, event.ExchangeID)
+			if err != nil {
+				return err
+			}
+		}
 		_, err := s.comm.CreateNotification(ctx, data.NewNotification{
 			RecipientID:    event.RecipientID,
 			ActorID:        event.ActorID,
@@ -135,7 +143,7 @@ func (s *Service) RecordSessionUpdated(ctx context.Context, event SessionUpdateE
 			Body:           event.Body,
 			ExchangeID:     event.ExchangeID,
 			SessionID:      event.SessionID,
-			ConversationID: event.ConversationID,
+			ConversationID: convID,
 		})
 		return err
 	})

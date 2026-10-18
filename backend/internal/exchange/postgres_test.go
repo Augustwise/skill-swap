@@ -43,6 +43,9 @@ func TestAcceptRequestConcurrentlyAgainstPostgres(t *testing.T) {
 			`DELETE FROM conversation_participants
 				WHERE conversation_id IN (SELECT id FROM conversations WHERE created_by_user_id = ANY($1))`,
 			`DELETE FROM conversations WHERE created_by_user_id = ANY($1)`,
+			`DELETE FROM session_confirmations WHERE session_id IN (SELECT id FROM sessions WHERE exchange_id IN (SELECT id FROM exchanges WHERE user_a_id = ANY($1)))`,
+			`DELETE FROM session_schedule_proposals WHERE session_id IN (SELECT id FROM sessions WHERE exchange_id IN (SELECT id FROM exchanges WHERE user_a_id = ANY($1)))`,
+			`DELETE FROM sessions WHERE exchange_id IN (SELECT id FROM exchanges WHERE user_a_id = ANY($1))`,
 			`DELETE FROM exchange_status_history WHERE exchange_id IN (SELECT id FROM exchanges WHERE user_a_id = ANY($1))`,
 			`DELETE FROM exchange_skill_commitments WHERE teacher_id = ANY($1)`,
 			`DELETE FROM exchanges WHERE user_a_id = ANY($1)`,
@@ -83,10 +86,14 @@ func TestAcceptRequestConcurrentlyAgainstPostgres(t *testing.T) {
 		}
 		return id
 	}
-	requester := student("A", datatest.GuitarSkillID, datatest.PhotoshopSkillID)
-	recipient := student("B", datatest.PhotoshopSkillID, datatest.GuitarSkillID)
+	const (
+		uiuxSkill = "30000000-0000-0000-0000-000000000006"
+		webSkill  = "30000000-0000-0000-0000-000000000007"
+	)
+	requester := student("A", uiuxSkill, webSkill)
+	recipient := student("B", webSkill, uiuxSkill)
 	created, err := service.CreateRequest(ctx, requester, NewRequest{RecipientID: recipient,
-		TeachSkillID: datatest.GuitarSkillID, LearnSkillID: datatest.PhotoshopSkillID, Format: data.FormatOnline,
+		TeachSkillID: uiuxSkill, LearnSkillID: webSkill, Format: data.FormatOnline,
 		TeachSessions: 1, TeachDurationMinutes: 60, LearnSessions: 1, LearnDurationMinutes: 60})
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +115,7 @@ func TestAcceptRequestConcurrentlyAgainstPostgres(t *testing.T) {
 			t.Fatalf("acceptance %d returned exchange %q, want %q", i, results[i].Exchange.ID, results[0].Exchange.ID)
 		}
 	}
-	var exchanges, accepted, conversations, notifications int
+	var exchanges, accepted, conversations, notifications, draftSessions int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM exchanges WHERE source_request_id = $1`, created.ID).Scan(&exchanges); err != nil {
 		t.Fatal(err)
 	}
@@ -126,8 +133,12 @@ func TestAcceptRequestConcurrentlyAgainstPostgres(t *testing.T) {
 		requester, created.ID).Scan(&notifications); err != nil {
 		t.Fatal(err)
 	}
-	if exchanges != 1 || accepted != 1 || conversations != 1 || notifications != 1 {
-		t.Fatalf("exchanges = %d, acceptances = %d, conversations = %d, notifications = %d",
-			exchanges, accepted, conversations, notifications)
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions
+		WHERE exchange_id = $1 AND status = 'DRAFT'`, results[0].Exchange.ID).Scan(&draftSessions); err != nil {
+		t.Fatal(err)
+	}
+	if exchanges != 1 || accepted != 1 || conversations != 1 || notifications != 1 || draftSessions != 2 {
+		t.Fatalf("exchanges = %d, acceptances = %d, conversations = %d, notifications = %d, draftSessions = %d",
+			exchanges, accepted, conversations, notifications, draftSessions)
 	}
 }

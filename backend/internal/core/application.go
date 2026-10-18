@@ -8,6 +8,7 @@ import (
 	"skillswap/backend/internal/discovery"
 	"skillswap/backend/internal/exchange"
 	"skillswap/backend/internal/profile"
+	"skillswap/backend/internal/session"
 )
 
 type IApplication interface {
@@ -33,6 +34,16 @@ type IApplication interface {
 	WithdrawRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error)
 	AcceptRequest(ctx context.Context, userID, requestID string) (exchange.Acceptance, error)
 	Exchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error)
+	Exchanges(ctx context.Context, userID string, filter data.ExchangeFilter, page int) (exchange.ExchangePage, error)
+
+	ExchangeSessions(ctx context.Context, userID, exchangeID string) (session.ExchangeSessions, error)
+	ProposeExchangeSession(ctx context.Context, userID, exchangeID string, in session.ProposalInput) (session.ProposalResult, error)
+	SessionDetails(ctx context.Context, userID, sessionID string) (session.SessionDetails, error)
+	ProposeSession(ctx context.Context, userID, sessionID string, in session.ProposalInput) (session.ProposalResult, error)
+	AcceptSessionProposal(ctx context.Context, userID, sessionID string) (session.ProposalResult, error)
+	DeclineSessionProposal(ctx context.Context, userID, sessionID string) (session.ProposalResult, error)
+	CancelSession(ctx context.Context, userID, sessionID, reason string) (data.Session, error)
+	Schedule(ctx context.Context, userID string, filter data.ScheduleFilter, page int) (session.SchedulePage, error)
 
 	Conversations(ctx context.Context, userID string, page int) (communication.ConversationPage, error)
 	Conversation(ctx context.Context, userID, conversationID string) (data.Conversation, error)
@@ -50,17 +61,24 @@ type Application struct {
 	profiles      *profile.Service
 	discovery     *discovery.Service
 	exchanges     *exchange.Service
+	sessions      *session.Service
 	communication *communication.Service
 }
 
 var _ IApplication = (*Application)(nil)
 
-func NewApplication(profiles *profile.Service, discovery *discovery.Service, exchanges *exchange.Service, comm ...*communication.Service) *Application {
-	var c *communication.Service
-	if len(comm) > 0 {
-		c = comm[0]
+func NewApplication(profiles *profile.Service, discovery *discovery.Service, exchanges *exchange.Service, comm *communication.Service, sessions ...*session.Service) *Application {
+	var s *session.Service
+	if len(sessions) > 0 {
+		s = sessions[0]
 	}
-	return &Application{profiles: profiles, discovery: discovery, exchanges: exchanges, communication: c}
+	return &Application{
+		profiles:      profiles,
+		discovery:     discovery,
+		exchanges:     exchanges,
+		sessions:      s,
+		communication: comm,
+	}
 }
 
 func (a *Application) Universities(ctx context.Context) ([]data.University, error) {
@@ -137,6 +155,42 @@ func (a *Application) AcceptRequest(ctx context.Context, userID, requestID strin
 
 func (a *Application) Exchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error) {
 	return a.exchanges.Exchange(ctx, userID, exchangeID)
+}
+
+func (a *Application) Exchanges(ctx context.Context, userID string, filter data.ExchangeFilter, page int) (exchange.ExchangePage, error) {
+	return a.exchanges.Exchanges(ctx, userID, filter, page)
+}
+
+func (a *Application) ExchangeSessions(ctx context.Context, userID, exchangeID string) (session.ExchangeSessions, error) {
+	return a.sessions.ExchangeSessions(ctx, userID, exchangeID)
+}
+
+func (a *Application) ProposeExchangeSession(ctx context.Context, userID, exchangeID string, in session.ProposalInput) (session.ProposalResult, error) {
+	return a.sessions.ProposeExchangeSession(ctx, userID, exchangeID, in)
+}
+
+func (a *Application) SessionDetails(ctx context.Context, userID, sessionID string) (session.SessionDetails, error) {
+	return a.sessions.SessionDetails(ctx, userID, sessionID)
+}
+
+func (a *Application) ProposeSession(ctx context.Context, userID, sessionID string, in session.ProposalInput) (session.ProposalResult, error) {
+	return a.sessions.ProposeSession(ctx, userID, sessionID, in)
+}
+
+func (a *Application) AcceptSessionProposal(ctx context.Context, userID, sessionID string) (session.ProposalResult, error) {
+	return a.sessions.AcceptSessionProposal(ctx, userID, sessionID)
+}
+
+func (a *Application) DeclineSessionProposal(ctx context.Context, userID, sessionID string) (session.ProposalResult, error) {
+	return a.sessions.DeclineSessionProposal(ctx, userID, sessionID)
+}
+
+func (a *Application) CancelSession(ctx context.Context, userID, sessionID, reason string) (data.Session, error) {
+	return a.sessions.CancelSession(ctx, userID, sessionID, reason)
+}
+
+func (a *Application) Schedule(ctx context.Context, userID string, filter data.ScheduleFilter, page int) (session.SchedulePage, error) {
+	return a.sessions.Schedule(ctx, userID, filter, page)
 }
 
 func (a *Application) Conversations(ctx context.Context, userID string, page int) (communication.ConversationPage, error) {
