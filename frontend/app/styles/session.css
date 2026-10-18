@@ -37,6 +37,10 @@
 .session-field [aria-invalid="true"] {
   border-color: #cf304d;
 }
+.exchange-field__error {
+  color: #9f2940;
+  font-size: 13px;
+}
 .session-field :is(input, textarea, select):focus-visible {
   outline: 3px solid #b9afff;
   outline-offset: 2px;
@@ -70,6 +74,10 @@
 .session-facts {
   gap: 10px;
   overflow-wrap: anywhere;
+}
+.session-facts > a,
+.session-plan__body > .dashboard-button {
+  justify-self: start;
 }
 .session-history {
   display: grid;

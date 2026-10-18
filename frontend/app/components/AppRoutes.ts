@@ -7,6 +7,7 @@ const pages = new Set([
   "/matches",
   "/requests",
   "/exchanges",
+  "/schedule",
   "/messages",
   "/notifications",
 ]);

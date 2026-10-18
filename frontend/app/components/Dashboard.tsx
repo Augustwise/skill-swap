@@ -8,7 +8,8 @@ import { AppShell } from "./AppShell";
 import { DashboardIcon as Icon } from "./DashboardIcon";
 import { DashboardModal, type DashboardModalContent } from "./DashboardModal";
 import { DashboardExchanges, DashboardRequests } from "./DashboardActivity";
-import { DashboardEmptyState, DashboardSessions, DashboardStats } from "./DashboardCards";
+import { DashboardEmptyState, DashboardStats } from "./DashboardCards";
+import { UpcomingLessons } from "./UpcomingLessons";
 import { MatchCard } from "./DiscoveryCards";
 import { DiscoveryError } from "./DiscoveryError";
 import { eligibleForMatching, mutualMatches } from "./DiscoveryApi";
@@ -106,7 +107,7 @@ function DashboardContent({ profile, session }: AppContext) {
           />
         </div>
         <div className="dashboard-right">
-          <DashboardSessions onOpenModal={setModal} />
+          <UpcomingLessons />
           <DashboardRequests viewerId={profile.id} csrfToken={session.csrfToken} />
         </div>
       </div>

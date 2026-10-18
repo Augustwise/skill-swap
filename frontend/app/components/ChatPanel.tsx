@@ -13,7 +13,7 @@ import { DashboardIcon as Icon } from "./DashboardIcon";
 import { DiscoveryEmpty } from "./DiscoveryCards";
 import { DiscoveryError } from "./DiscoveryError";
 import { avatarColor, fullName, initials } from "./DiscoveryFormat";
-import { requestPerspective } from "./ExchangeApi";
+import { exchangeHref, requestPerspective } from "./ExchangeApi";
 import { SkillTag, StatusBadge } from "./ExchangeCards";
 import { Skeleton } from "./Skeleton";
 import { useApiQuery } from "./useApiQuery";
@@ -149,6 +149,14 @@ export function ChatPanel({
           </div>
         </div>
         <div className="chat-panel__context">
+          {conversation.exchangeId && conversation.exchangeStatus === "ACTIVE" && (
+            <Link
+              className="dashboard-button dashboard-button--primary"
+              href={`${exchangeHref(conversation.exchangeId)}#exchange-lessons`}
+            >
+              Запланувати заняття
+            </Link>
+          )}
           {context.badge && <StatusBadge status={context.badge.status} kind={context.badge.kind} />}
           <Link className="dashboard-button" href={context.href}>
             {context.label}
