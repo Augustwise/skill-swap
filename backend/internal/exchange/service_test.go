@@ -603,10 +603,14 @@ func TestExchange(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, user := range []string{f.olha, f.andrii} {
-		e, err := f.service.Exchange(ctx, user, strings.ToUpper(accepted.Exchange.ID))
-		if err != nil || e.ID != accepted.Exchange.ID {
-			t.Fatalf("exchange = %+v, err %v", e, err)
+		details, err := f.service.ExchangeDetails(ctx, user, strings.ToUpper(accepted.Exchange.ID))
+		if err != nil {
+			t.Fatal(err)
 		}
+		expectEqual(t, "exchange", details.Exchange.ID, accepted.Exchange.ID)
+		expectEqual(t, "history items", len(details.History), 1)
+		expectEqual(t, "first history status", details.History[0].Status, data.ExchangeActive)
+		expectEqual(t, "accepted by", details.History[0].ChangedByID, f.andrii)
 	}
 	stranger := f.student(t, "marko@students.example.test", datatest.DemoUniversityID, "Київ", []string{data.FormatOnline},
 		datatest.PhotoshopSkillID, datatest.GuitarSkillID)
@@ -615,7 +619,7 @@ func TestExchange(t *testing.T) {
 		{"unknown exchange", f.olha, "80000000-0000-0000-0000-000000000999"},
 		{"not a UUID", f.olha, "exchange"},
 	} {
-		if _, err := f.service.Exchange(ctx, test.user, test.id); !errors.Is(err, ErrExchangeNotFound) {
+		if _, err := f.service.ExchangeDetails(ctx, test.user, test.id); !errors.Is(err, ErrExchangeNotFound) {
 			t.Fatalf("%s: err = %v", test.name, err)
 		}
 	}

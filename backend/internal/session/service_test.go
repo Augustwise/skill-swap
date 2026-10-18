@@ -492,13 +492,13 @@ func TestScheduleChronologicalOrderAndPrivacy(t *testing.T) {
 	}
 
 	// Exchange NextSession points to the earliest upcoming scheduled session.
-	updatedEx, err := f.exchanges.Exchange(ctx, f.olha, ex.ID)
+	details, err := f.exchanges.ExchangeDetails(ctx, f.olha, ex.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updatedEx.NextSession == nil || updatedEx.NextSession.ID != pEarlier.Session.ID {
-		t.Fatalf("NextSession = %+v, want %s", updatedEx.NextSession, pEarlier.Session.ID)
-	}
+	next := details.Exchange.NextSession
+	expectEqual(t, "next session is set", next != nil, true)
+	expectEqual(t, "next session", next.ID, pEarlier.Session.ID)
 
 	// Marko (a third student) has an empty schedule and cannot see Olha & Andrii's sessions (FR-10).
 	markoSched, err := f.service.Schedule(ctx, f.marko, data.ScheduleFilter{}, 1)

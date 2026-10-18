@@ -26,6 +26,16 @@ func (m *Memory) SetSessionStatus(sessionID, status string) {
 	}
 }
 
+// SetSessionTime moves a stored session, e.g. into the past so that it can be confirmed.
+func (m *Memory) SetSessionTime(sessionID string, startsAt, endsAt time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.lessonSessions[sessionID]; ok {
+		starts, ends := startsAt.UTC(), endsAt.UTC()
+		s.StartsAt, s.EndsAt = &starts, &ends
+	}
+}
+
 func (m *Memory) hydrateProposal(sp *data.SessionProposal) data.SessionProposal {
 	out := *sp
 	if a, ok := m.users[out.ProposedByID]; ok {
@@ -76,6 +86,7 @@ func (m *Memory) hydrateSession(s *data.Session) data.Session {
 		!m.blocked(out.Requester.UserID, out.Recipient.UserID)
 
 	out.ConfirmedUserIDs = append([]string{}, m.sessionConfirmations[s.ID]...)
+	out.CompletionConfirmedUserIDs = append([]string{}, m.completionConfirmations[s.ID]...)
 	proposals := m.proposals[s.ID]
 	if len(proposals) > 0 {
 		var best *data.SessionProposal
@@ -131,10 +142,6 @@ func (m *Memory) SessionProposals(_ context.Context, sessionID string) ([]data.S
 		return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), cmp.Compare(a.ID, b.ID))
 	})
 	return items, nil
-}
-
-func (m *Memory) LockExchangeForSession(ctx context.Context, exchangeID string) (data.Exchange, error) {
-	return m.ExchangeByID(ctx, exchangeID)
 }
 
 func (m *Memory) LockSession(ctx context.Context, sessionID string) (data.Session, error) {
@@ -234,6 +241,7 @@ func (m *Memory) SaveSessionProposal(_ context.Context, in data.NewSessionPropos
 		}
 	}
 	m.sessionConfirmations[in.SessionID] = []string{in.ProposerID}
+	delete(m.completionConfirmations, in.SessionID)
 
 	proposalID := fmt.Sprintf("82000000-0000-0000-0000-%012d", totalProposals+1)
 	proposal := &data.SessionProposal{
@@ -357,6 +365,7 @@ func (m *Memory) CancelSession(_ context.Context, sessionID, cancelledByID, reas
 		}
 	}
 	delete(m.sessionConfirmations, sessionID)
+	delete(m.completionConfirmations, sessionID)
 
 	s.Status = data.SessionCancelled
 	s.CancelledAt = &now
@@ -410,6 +419,35 @@ func (m *Memory) CancelSession(_ context.Context, sessionID, cancelledByID, reas
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
+	return nil
+}
+
+func (m *Memory) ConfirmSessionCompletion(_ context.Context, sessionID, userID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.lessonSessions[sessionID]
+	if !ok {
+		return data.ErrNotFound
+	}
+	if !slices.Contains(m.completionConfirmations[sessionID], userID) {
+		m.completionConfirmations[sessionID] = append(m.completionConfirmations[sessionID], userID)
+		m.touchExchange(s.ExchangeID)
+	}
+	return nil
+}
+
+func (m *Memory) CompleteSession(_ context.Context, sessionID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.lessonSessions[sessionID]
+	if !ok || s.Status != data.SessionScheduled {
+		return data.ErrNotFound
+	}
+	now := time.Now().UTC()
+	s.Status = data.SessionCompleted
+	s.CompletedAt = &now
+	s.UpdatedAt = now
+	m.touchExchange(s.ExchangeID)
 	return nil
 }
 

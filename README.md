@@ -26,8 +26,8 @@ skill-swap/
 │   ├── internal/core/           # Application facade and IApplication contract
 │   ├── internal/profile/        # Profile and skill-list business rules
 │   ├── internal/discovery/      # Student search, candidate profile, and mutual matches
-│   ├── internal/exchange/       # Exchange requests, decisions, and active exchanges
-│   ├── internal/session/        # Lesson planning, time agreement, and personal schedule
+│   ├── internal/exchange/       # Exchange requests, decisions, completion, and cancellation
+│   ├── internal/session/        # Lesson planning, time agreement, confirmations, and schedule
 │   ├── internal/communication/  # Private text chat and in-app notifications
 │   ├── internal/data/           # Repository interfaces and PostgreSQL adapter
 │   ├── internal/mailer/         # IMailer contract and SMTP adapter
@@ -64,8 +64,8 @@ classes and interfaces in the design.
 | `core.Application` / `IApplication` | Application entry point; coordinates profile, discovery, exchange, session, and communication services. |
 | `profile.Service` | Profile validation, teaching/learning lists, and `EligibleForMatching`. |
 | `discovery.Service` | Student search with filters, candidate profiles, and `MutualMatches`. |
-| `exchange.Service` | Exchange requests, decisions (`AcceptRequest`, `DeclineRequest`, `WithdrawRequest`), and `Exchanges`. |
-| `session.Service` | Lesson plan (`ExchangeSessions`), proposals (`ProposeSession`, `AcceptSessionProposal`, `DeclineSessionProposal`), cancellation, and chronological `Schedule`. |
+| `exchange.Service` | Exchange requests, decisions (`AcceptRequest`, `DeclineRequest`, `WithdrawRequest`), `Exchanges`, final confirmation (`CompleteExchange`), and `CancelExchange`. |
+| `session.Service` | Lesson plan (`ExchangeSessions`), proposals (`ProposeSession`, `AcceptSessionProposal`, `DeclineSessionProposal`), cancellation, two-sided `ConfirmSessionCompletion`, and chronological `Schedule`. |
 | `communication.Service` | Private conversations, chat messages, 5-second polling (`Messages`), and in-app `Notifications`. |
 | `data.Postgres` | SQL repositories and `WithinTx` transaction boundaries. |
 | `mailer.SMTP` / `IMailer` | Sending verification and reset messages through `Send`. |

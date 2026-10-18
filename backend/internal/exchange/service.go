@@ -3,9 +3,11 @@ package exchange
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
+	"skillswap/backend/internal/communication"
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/profile"
 	"skillswap/backend/internal/validate"
@@ -20,7 +22,8 @@ const (
 	PageSize = 20
 	MaxPage  = 500
 
-	maxMessageLength = 500
+	maxMessageLength      = 500
+	maxCancelReasonLength = 500
 )
 
 var (
@@ -40,12 +43,16 @@ var (
 	ErrRequestNotPending  = errors.New("request has already been answered")
 	ErrRequestOutdated    = errors.New("request can no longer be accepted")
 	ErrExchangeNotFound   = errors.New("exchange was not found or the user does not take part in it")
+	ErrExchangeNotActive  = errors.New("exchange is no longer active")
+	ErrExchangeBlocked    = errors.New("exchange actions are blocked because a participant is unavailable or blocked")
+	ErrPlanNotCompleted   = errors.New("not all planned sessions have been confirmed in both directions")
 )
 
 type ICommunication interface {
 	RecordRequestCreated(ctx context.Context, request data.ExchangeRequest) error
 	RecordRequestAccepted(ctx context.Context, request data.ExchangeRequest, exchangeID string) error
 	RecordRequestDeclined(ctx context.Context, request data.ExchangeRequest) error
+	RecordSessionUpdated(ctx context.Context, event communication.SessionUpdateEvent) error
 }
 
 type Service struct {
@@ -270,20 +277,104 @@ func (s *Service) AcceptRequest(ctx context.Context, userID, requestID string) (
 	return accepted, err
 }
 
-func (s *Service) Exchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error) {
+type ExchangeDetails struct {
+	Exchange data.Exchange
+	History  []data.ExchangeStatusChange
+}
+
+func (s *Service) ExchangeDetails(ctx context.Context, userID, exchangeID string) (ExchangeDetails, error) {
 	if !validate.UUID(exchangeID) {
-		return data.Exchange{}, ErrExchangeNotFound
+		return ExchangeDetails{}, ErrExchangeNotFound
 	}
 	exchange, err := s.exchanges.ExchangeByID(ctx, strings.ToLower(exchangeID))
 	switch {
 	case errors.Is(err, data.ErrNotFound):
-		return data.Exchange{}, ErrExchangeNotFound
+		return ExchangeDetails{}, ErrExchangeNotFound
 	case err != nil:
-		return data.Exchange{}, err
+		return ExchangeDetails{}, err
 	case userID != exchange.Requester.UserID && userID != exchange.Recipient.UserID:
+		return ExchangeDetails{}, ErrExchangeNotFound
+	}
+	history, err := s.exchanges.ExchangeHistory(ctx, exchange.ID)
+	if err != nil {
+		return ExchangeDetails{}, err
+	}
+	return ExchangeDetails{Exchange: exchange, History: history}, nil
+}
+
+// CompleteExchange records the final confirmation of the user. The exchange is completed once
+// the plan is done in both directions and both participants have confirmed.
+func (s *Service) CompleteExchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error) {
+	var completed data.Exchange
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		current, err := s.lockExchange(ctx, userID, exchangeID)
+		if err != nil {
+			return err
+		}
+		switch {
+		case current.Status == data.ExchangeCompleted:
+			// Both participants have already confirmed it, so a repeat changes nothing.
+		case current.Status != data.ExchangeActive:
+			return ErrExchangeNotActive
+		case !current.CanInteract:
+			return ErrExchangeBlocked
+		case !current.Progress.PlanCompleted():
+			return ErrPlanNotCompleted
+		case !slices.Contains(current.ConfirmedUserIDs, userID):
+			if err := s.exchanges.ConfirmExchangeCompletion(ctx, current.ID, userID); err != nil {
+				return err
+			}
+			partnerConfirmed := slices.Contains(current.ConfirmedUserIDs, partnerID(current, userID))
+			if partnerConfirmed {
+				if err := s.exchanges.CompleteExchange(ctx, current.ID, userID); err != nil {
+					return err
+				}
+			}
+			if err := s.notifyCompletion(ctx, userID, current, partnerConfirmed); err != nil {
+				return err
+			}
+		}
+		completed, err = s.exchanges.ExchangeByID(ctx, current.ID)
+		return err
+	})
+	return completed, err
+}
+
+// CancelExchange keeps the history and completed sessions, and cancels the sessions that have
+// not taken place yet.
+func (s *Service) CancelExchange(ctx context.Context, userID, exchangeID, rawReason string) (data.Exchange, error) {
+	if !validate.UUID(exchangeID) {
 		return data.Exchange{}, ErrExchangeNotFound
 	}
-	return exchange, nil
+	reason, ok := validate.Text(rawReason, maxCancelReasonLength)
+	if !ok || reason == "" {
+		return data.Exchange{}, &profile.ValidationError{Fields: map[string]string{
+			"reason": "Give a reason of 1 to 500 characters",
+		}}
+	}
+	var cancelled data.Exchange
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		current, err := s.lockExchange(ctx, userID, exchangeID)
+		if err != nil {
+			return err
+		}
+		switch current.Status {
+		case data.ExchangeCancelled:
+			// The same action repeated, e.g. after a lost response, changes nothing.
+		case data.ExchangeActive:
+			if err := s.exchanges.CancelExchange(ctx, current.ID, userID, reason); err != nil {
+				return err
+			}
+			if err := s.notifyCancellation(ctx, userID, current, reason); err != nil {
+				return err
+			}
+		default:
+			return ErrExchangeNotActive
+		}
+		cancelled, err = s.exchanges.ExchangeByID(ctx, current.ID)
+		return err
+	})
+	return cancelled, err
 }
 
 type ExchangePage struct {
@@ -325,6 +416,76 @@ func (s *Service) lockRequest(ctx context.Context, userID, requestID string, act
 		return data.RequestState{}, ErrActionNotAllowed
 	}
 	return request, nil
+}
+
+// lockExchange must run inside a transaction: the rows stay locked until it ends.
+func (s *Service) lockExchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error) {
+	if !validate.UUID(exchangeID) {
+		return data.Exchange{}, ErrExchangeNotFound
+	}
+	exchange, err := s.exchanges.LockExchange(ctx, strings.ToLower(exchangeID))
+	switch {
+	case errors.Is(err, data.ErrNotFound):
+		return data.Exchange{}, ErrExchangeNotFound
+	case err != nil:
+		return data.Exchange{}, err
+	case userID != exchange.Requester.UserID && userID != exchange.Recipient.UserID:
+		return data.Exchange{}, ErrExchangeNotFound
+	}
+	return exchange, nil
+}
+
+func (s *Service) notifyCompletion(ctx context.Context, userID string, e data.Exchange, completed bool) error {
+	if s.comm == nil {
+		return nil
+	}
+	event := communication.SessionUpdateEvent{
+		RecipientID: partnerID(e, userID),
+		ActorID:     userID,
+		EventKey:    "exchange-completion:" + e.ID + ":" + userID,
+		Title:       "Підтвердіть завершення обміну",
+		Body:        fmt.Sprintf("%s пропонує завершити обмін «%s».", actorName(e, userID), skillPair(e)),
+		ExchangeID:  e.ID,
+	}
+	if completed {
+		event.EventKey = "exchange-completed:" + e.ID
+		event.Title = "Обмін завершено"
+		event.Body = fmt.Sprintf("%s теж підтвердив завершення обміну «%s».", actorName(e, userID), skillPair(e))
+	}
+	return s.comm.RecordSessionUpdated(ctx, event)
+}
+
+func (s *Service) notifyCancellation(ctx context.Context, userID string, e data.Exchange, reason string) error {
+	if s.comm == nil {
+		return nil
+	}
+	return s.comm.RecordSessionUpdated(ctx, communication.SessionUpdateEvent{
+		RecipientID: partnerID(e, userID),
+		ActorID:     userID,
+		EventKey:    "exchange-cancelled:" + e.ID,
+		Title:       "Обмін скасовано",
+		Body:        fmt.Sprintf("%s скасував обмін «%s». Причина: %s", actorName(e, userID), skillPair(e), reason),
+		ExchangeID:  e.ID,
+	})
+}
+
+func partnerID(e data.Exchange, userID string) string {
+	if userID == e.Requester.UserID {
+		return e.Recipient.UserID
+	}
+	return e.Requester.UserID
+}
+
+func actorName(e data.Exchange, userID string) string {
+	actor := e.Requester
+	if userID == e.Recipient.UserID {
+		actor = e.Recipient
+	}
+	return strings.TrimSpace(actor.FirstName + " " + actor.LastName)
+}
+
+func skillPair(e data.Exchange) string {
+	return e.RequesterTeaches.Name + " ↔ " + e.RecipientTeaches.Name
 }
 
 func validRequest(userID string, in NewRequest) (data.NewRequest, error) {

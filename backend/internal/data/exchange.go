@@ -124,7 +124,16 @@ type ExchangeProgress struct {
 	ProposedSessions           int
 	DraftSessions              int
 	CancelledSessions          int
-	Percent                    int
+	// AwaitingConfirmationSessions are scheduled sessions that have already ended.
+	AwaitingConfirmationSessions int
+	Percent                      int
+}
+
+// PlanCompleted reports whether all planned sessions in both directions have been confirmed.
+func (p ExchangeProgress) PlanCompleted() bool {
+	requesterDone := p.RequesterPlannedSessions > 0 && p.RequesterCompletedSessions >= p.RequesterPlannedSessions
+	recipientDone := p.RecipientPlannedSessions > 0 && p.RecipientCompletedSessions >= p.RecipientPlannedSessions
+	return requesterDone && recipientDone
 }
 
 type NextSessionSummary struct {
@@ -144,23 +153,36 @@ type NextSessionSummary struct {
 // Exchange terms come from the snapshots taken when the request was accepted, so later
 // profile changes do not alter them.
 type Exchange struct {
-	ID                 string
-	RequestID          string
-	Status             string
-	Format             string
-	TotalSessions      int
-	Requester          RequestParty
-	Recipient          RequestParty
-	RequesterTeaches   RequestTerms
-	RecipientTeaches   RequestTerms
-	Progress           ExchangeProgress
-	NextSession        *NextSessionSummary
+	ID               string
+	RequestID        string
+	Status           string
+	Format           string
+	TotalSessions    int
+	CanInteract      bool
+	Requester        RequestParty
+	Recipient        RequestParty
+	RequesterTeaches RequestTerms
+	RecipientTeaches RequestTerms
+	Progress         ExchangeProgress
+	NextSession      *NextSessionSummary
+	// ConfirmedUserIDs are the participants who confirmed that the exchange is finished.
+	ConfirmedUserIDs   []string
 	StartedAt          *time.Time
 	CompletedAt        *time.Time
 	CancelledAt        *time.Time
 	CancellationReason string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+}
+
+type ExchangeStatusChange struct {
+	Status string
+	// ChangedBy fields are empty when the change was not made by a user.
+	ChangedByID        string
+	ChangedByFirstName string
+	ChangedByLastName  string
+	Reason             string
+	CreatedAt          time.Time
 }
 
 type IExchangeData interface {
@@ -175,6 +197,11 @@ type IExchangeData interface {
 	CreateExchange(ctx context.Context, requestID, acceptedByID string) (string, error)
 	ExchangeByID(ctx context.Context, exchangeID string) (Exchange, error)
 	UserExchanges(ctx context.Context, userID string, filter ExchangeFilter, limit, offset int) ([]Exchange, int, error)
+	ExchangeHistory(ctx context.Context, exchangeID string) ([]ExchangeStatusChange, error)
+	LockExchange(ctx context.Context, exchangeID string) (Exchange, error)
+	ConfirmExchangeCompletion(ctx context.Context, exchangeID, userID string) error
+	CompleteExchange(ctx context.Context, exchangeID, completedByID string) error
+	CancelExchange(ctx context.Context, exchangeID, cancelledByID, reason string) error
 }
 
 var _ IExchangeData = (*Postgres)(nil)
@@ -447,6 +474,7 @@ const exchangeProgressObject = `json_build_object(
 	'ProposedSessions', (SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'PROPOSED'),
 	'DraftSessions', (SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'DRAFT'),
 	'CancelledSessions', (SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'CANCELLED'),
+	'AwaitingConfirmationSessions', (SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'SCHEDULED' AND s.scheduled_end <= now()),
 	'Percent', CASE WHEN e.total_sessions > 0
 		THEN LEAST(100, ((SELECT count(*) FROM sessions s WHERE s.exchange_id = e.id AND s.status = 'COMPLETED') * 100) / e.total_sessions)
 		ELSE 0 END
@@ -473,10 +501,17 @@ var exchangeNextSessionObject = `(SELECT json_build_object(
 	ORDER BY s.scheduled_start ASC, s.plan_order ASC, s.id ASC
 	LIMIT 1)`
 
+const exchangeConfirmedUsers = `COALESCE((
+	SELECT array_agg(c.user_id::text ORDER BY c.confirmed_at ASC, c.user_id ASC)
+	FROM exchange_confirmations c
+	WHERE c.exchange_id = e.id
+), ARRAY[]::text[])`
+
 var exchangeColumns = `e.id, COALESCE(e.source_request_id::text, ''), e.status::text,
-	e.format::text, e.total_sessions, ` + requestParty("ua") + `, ` + requestParty("ub") + `,
+	e.format::text, e.total_sessions, ` + participantsCanInteract + `,
+	` + requestParty("ua") + `, ` + requestParty("ub") + `,
 	` + commitmentTerms("e.user_a_id") + `, ` + commitmentTerms("e.user_b_id") + `,
-	` + exchangeProgressObject + `, ` + exchangeNextSessionObject + `,
+	` + exchangeProgressObject + `, ` + exchangeNextSessionObject + `, ` + exchangeConfirmedUsers + `,
 	e.started_at, e.completed_at, e.cancelled_at, COALESCE(e.cancellation_reason, ''),
 	e.created_at, e.updated_at`
 
@@ -486,9 +521,9 @@ const exchangeFrom = `
 	JOIN users ub ON ub.id = e.user_b_id`
 
 func (e *Exchange) scanTargets(extra ...any) []any {
-	return append([]any{&e.ID, &e.RequestID, &e.Status, &e.Format, &e.TotalSessions,
+	return append([]any{&e.ID, &e.RequestID, &e.Status, &e.Format, &e.TotalSessions, &e.CanInteract,
 		&e.Requester, &e.Recipient, &e.RequesterTeaches, &e.RecipientTeaches,
-		&e.Progress, &e.NextSession,
+		&e.Progress, &e.NextSession, &e.ConfirmedUserIDs,
 		&e.StartedAt, &e.CompletedAt, &e.CancelledAt, &e.CancellationReason,
 		&e.CreatedAt, &e.UpdatedAt}, extra...)
 }
@@ -523,4 +558,101 @@ func (p *Postgres) UserExchanges(ctx context.Context, userID string, filter Exch
 		err = p.conn(ctx).QueryRow(ctx, `SELECT count(*) FROM exchanges e`+where, userID, filter.Status).Scan(&total)
 	}
 	return items, total, err
+}
+
+func (p *Postgres) ExchangeHistory(ctx context.Context, exchangeID string) ([]ExchangeStatusChange, error) {
+	rows, err := p.conn(ctx).Query(ctx, `SELECT h.status::text, COALESCE(u.id::text, ''),
+			COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), COALESCE(h.reason, ''), h.created_at
+		FROM exchange_status_history h
+		LEFT JOIN users u ON u.id = h.changed_by_user_id
+		WHERE h.exchange_id = $1
+		ORDER BY h.created_at, h.id`, exchangeID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (ExchangeStatusChange, error) {
+		var c ExchangeStatusChange
+		err := row.Scan(&c.Status, &c.ChangedByID, &c.ChangedByFirstName, &c.ChangedByLastName, &c.Reason, &c.CreatedAt)
+		return c, err
+	})
+}
+
+// LockExchange holds both participants, in the same order as every other operation on the
+// pair, and then the exchange row until the surrounding transaction ends.
+func (p *Postgres) LockExchange(ctx context.Context, exchangeID string) (Exchange, error) {
+	var userA, userB string
+	err := p.conn(ctx).QueryRow(ctx, `SELECT user_a_id, user_b_id FROM exchanges WHERE id = $1`, exchangeID).Scan(&userA, &userB)
+	if err != nil {
+		return Exchange{}, notFound(err)
+	}
+	if err := p.LockUsers(ctx, userA, userB); err != nil {
+		return Exchange{}, err
+	}
+	if err := p.conn(ctx).QueryRow(ctx, `SELECT user_a_id, user_b_id FROM exchanges WHERE id = $1 FOR UPDATE`, exchangeID).Scan(&userA, &userB); err != nil {
+		return Exchange{}, notFound(err)
+	}
+	return p.ExchangeByID(ctx, exchangeID)
+}
+
+func (p *Postgres) ConfirmExchangeCompletion(ctx context.Context, exchangeID, userID string) error {
+	_, err := p.conn(ctx).Exec(ctx, `WITH confirmed AS (
+			INSERT INTO exchange_confirmations (exchange_id, user_id)
+			VALUES ($1, $2)
+			ON CONFLICT (exchange_id, user_id) DO NOTHING
+			RETURNING exchange_id
+		)
+		UPDATE exchanges SET updated_at = now() WHERE id IN (SELECT exchange_id FROM confirmed)`, exchangeID, userID)
+	return err
+}
+
+func (p *Postgres) CompleteExchange(ctx context.Context, exchangeID, completedByID string) error {
+	tag, err := p.conn(ctx).Exec(ctx, `WITH completed AS (
+			UPDATE exchanges
+			SET status = 'COMPLETED', completed_at = now(), updated_at = now()
+			WHERE id = $1 AND status = 'ACTIVE'
+			RETURNING id, completed_at
+		)
+		INSERT INTO exchange_status_history (exchange_id, status, changed_by_user_id, created_at)
+		SELECT id, 'COMPLETED', $2, completed_at FROM completed`, exchangeID, completedByID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CancelExchange keeps completed sessions and all history, and cancels every session that has
+// not taken place yet.
+func (p *Postgres) CancelExchange(ctx context.Context, exchangeID, cancelledByID, reason string) error {
+	tag, err := p.conn(ctx).Exec(ctx, `WITH cancelled AS (
+			UPDATE exchanges
+			SET status = 'CANCELLED', cancelled_at = now(), cancellation_reason = $3, updated_at = now()
+			WHERE id = $1 AND status = 'ACTIVE'
+			RETURNING id, cancelled_at
+		)
+		INSERT INTO exchange_status_history (exchange_id, status, changed_by_user_id, reason, created_at)
+		SELECT id, 'CANCELLED', $2, $3, cancelled_at FROM cancelled`, exchangeID, cancelledByID, reason)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if _, err := p.conn(ctx).Exec(ctx, `UPDATE session_schedule_proposals sp
+		SET status = 'SUPERSEDED', responded_by_user_id = $2, responded_at = now()
+		FROM sessions s
+		WHERE s.id = sp.session_id AND s.exchange_id = $1 AND sp.status = 'PENDING'`, exchangeID, cancelledByID); err != nil {
+		return err
+	}
+	if _, err := p.conn(ctx).Exec(ctx, `DELETE FROM session_confirmations sc
+		USING sessions s
+		WHERE s.id = sc.session_id AND s.exchange_id = $1 AND s.status IN ('DRAFT', 'PROPOSED', 'SCHEDULED')`, exchangeID); err != nil {
+		return err
+	}
+	_, err = p.conn(ctx).Exec(ctx, `UPDATE sessions
+		SET status = 'CANCELLED', cancelled_at = now(), cancellation_reason = $2, updated_at = now()
+		WHERE exchange_id = $1 AND status IN ('DRAFT', 'PROPOSED', 'SCHEDULED')`, exchangeID, reason)
+	return err
 }

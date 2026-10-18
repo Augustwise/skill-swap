@@ -1436,11 +1436,12 @@ paths:
     get:
       tags: [Exchanges]
       operationId: getExchange
-      summary: Show the terms, progress and sessions of an exchange (FR-07, FR-10)
+      summary: Show the terms, progress, sessions and status history of an exchange (FR-07, FR-10, FR-11)
       description: |
         Only the two participants can see an exchange. The terms come from the snapshots
         taken on acceptance; `sessions` lists all planned and cancelled lessons in
-        `planOrder` order.
+        `planOrder` order; `history` lists the status changes oldest first, including who
+        completed or cancelled the exchange and the cancellation reason.
       security:
         - sessionCookie: []
       parameters:
@@ -1457,7 +1458,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [exchange, sessions]
+                required: [exchange, sessions, history]
                 properties:
                   exchange:
                     $ref: "#/components/schemas/Exchange"
@@ -1465,6 +1466,10 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Session"
+                  history:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ExchangeStatusChange"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -1479,6 +1484,123 @@ paths:
                 error:
                   code: exchange_not_found
                   message: Exchange was not found
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /exchanges/{exchangeId}/complete:
+    post:
+      tags: [Exchanges]
+      operationId: completeExchange
+      summary: Confirm that the exchange is finished (FR-11)
+      description: |
+        Available when every planned session in both directions is `COMPLETED`
+        (`progress.planCompleted`). The first participant's call records their confirmation
+        and notifies the partner; the exchange stays `ACTIVE`. The partner's call sets
+        `COMPLETED`, `completedAt` and a history item. Repeating the call, or calling it on a
+        completed exchange, returns the exchange as it is. Takes no body.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: exchangeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The exchange after the confirmation
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exchange]
+                properties:
+                  exchange:
+                    $ref: "#/components/schemas/Exchange"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: Exchange was not found (`exchange_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`exchange_not_active` (cancelled), `exchange_blocked` or `plan_not_completed`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: plan_not_completed
+                  message: Not all planned sessions have been confirmed in both directions
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /exchanges/{exchangeId}/cancel:
+    post:
+      tags: [Exchanges]
+      operationId: cancelExchange
+      summary: Cancel an active exchange with a reason (FR-11)
+      description: |
+        Either participant can cancel an `ACTIVE` exchange. In one transaction the exchange
+        becomes `CANCELLED` with `cancelledAt`, the reason and a history item; every
+        `DRAFT`, `PROPOSED` and `SCHEDULED` session becomes `CANCELLED` with the same reason
+        and pending proposals are superseded. Completed sessions and all history stay. The
+        partner gets a `SESSION_UPDATED` notification that opens the exchange. Repeating the
+        call on a cancelled exchange returns it as it is.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: exchangeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelExchangeRequest"
+      responses:
+        "200":
+          description: The cancelled exchange
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exchange]
+                properties:
+                  exchange:
+                    $ref: "#/components/schemas/Exchange"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: Exchange was not found (`exchange_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`exchange_not_active`: the exchange is already completed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
   /exchanges/{exchangeId}/sessions:
@@ -1860,6 +1982,63 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "422":
           $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /sessions/{sessionId}/confirm:
+    post:
+      tags: [Sessions]
+      operationId: confirmSessionCompletion
+      summary: Confirm that a session took place (FR-11)
+      description: |
+        After `endsAt` each participant confirms a `SCHEDULED` session. One confirmation
+        does not count the session; the second one sets `COMPLETED` and `completedAt`, so
+        the session is added to `progress`. The partner gets a `SESSION_UPDATED`
+        notification. Repeating the call, or calling it on a completed session, changes
+        nothing. Rescheduling or cancelling the session clears its confirmations. Takes no
+        body.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The session and its exchange with the updated progress
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, exchange]
+                properties:
+                  session:
+                    $ref: "#/components/schemas/Session"
+                  exchange:
+                    $ref: "#/components/schemas/Exchange"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: Session was not found (`session_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`exchange_not_active`, `exchange_blocked`, `session_not_confirmable` (not `SCHEDULED`) or `session_not_finished`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: session_not_finished
+                  message: The session can be confirmed only after it ends
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
   /me/schedule:
@@ -3214,16 +3393,18 @@ components:
           nullable: true
     ExchangeStatus:
       type: string
-      description: Every exchange starts ACTIVE; COMPLETED and CANCELLED come in Sprint 8.
+      description: Every exchange starts ACTIVE and ends COMPLETED or CANCELLED; PLANNED and PAUSED are not used.
       enum: [PLANNED, ACTIVE, PAUSED, COMPLETED, CANCELLED]
     ExchangeProgress:
       type: object
       description: |
-        Progress of an exchange relative to the agreed plan (FR-10). Cancelled sessions do
-        not increase `completedSessions` or `percent`.
+        Progress of an exchange relative to the agreed plan (FR-10, FR-11). Only sessions
+        confirmed by both participants count as completed; cancelled sessions do not increase
+        `completedSessions` or `percent`.
       required: [completedSessions, totalSessions, requesterCompletedSessions,
         requesterPlannedSessions, recipientCompletedSessions, recipientPlannedSessions,
-        scheduledSessions, proposedSessions, draftSessions, cancelledSessions, percent]
+        scheduledSessions, proposedSessions, draftSessions, cancelledSessions,
+        awaitingConfirmationSessions, percent, planCompleted]
       properties:
         completedSessions:
           type: integer
@@ -3255,10 +3436,17 @@ components:
         cancelledSessions:
           type: integer
           minimum: 0
+        awaitingConfirmationSessions:
+          type: integer
+          minimum: 0
+          description: Scheduled sessions that have already ended and wait for confirmations.
         percent:
           type: integer
           minimum: 0
           maximum: 100
+        planCompleted:
+          type: boolean
+          description: Every planned session in both directions is completed.
     NextSessionSummary:
       type: object
       description: The earliest upcoming `SCHEDULED` meeting of an exchange.
@@ -3298,9 +3486,11 @@ components:
       description: |
         `requesterTeaches` and `recipientTeaches` hold the skill name and levels copied on
         acceptance, not the current profile values. `partner` is the other student relative
-        to the signed-in viewer.
+        to the signed-in viewer. `canConfirmCompletion` is true for an active exchange with
+        the whole plan done that the viewer has not confirmed yet.
       required: [id, requestId, status, format, totalSessions, partner, requester, recipient,
-        requesterTeaches, recipientTeaches, progress, nextSession, startedAt, completedAt,
+        requesterTeaches, recipientTeaches, progress, nextSession, completionConfirmedByMe,
+        completionConfirmedByPartner, canConfirmCompletion, canCancel, startedAt, completedAt,
         cancelledAt, cancellationReason, createdAt, updatedAt]
       properties:
         id:
@@ -3333,6 +3523,14 @@ components:
           allOf:
             - $ref: "#/components/schemas/NextSessionSummary"
           nullable: true
+        completionConfirmedByMe:
+          type: boolean
+        completionConfirmedByPartner:
+          type: boolean
+        canConfirmCompletion:
+          type: boolean
+        canCancel:
+          type: boolean
         startedAt:
           type: string
           format: date-time
@@ -3428,8 +3626,9 @@ components:
       required: [id, exchangeId, planOrder, title, description, status, format, skill,
         plannedDurationMinutes, teacher, learner, partner, role, startsAt, endsAt,
         durationMinutes, meetingPlace, meetingUrl, activeProposal, scheduleConfirmedByMe,
-        scheduleConfirmedByPartner, canRespondToProposal, canCancel, completedAt,
-        cancelledAt, cancellationReason, createdAt, updatedAt]
+        scheduleConfirmedByPartner, canRespondToProposal, canCancel, completionConfirmedByMe,
+        completionConfirmedByPartner, canConfirmCompletion, completedAt, cancelledAt,
+        cancellationReason, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -3500,6 +3699,13 @@ components:
           type: boolean
         canCancel:
           type: boolean
+        completionConfirmedByMe:
+          type: boolean
+        completionConfirmedByPartner:
+          type: boolean
+        canConfirmCompletion:
+          type: boolean
+          description: The session is `SCHEDULED`, has ended, and the viewer has not confirmed it yet.
         completedAt:
           type: string
           format: date-time
@@ -3563,6 +3769,16 @@ components:
         reason:
           type: string
           maxLength: 500
+    CancelExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          example: Змінився розклад занять
     SchedulePage:
       type: object
       required: [items, page, pageSize, total, timezone, pendingProposalsCount]
@@ -3621,6 +3837,24 @@ components:
               type: string
             lastName:
               type: string
+        createdAt:
+          type: string
+          format: date-time
+    ExchangeStatusChange:
+      type: object
+      required: [status, changedBy, reason, createdAt]
+      properties:
+        status:
+          $ref: "#/components/schemas/ExchangeStatus"
+        changedBy:
+          allOf:
+            - $ref: "#/components/schemas/Person"
+          nullable: true
+          description: The student who made the change; null when it was not made by a user.
+        reason:
+          type: string
+          nullable: true
+          description: The cancellation reason.
         createdAt:
           type: string
           format: date-time

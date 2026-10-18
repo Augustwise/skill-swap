@@ -44,6 +44,10 @@ type Memory struct {
 	lessonSessions       map[string]*data.Session
 	proposals            map[string][]*data.SessionProposal
 	sessionConfirmations map[string][]string
+	// completionConfirmations and exchangeConfirmations list who confirmed, by session or exchange ID.
+	completionConfirmations map[string][]string
+	exchangeConfirmations   map[string][]string
+	exchangeHistory         map[string][]data.ExchangeStatusChange
 }
 
 type catalogSkill struct {
@@ -112,6 +116,10 @@ func NewMemory() *Memory {
 		lessonSessions:       map[string]*data.Session{},
 		proposals:            map[string][]*data.SessionProposal{},
 		sessionConfirmations: map[string][]string{},
+
+		completionConfirmations: map[string][]string{},
+		exchangeConfirmations:   map[string][]string{},
+		exchangeHistory:         map[string][]data.ExchangeStatusChange{},
 	}
 }
 

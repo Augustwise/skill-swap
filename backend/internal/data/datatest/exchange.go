@@ -232,6 +232,7 @@ func (m *Memory) CreateExchange(_ context.Context, requestID, _ string) (string,
 		StartedAt: &now, CreatedAt: now, UpdatedAt: now,
 	}
 	r.ExchangeID = id
+	m.exchangeHistory[id] = []data.ExchangeStatusChange{m.statusChange(data.ExchangeActive, r.Recipient.UserID, "", now)}
 
 	order := 1
 	addDrafts := func(teacher, learner data.RequestParty, terms data.RequestTerms) {
@@ -273,6 +274,11 @@ func (m *Memory) hydrateExchange(e *data.Exchange) data.Exchange {
 	if b, ok := m.users[out.Recipient.UserID]; ok {
 		out.Recipient = m.party(b)
 	}
+	ua, ub := m.users[out.Requester.UserID], m.users[out.Recipient.UserID]
+	out.CanInteract = ua != nil && ub != nil &&
+		ua.user.Status == "ACTIVE" && ub.user.Status == "ACTIVE" &&
+		!m.blocked(out.Requester.UserID, out.Recipient.UserID)
+	out.ConfirmedUserIDs = append([]string{}, m.exchangeConfirmations[out.ID]...)
 	progress := data.ExchangeProgress{
 		TotalSessions:            out.TotalSessions,
 		RequesterPlannedSessions: out.RequesterTeaches.Sessions,
@@ -294,6 +300,9 @@ func (m *Memory) hydrateExchange(e *data.Exchange) data.Exchange {
 			}
 		case data.SessionScheduled:
 			progress.ScheduledSessions++
+			if s.EndsAt != nil && !s.EndsAt.After(now) {
+				progress.AwaitingConfirmationSessions++
+			}
 			if s.StartsAt != nil && s.EndsAt != nil && !s.EndsAt.Before(now) {
 				candidate := &data.NextSessionSummary{
 					ID:           s.ID,
@@ -366,4 +375,91 @@ func (m *Memory) UserExchanges(_ context.Context, userID string, filter data.Exc
 	})
 	total := len(found)
 	return append([]data.Exchange{}, found[min(offset, total):min(offset+limit, total)]...), total, nil
+}
+
+// touchExchange must be called with m.mu held.
+func (m *Memory) touchExchange(exchangeID string) {
+	if e, ok := m.exchanges[exchangeID]; ok {
+		e.UpdatedAt = time.Now().UTC()
+	}
+}
+
+func (m *Memory) statusChange(status, userID, reason string, at time.Time) data.ExchangeStatusChange {
+	change := data.ExchangeStatusChange{Status: status, ChangedByID: userID, Reason: reason, CreatedAt: at}
+	if a, ok := m.users[userID]; ok {
+		change.ChangedByFirstName, change.ChangedByLastName = a.profile.FirstName, a.profile.LastName
+	}
+	return change
+}
+
+func (m *Memory) ExchangeHistory(_ context.Context, exchangeID string) ([]data.ExchangeStatusChange, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.exchangeHistory[exchangeID]), nil
+}
+
+func (m *Memory) LockExchange(ctx context.Context, exchangeID string) (data.Exchange, error) {
+	return m.ExchangeByID(ctx, exchangeID)
+}
+
+func (m *Memory) ConfirmExchangeCompletion(_ context.Context, exchangeID, userID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.exchanges[exchangeID]; !ok {
+		return data.ErrNotFound
+	}
+	if !slices.Contains(m.exchangeConfirmations[exchangeID], userID) {
+		m.exchangeConfirmations[exchangeID] = append(m.exchangeConfirmations[exchangeID], userID)
+		m.touchExchange(exchangeID)
+	}
+	return nil
+}
+
+func (m *Memory) CompleteExchange(_ context.Context, exchangeID, completedByID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.exchanges[exchangeID]
+	if !ok || e.Status != data.ExchangeActive {
+		return data.ErrNotFound
+	}
+	now := time.Now().UTC()
+	e.Status = data.ExchangeCompleted
+	e.CompletedAt = &now
+	e.UpdatedAt = now
+	m.exchangeHistory[exchangeID] = append(m.exchangeHistory[exchangeID], m.statusChange(data.ExchangeCompleted, completedByID, "", now))
+	return nil
+}
+
+func (m *Memory) CancelExchange(_ context.Context, exchangeID, cancelledByID, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.exchanges[exchangeID]
+	if !ok || e.Status != data.ExchangeActive {
+		return data.ErrNotFound
+	}
+	now := time.Now().UTC()
+	e.Status = data.ExchangeCancelled
+	e.CancelledAt = &now
+	e.CancellationReason = reason
+	e.UpdatedAt = now
+	m.exchangeHistory[exchangeID] = append(m.exchangeHistory[exchangeID], m.statusChange(data.ExchangeCancelled, cancelledByID, reason, now))
+	for _, s := range m.lessonSessions {
+		if s.ExchangeID != exchangeID || s.Status == data.SessionCompleted || s.Status == data.SessionCancelled {
+			continue
+		}
+		for _, sp := range m.proposals[s.ID] {
+			if sp.Status == data.ProposalPending {
+				sp.Status = data.ProposalSuperseded
+				sp.RespondedByID = cancelledByID
+				sp.RespondedAt = &now
+			}
+		}
+		delete(m.sessionConfirmations, s.ID)
+		delete(m.completionConfirmations, s.ID)
+		s.Status = data.SessionCancelled
+		s.CancelledAt = &now
+		s.CancellationReason = reason
+		s.UpdatedAt = now
+	}
+	return nil
 }

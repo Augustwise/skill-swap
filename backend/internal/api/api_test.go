@@ -130,8 +130,9 @@ func TestOpenAPIContract(t *testing.T) {
 		"/exchange-requests/{requestId}/accept:", "/exchange-requests/{requestId}/decline:", "/exchange-requests/{requestId}/withdraw:",
 		"/exchange-requests/{requestId}/conversation:", "/me/exchanges:", "/exchanges/{exchangeId}:",
 		"/exchanges/{exchangeId}/conversation:", "/exchanges/{exchangeId}/sessions:",
+		"/exchanges/{exchangeId}/complete:", "/exchanges/{exchangeId}/cancel:",
 		"/sessions/{sessionId}:", "/sessions/{sessionId}/proposals:", "/sessions/{sessionId}/accept:",
-		"/sessions/{sessionId}/decline:", "/sessions/{sessionId}/cancel:", "/me/schedule:",
+		"/sessions/{sessionId}/decline:", "/sessions/{sessionId}/cancel:", "/sessions/{sessionId}/confirm:", "/me/schedule:",
 		"/me/conversations:", "/conversations/{conversationId}:", "/conversations/{conversationId}/messages:",
 		"/conversations/{conversationId}/read:", "/me/notifications:", "/me/notifications/{notificationId}/read:",
 		"/me/notifications/read-all:"} {

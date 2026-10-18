@@ -33,8 +33,10 @@ type IApplication interface {
 	DeclineRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error)
 	WithdrawRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error)
 	AcceptRequest(ctx context.Context, userID, requestID string) (exchange.Acceptance, error)
-	Exchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error)
+	ExchangeDetails(ctx context.Context, userID, exchangeID string) (exchange.ExchangeDetails, error)
 	Exchanges(ctx context.Context, userID string, filter data.ExchangeFilter, page int) (exchange.ExchangePage, error)
+	CompleteExchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error)
+	CancelExchange(ctx context.Context, userID, exchangeID, reason string) (data.Exchange, error)
 
 	ExchangeSessions(ctx context.Context, userID, exchangeID string) (session.ExchangeSessions, error)
 	ProposeExchangeSession(ctx context.Context, userID, exchangeID string, in session.ProposalInput) (session.ProposalResult, error)
@@ -43,6 +45,7 @@ type IApplication interface {
 	AcceptSessionProposal(ctx context.Context, userID, sessionID string) (session.ProposalResult, error)
 	DeclineSessionProposal(ctx context.Context, userID, sessionID string) (session.ProposalResult, error)
 	CancelSession(ctx context.Context, userID, sessionID, reason string) (data.Session, error)
+	ConfirmSessionCompletion(ctx context.Context, userID, sessionID string) (session.CompletionResult, error)
 	Schedule(ctx context.Context, userID string, filter data.ScheduleFilter, page int) (session.SchedulePage, error)
 
 	Conversations(ctx context.Context, userID string, page int) (communication.ConversationPage, error)
@@ -153,12 +156,20 @@ func (a *Application) AcceptRequest(ctx context.Context, userID, requestID strin
 	return a.exchanges.AcceptRequest(ctx, userID, requestID)
 }
 
-func (a *Application) Exchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error) {
-	return a.exchanges.Exchange(ctx, userID, exchangeID)
+func (a *Application) ExchangeDetails(ctx context.Context, userID, exchangeID string) (exchange.ExchangeDetails, error) {
+	return a.exchanges.ExchangeDetails(ctx, userID, exchangeID)
 }
 
 func (a *Application) Exchanges(ctx context.Context, userID string, filter data.ExchangeFilter, page int) (exchange.ExchangePage, error) {
 	return a.exchanges.Exchanges(ctx, userID, filter, page)
+}
+
+func (a *Application) CompleteExchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error) {
+	return a.exchanges.CompleteExchange(ctx, userID, exchangeID)
+}
+
+func (a *Application) CancelExchange(ctx context.Context, userID, exchangeID, reason string) (data.Exchange, error) {
+	return a.exchanges.CancelExchange(ctx, userID, exchangeID, reason)
 }
 
 func (a *Application) ExchangeSessions(ctx context.Context, userID, exchangeID string) (session.ExchangeSessions, error) {
@@ -187,6 +198,10 @@ func (a *Application) DeclineSessionProposal(ctx context.Context, userID, sessio
 
 func (a *Application) CancelSession(ctx context.Context, userID, sessionID, reason string) (data.Session, error) {
 	return a.sessions.CancelSession(ctx, userID, sessionID, reason)
+}
+
+func (a *Application) ConfirmSessionCompletion(ctx context.Context, userID, sessionID string) (session.CompletionResult, error) {
+	return a.sessions.ConfirmSessionCompletion(ctx, userID, sessionID)
 }
 
 func (a *Application) Schedule(ctx context.Context, userID string, filter data.ScheduleFilter, page int) (session.SchedulePage, error) {

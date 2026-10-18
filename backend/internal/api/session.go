@@ -36,34 +36,37 @@ type sessionProposalResponse struct {
 }
 
 type sessionResponse struct {
-	ID                         string                   `json:"id"`
-	ExchangeID                 string                   `json:"exchangeId"`
-	PlanOrder                  int                      `json:"planOrder"`
-	Title                      string                   `json:"title"`
-	Description                *string                  `json:"description"`
-	Status                     string                   `json:"status"`
-	Format                     string                   `json:"format"`
-	Skill                      requestSkill             `json:"skill"`
-	PlannedDurationMinutes     int                      `json:"plannedDurationMinutes"`
-	Teacher                    studentSummary           `json:"teacher"`
-	Learner                    studentSummary           `json:"learner"`
-	Partner                    studentSummary           `json:"partner"`
-	Role                       string                   `json:"role"`
-	StartsAt                   *time.Time               `json:"startsAt"`
-	EndsAt                     *time.Time               `json:"endsAt"`
-	DurationMinutes            *int                     `json:"durationMinutes"`
-	MeetingPlace               *string                  `json:"meetingPlace"`
-	MeetingURL                 *string                  `json:"meetingUrl"`
-	ActiveProposal             *sessionProposalResponse `json:"activeProposal"`
-	ScheduleConfirmedByMe      bool                     `json:"scheduleConfirmedByMe"`
-	ScheduleConfirmedByPartner bool                     `json:"scheduleConfirmedByPartner"`
-	CanRespondToProposal       bool                     `json:"canRespondToProposal"`
-	CanCancel                  bool                     `json:"canCancel"`
-	CompletedAt                *time.Time               `json:"completedAt"`
-	CancelledAt                *time.Time               `json:"cancelledAt"`
-	CancellationReason         *string                  `json:"cancellationReason"`
-	CreatedAt                  time.Time                `json:"createdAt"`
-	UpdatedAt                  time.Time                `json:"updatedAt"`
+	ID                           string                   `json:"id"`
+	ExchangeID                   string                   `json:"exchangeId"`
+	PlanOrder                    int                      `json:"planOrder"`
+	Title                        string                   `json:"title"`
+	Description                  *string                  `json:"description"`
+	Status                       string                   `json:"status"`
+	Format                       string                   `json:"format"`
+	Skill                        requestSkill             `json:"skill"`
+	PlannedDurationMinutes       int                      `json:"plannedDurationMinutes"`
+	Teacher                      studentSummary           `json:"teacher"`
+	Learner                      studentSummary           `json:"learner"`
+	Partner                      studentSummary           `json:"partner"`
+	Role                         string                   `json:"role"`
+	StartsAt                     *time.Time               `json:"startsAt"`
+	EndsAt                       *time.Time               `json:"endsAt"`
+	DurationMinutes              *int                     `json:"durationMinutes"`
+	MeetingPlace                 *string                  `json:"meetingPlace"`
+	MeetingURL                   *string                  `json:"meetingUrl"`
+	ActiveProposal               *sessionProposalResponse `json:"activeProposal"`
+	ScheduleConfirmedByMe        bool                     `json:"scheduleConfirmedByMe"`
+	ScheduleConfirmedByPartner   bool                     `json:"scheduleConfirmedByPartner"`
+	CanRespondToProposal         bool                     `json:"canRespondToProposal"`
+	CanCancel                    bool                     `json:"canCancel"`
+	CompletionConfirmedByMe      bool                     `json:"completionConfirmedByMe"`
+	CompletionConfirmedByPartner bool                     `json:"completionConfirmedByPartner"`
+	CanConfirmCompletion         bool                     `json:"canConfirmCompletion"`
+	CompletedAt                  *time.Time               `json:"completedAt"`
+	CancelledAt                  *time.Time               `json:"cancelledAt"`
+	CancellationReason           *string                  `json:"cancellationReason"`
+	CreatedAt                    time.Time                `json:"createdAt"`
+	UpdatedAt                    time.Time                `json:"updatedAt"`
 }
 
 func inTimezone(t time.Time, tz string) time.Time {
@@ -143,6 +146,10 @@ func toSession(s data.Session, viewerID string, tz ...string) sessionResponse {
 		s.ActiveProposal.ProposedByID != viewerID
 	canCancel := (s.Status == data.SessionProposed || s.Status == data.SessionScheduled) &&
 		s.ExchangeStatus == data.ExchangeActive
+	completionConfirmedByMe := slices.Contains(s.CompletionConfirmedUserIDs, viewerID)
+	ended := s.EndsAt != nil && !s.EndsAt.After(time.Now())
+	waitsForConfirmation := s.Status == data.SessionScheduled && s.ExchangeStatus == data.ExchangeActive
+	canConfirm := waitsForConfirmation && ended && s.CanInteract && !completionConfirmedByMe
 
 	response := sessionResponse{
 		ID:         s.ID,
@@ -156,19 +163,22 @@ func toSession(s data.Session, viewerID string, tz ...string) sessionResponse {
 			CategoryID: s.SkillCategoryID,
 			Name:       s.SkillName,
 		},
-		PlannedDurationMinutes:     s.PlannedDurationMinutes,
-		Teacher:                    teacher,
-		Learner:                    learner,
-		Partner:                    partner,
-		Role:                       role,
-		ScheduleConfirmedByMe:      confirmedByMe,
-		ScheduleConfirmedByPartner: confirmedByPartner,
-		CanRespondToProposal:       canRespond,
-		CanCancel:                  canCancel,
-		CompletedAt:                s.CompletedAt,
-		CancelledAt:                s.CancelledAt,
-		CreatedAt:                  s.CreatedAt,
-		UpdatedAt:                  s.UpdatedAt,
+		PlannedDurationMinutes:       s.PlannedDurationMinutes,
+		Teacher:                      teacher,
+		Learner:                      learner,
+		Partner:                      partner,
+		Role:                         role,
+		ScheduleConfirmedByMe:        confirmedByMe,
+		ScheduleConfirmedByPartner:   confirmedByPartner,
+		CanRespondToProposal:         canRespond,
+		CanCancel:                    canCancel,
+		CompletionConfirmedByMe:      completionConfirmedByMe,
+		CompletionConfirmedByPartner: slices.Contains(s.CompletionConfirmedUserIDs, partnerID),
+		CanConfirmCompletion:         canConfirm,
+		CompletedAt:                  s.CompletedAt,
+		CancelledAt:                  s.CancelledAt,
+		CreatedAt:                    s.CreatedAt,
+		UpdatedAt:                    s.UpdatedAt,
 	}
 	if s.Description != "" {
 		response.Description = &s.Description
@@ -336,6 +346,20 @@ func (a *API) cancelSession(w http.ResponseWriter, r *http.Request, current data
 	})
 }
 
+func (a *API) confirmSessionCompletion(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
+	ctx, cancel := context.WithTimeout(r.Context(), sessionTimeout)
+	defer cancel()
+	result, err := a.app.ConfirmSessionCompletion(ctx, current.ID, r.PathValue("sessionId"))
+	if err != nil {
+		a.sessionError(w, err)
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{
+		"session":  toSession(result.Session, current.ID),
+		"exchange": toExchange(result.Exchange, current.ID),
+	})
+}
+
 func (a *API) listSchedule(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
 	page, ok := pageParam(w, r)
 	if !ok {
@@ -402,6 +426,10 @@ func (a *API) sessionError(w http.ResponseWriter, err error) {
 		problem(w, http.StatusConflict, "session_in_past", "The proposed start time has already passed")
 	case errors.Is(err, sessionsvc.ErrSessionConflict):
 		problem(w, http.StatusConflict, "session_conflict", "One of the participants already has a scheduled session at this time")
+	case errors.Is(err, sessionsvc.ErrSessionNotConfirmable):
+		problem(w, http.StatusConflict, "session_not_confirmable", "Only scheduled sessions can be confirmed")
+	case errors.Is(err, sessionsvc.ErrSessionNotFinished):
+		problem(w, http.StatusConflict, "session_not_finished", "The session can be confirmed only after it ends")
 	case errors.Is(err, sessionsvc.ErrInvalidPage):
 		problem(w, http.StatusBadRequest, "invalid_page", fmt.Sprintf("page must be a whole number from 1 to %d", sessionsvc.MaxPage))
 	default:

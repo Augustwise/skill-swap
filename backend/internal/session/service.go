@@ -55,6 +55,8 @@ var (
 	ErrActionNotAllowed      = errors.New("this action is not available for your role in the session proposal")
 	ErrSessionInPast         = errors.New("session start time is in the past")
 	ErrSessionConflict       = errors.New("one of the participants already has a scheduled session at this time")
+	ErrSessionNotConfirmable = errors.New("only scheduled sessions can be confirmed")
+	ErrSessionNotFinished    = errors.New("session has not ended yet")
 )
 
 type ICommunication interface {
@@ -182,7 +184,7 @@ func (s *Service) ProposeExchangeSession(ctx context.Context, userID, exchangeID
 
 	var result ProposalResult
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		ex, err := s.sessions.LockExchangeForSession(ctx, exID)
+		ex, err := s.exchanges.LockExchange(ctx, exID)
 		switch {
 		case errors.Is(err, data.ErrNotFound):
 			return ErrExchangeNotFound
@@ -511,6 +513,95 @@ func (s *Service) CancelSession(ctx context.Context, userID, sessionID, rawReaso
 		return nil
 	})
 	return cancelled, err
+}
+
+type CompletionResult struct {
+	Session  data.Session
+	Exchange data.Exchange
+}
+
+// ConfirmSessionCompletion records that the user confirms the session took place. The session
+// counts toward the progress only after both participants confirm it.
+func (s *Service) ConfirmSessionCompletion(ctx context.Context, userID, sessionID string) (CompletionResult, error) {
+	if !validate.UUID(sessionID) {
+		return CompletionResult{}, ErrSessionNotFound
+	}
+	id := strings.ToLower(sessionID)
+
+	var result CompletionResult
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		current, err := s.sessions.LockSession(ctx, id)
+		switch {
+		case errors.Is(err, data.ErrNotFound):
+			return ErrSessionNotFound
+		case err != nil:
+			return err
+		case userID != current.Requester.UserID && userID != current.Recipient.UserID:
+			return ErrSessionNotFound
+		}
+
+		switch {
+		case current.Status == data.SessionCompleted:
+			// Both participants have already confirmed it, so a repeat changes nothing.
+		case current.ExchangeStatus != data.ExchangeActive:
+			return ErrExchangeNotActive
+		case !current.CanInteract:
+			return ErrExchangeBlocked
+		case current.Status != data.SessionScheduled:
+			return ErrSessionNotConfirmable
+		case current.EndsAt == nil || current.EndsAt.After(s.now()):
+			return ErrSessionNotFinished
+		case !slices.Contains(current.CompletionConfirmedUserIDs, userID):
+			if err := s.sessions.ConfirmSessionCompletion(ctx, current.ID, userID); err != nil {
+				return err
+			}
+			partnerConfirmed := slices.Contains(current.CompletionConfirmedUserIDs, otherPartyID(current, userID))
+			if partnerConfirmed {
+				if err := s.sessions.CompleteSession(ctx, current.ID); err != nil {
+					return err
+				}
+			}
+			if err := s.notifyCompletionConfirmed(ctx, userID, current, partnerConfirmed); err != nil {
+				return err
+			}
+		}
+
+		if result.Session, err = s.sessions.SessionByID(ctx, current.ID); err != nil {
+			return err
+		}
+		result.Exchange, err = s.exchanges.ExchangeByID(ctx, current.ExchangeID)
+		return err
+	})
+	return result, err
+}
+
+func (s *Service) notifyCompletionConfirmed(ctx context.Context, userID string, session data.Session, completed bool) error {
+	if s.comm == nil {
+		return nil
+	}
+	party := actorParty(session, userID)
+	actor := fullName(party.FirstName, party.LastName)
+	// Rescheduling clears confirmations and accepts a new proposal, so the next confirmation
+	// gets its own notification.
+	attempt := session.ID
+	if session.ActiveProposal != nil {
+		attempt = session.ActiveProposal.ID
+	}
+	event := communication.SessionUpdateEvent{
+		RecipientID: otherPartyID(session, userID),
+		ActorID:     userID,
+		EventKey:    "session-completion:" + attempt + ":" + userID,
+		Title:       "Підтвердіть проведення заняття",
+		Body:        fmt.Sprintf("%s підтвердив проведення заняття «%s». Підтвердіть і ви, щоб його зарахувати.", actor, session.Title),
+		ExchangeID:  session.ExchangeID,
+		SessionID:   session.ID,
+	}
+	if completed {
+		event.EventKey = "session-completed:" + session.ID
+		event.Title = "Заняття зараховано"
+		event.Body = fmt.Sprintf("%s теж підтвердив проведення заняття «%s», тож його зараховано до прогресу.", actor, session.Title)
+	}
+	return s.comm.RecordSessionUpdated(ctx, event)
 }
 
 type SchedulePage struct {
