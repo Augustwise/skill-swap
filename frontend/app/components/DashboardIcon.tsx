@@ -3,6 +3,7 @@ import Image from "next/image";
 // Keep the original Figma geometry for each icon and color variant.
 const assets = {
   dashboard: ["icon-dashboard", 20],
+  "dashboard-muted": ["icon-dashboard-muted", 20],
   "nav-search": ["icon-search1", 20],
   "nav-sparkles": ["icon-sparkles", 20],
   inbox: ["icon-inbox", 20],

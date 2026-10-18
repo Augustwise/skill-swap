@@ -7,6 +7,14 @@ import { DashboardAvatar } from "./DashboardCards";
 import { DashboardIcon as Icon } from "./DashboardIcon";
 import type { Profile } from "./OnboardingApi";
 
+const links = [
+  { href: "/profile", icon: "settings", label: "Мій профіль" },
+  { href: "/main", icon: "dashboard-muted", label: "Головна" },
+  { href: "/search", icon: "nav-search", label: "Пошук навичок" },
+  { href: "/matches", icon: "nav-sparkles", label: "Мої збіги" },
+  { href: "/requests", icon: "inbox", label: "Запити на обмін" },
+] as const;
+
 export function AccountMenu({
   profile,
   pending,
@@ -73,49 +81,41 @@ export function AccountMenu({
         <Icon name="chevron-down" />
       </button>
       <nav className="account-menu__panel" id={id} hidden={!open} aria-label="Меню акаунта">
-        <Link
-          href="/profile"
-          aria-current={pathname === "/profile" ? "page" : undefined}
-          onClick={() => setOpen(false)}
+        <div className="account-menu__header">
+          <DashboardAvatar initials={initials || "СС"} />
+          <span className="account-menu__identity">
+            <span className="account-menu__name">{name}</span>
+            <span>{profile.university.name}</span>
+            {profile.course ? <span>{profile.course} курс</span> : null}
+          </span>
+        </div>
+        <hr className="account-menu__divider" />
+        {links.map((link) => (
+          <Link
+            href={link.href}
+            aria-current={pathname === link.href ? "page" : undefined}
+            onClick={() => setOpen(false)}
+            key={link.href}
+          >
+            <Icon name={link.icon} />
+            <span className="account-menu__label">{link.label}</span>
+            {link.href === "/requests" && incoming > 0 && (
+              <span className="dashboard-nav-badge">
+                <span className="sr-only">, очікують відповіді: </span>
+                {incoming > 99 ? "99+" : incoming}
+              </span>
+            )}
+          </Link>
+        ))}
+        <hr className="account-menu__divider" />
+        <button
+          className="account-menu__logout"
+          type="button"
+          disabled={pending}
+          onClick={onLogout}
         >
-          <Icon name="settings" /> Мій профіль
-        </Link>
-        <Link
-          href="/main"
-          aria-current={pathname === "/main" ? "page" : undefined}
-          onClick={() => setOpen(false)}
-        >
-          <Icon name="dashboard" /> Головна
-        </Link>
-        <Link
-          href="/search"
-          aria-current={pathname === "/search" ? "page" : undefined}
-          onClick={() => setOpen(false)}
-        >
-          <Icon name="nav-search" /> Пошук навичок
-        </Link>
-        <Link
-          href="/matches"
-          aria-current={pathname === "/matches" ? "page" : undefined}
-          onClick={() => setOpen(false)}
-        >
-          <Icon name="nav-sparkles" /> Мої збіги
-        </Link>
-        <Link
-          href="/requests"
-          aria-current={pathname === "/requests" ? "page" : undefined}
-          onClick={() => setOpen(false)}
-        >
-          <Icon name="inbox" /> Запити на обмін
-          {incoming > 0 && (
-            <span className="dashboard-nav-badge">
-              <span className="sr-only">, очікують відповіді: </span>
-              {incoming > 99 ? "99+" : incoming}
-            </span>
-          )}
-        </Link>
-        <button type="button" disabled={pending} onClick={onLogout}>
-          <Icon name="logout" /> {pending ? "Виходимо…" : "Вийти"}
+          <Icon name="logout" />
+          <span className="account-menu__label">{pending ? "Виходимо…" : "Вийти"}</span>
         </button>
       </nav>
     </div>
