@@ -577,6 +577,94 @@ Server rules for lesson planning and schedules (FR-09, FR-10, LR2 5.3, NFR-05, N
 | `session_conflict` | 409 | either participant already has a `SCHEDULED` session overlapping `[startsAt, endsAt)` |
 | `validation_failed` | 422 | invalid `title`, `description`, `teacherId`, `startsAt`, `endsAt`, `format`, `meetingUrl`, `meetingPlace`, `reason`, `status`, or `upcoming` |
 
+## Lesson confirmations, exchange completion and cancellation (Sprint 8, FR-11)
+
+Migration `00008_exchange_completion.sql` adds integrity checks: a `COMPLETED` session and
+a `COMPLETED` exchange need `completed_at`, and a `CANCELLED` exchange needs `cancelled_at`
+and a reason of 1–500 characters. Confirmations reuse `session_confirmations` (kind
+`COMPLETION`) and `exchange_confirmations` from `00001`; their primary keys keep at most one
+confirmation per participant, so a retry or two simultaneous requests never add a second
+one (NFR-05). Back up a shared database before applying it (NFR-04):
+
+```bash
+pg_dump --format=custom --file=../backups/skillswap-before-00008.dump "$DATABASE_URL"
+go run ./cmd/db up
+go run ./cmd/db seed
+```
+
+The seed adds an active exchange (`80000000-0000-0000-0000-000000000002`) between
+`demo.iryna` and `demo.dmytro` (Figma ↔ Go, online, 1 × 60 min each way,
+`totalSessions: 2`):
+
+- Session 1 (`81000000-0000-0000-0000-000000000005`, Iryna teaches Figma): `COMPLETED` five
+  days ago and confirmed by both;
+- Session 2 (`81000000-0000-0000-0000-000000000006`, Dmytro teaches Go): ended yesterday,
+  still `SCHEDULED` because only Dmytro has confirmed it. Iryna has an unread
+  `SESSION_UPDATED` notification asking her to confirm it.
+
+Sign in as Iryna and confirm session 2: the progress becomes 2 of 2 with
+`planCompleted: true`. Then Iryna and Dmytro each confirm the end of the exchange, and it
+becomes `COMPLETED`. Cancellation can be shown on the Iryna ↔ Marko exchange from Sprint 7.
+Running the seed again does not reset these confirmations.
+
+| Method | Path | Session | Purpose |
+| ------ | ---- | ------- | ------- |
+| POST | `/api/v1/sessions/{sessionId}/confirm` | cookie + CSRF | Confirm that a `SCHEDULED` session took place; returns `{ session, exchange }` |
+| POST | `/api/v1/exchanges/{exchangeId}/complete` | cookie + CSRF | Confirm the end of an exchange with the whole plan done; returns `{ exchange }` |
+| POST | `/api/v1/exchanges/{exchangeId}/cancel` | cookie + CSRF | Cancel an active exchange with `{ "reason" }`; returns `{ exchange }` |
+| GET | `/api/v1/exchanges/{exchangeId}` | cookie | Now also returns `history`: `status`, `changedBy`, `reason` and `createdAt`, oldest first |
+
+Server rules (FR-11, NFR-05, NFR-08):
+
+- Only the two participants can act; anyone else, an unknown ID or a value that is not a
+  UUID gets 404 `session_not_found` or `exchange_not_found`.
+- A session can be confirmed only after its `endsAt`. One confirmation does not count the
+  session: it stays `SCHEDULED`, and the partner is notified. The second confirmation sets
+  `COMPLETED` and `completedAt` in the same transaction, so the session is added to
+  `progress.completedSessions` and to its direction's counter. Repeating a confirmation, or
+  confirming a completed session, changes nothing.
+- `progress.awaitingConfirmationSessions` counts `SCHEDULED` sessions that have already
+  ended. If a lesson did not take place, either participant can reschedule or cancel it
+  instead; both actions clear the session's confirmations, so a one-sided confirmation does
+  not survive a new time.
+- The exchange can be completed only when `progress.planCompleted` is true: every planned
+  session in both directions is `COMPLETED`. The first call records the participant's
+  confirmation and notifies the partner; the exchange stays `ACTIVE`. The partner's call sets
+  `COMPLETED`, `completedAt` and a `COMPLETED` history item.
+- Cancelling needs a reason of 1–500 characters. In one transaction the exchange becomes
+  `CANCELLED` with `cancelledAt`, the reason and a history item; every `DRAFT`, `PROPOSED`
+  and `SCHEDULED` session becomes `CANCELLED` with the same reason and pending proposals
+  are superseded. Completed sessions, proposals and all history are kept. Repeating the call
+  returns the cancelled exchange as it is.
+- Confirmations need both accounts to be active and no block between the participants
+  (`exchange_blocked`); cancelling stays available as a way out.
+- Every action locks both participants in the same order as the other pair operations,
+  then the session or exchange row. Two simultaneous confirmations are therefore applied one
+  after the other and complete a session or an exchange exactly once.
+- The partner gets a `SESSION_UPDATED` notification for each step (`session-completion:`,
+  `session-completed:`, `exchange-completion:`, `exchange-completed:`, `exchange-cancelled:`
+  event keys). Exchange notifications have no `sessionId`, so their `target` opens the
+  exchange.
+
+New response fields: sessions have `completionConfirmedByMe`,
+`completionConfirmedByPartner` and `canConfirmCompletion`; exchanges have
+`completionConfirmedByMe`, `completionConfirmedByPartner`, `canConfirmCompletion` and
+`canCancel`; `progress` has `awaitingConfirmationSessions` and `planCompleted`.
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `session_not_found` / `exchange_not_found` | 404 | no session or exchange has this ID, or you do not take part in it |
+| `session_not_finished` | 409 | the session has not ended yet |
+| `session_not_confirmable` | 409 | the session is `DRAFT`, `PROPOSED` or `CANCELLED` |
+| `plan_not_completed` | 409 | not every planned session in both directions is completed |
+| `exchange_not_active` | 409 | confirming in a completed or cancelled exchange, completing a cancelled one, or cancelling a completed one |
+| `exchange_blocked` | 409 | one participant blocked the other, or an account is suspended or deleted |
+| `validation_failed` | 422 | the cancellation `reason` is empty, longer than 500 characters or has control characters |
+
+`TestCompletionConcurrentlyAgainstPostgres` and `TestCancelExchangeAgainstPostgres` in
+`internal/session` commit their data, because concurrent confirmations need separate
+transactions; they create their own students and delete them afterwards.
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for
@@ -649,4 +737,5 @@ export DATABASE_URL="$TEST_DATABASE_URL"
 go run ./cmd/db up
 go run ./cmd/db seed
 go test ./internal/api -run AgainstLocalPostgres -v
+go test ./internal/session -run AgainstPostgres -v
 ```

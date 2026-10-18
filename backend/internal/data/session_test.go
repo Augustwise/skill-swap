@@ -6,6 +6,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"skillswap/backend/internal/expect"
 )
 
 const (
@@ -24,48 +26,53 @@ func TestSessionsAndScheduleOnDemoData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total < 1 || !slices.ContainsFunc(exchanges, func(e Exchange) bool { return e.ID == demoIrynaMarkoExchange }) {
-		t.Fatalf("Iryna exchanges = %+v, total %d", exchanges, total)
-	}
+	expect.Equal(t, "at least 1 active exchange of Iryna in total", total >= 1, true)
+	expect.Equal(t, "Iryna and Marko's exchange is in Iryna's list",
+		slices.ContainsFunc(exchanges, func(e Exchange) bool { return e.ID == demoIrynaMarkoExchange }), true)
 
 	ex, err := store.ExchangeByID(ctx, demoIrynaMarkoExchange)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ex.Status != ExchangeActive || ex.TotalSessions != 4 ||
-		ex.Progress.TotalSessions != 4 || ex.Progress.ScheduledSessions != 1 ||
-		ex.Progress.ProposedSessions != 1 || ex.Progress.DraftSessions != 2 ||
-		ex.Progress.CompletedSessions != 0 || ex.NextSession == nil || ex.NextSession.ID != demoScheduledSessionID {
-		t.Fatalf("demo exchange = %+v", ex)
-	}
+	expect.Equal(t, "exchange status", ex.Status, ExchangeActive)
+	expect.Equal(t, "total sessions", ex.TotalSessions, 4)
+	expect.Equal(t, "total sessions in progress", ex.Progress.TotalSessions, 4)
+	expect.Equal(t, "scheduled sessions", ex.Progress.ScheduledSessions, 1)
+	expect.Equal(t, "proposed sessions", ex.Progress.ProposedSessions, 1)
+	expect.Equal(t, "draft sessions", ex.Progress.DraftSessions, 2)
+	expect.Equal(t, "completed sessions", ex.Progress.CompletedSessions, 0)
+	expect.Equal(t, "next session is set", ex.NextSession != nil, true)
+	expect.Equal(t, "next session", ex.NextSession.ID, demoScheduledSessionID)
 
 	sessions, err := store.ExchangeSessions(ctx, demoIrynaMarkoExchange)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sessions) != 4 || sessions[0].ID != demoScheduledSessionID || sessions[0].Status != SessionScheduled ||
-		sessions[2].ID != demoProposedSessionID || sessions[2].Status != SessionProposed ||
-		sessions[2].ActiveProposal == nil || sessions[2].ActiveProposal.ID != demoPendingProposalID {
-		t.Fatalf("demo sessions = %+v", sessions)
-	}
+	expect.Equal(t, "sessions", len(sessions), 4)
+	expect.Equal(t, "first session", sessions[0].ID, demoScheduledSessionID)
+	expect.Equal(t, "first session status", sessions[0].Status, SessionScheduled)
+	expect.Equal(t, "third session", sessions[2].ID, demoProposedSessionID)
+	expect.Equal(t, "third session status", sessions[2].Status, SessionProposed)
+	expect.Equal(t, "third session has an active proposal", sessions[2].ActiveProposal != nil, true)
+	expect.Equal(t, "active proposal of the third session", sessions[2].ActiveProposal.ID, demoPendingProposalID)
 
 	schedule, schedTotal, pendingCount, tz, err := store.UserSchedule(ctx, demoIryna, ScheduleFilter{UpcomingOnly: true}, 20, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if schedTotal < 1 || pendingCount < 1 || tz != "Europe/Kyiv" ||
-		!slices.ContainsFunc(schedule, func(s Session) bool { return s.ID == demoScheduledSessionID }) {
-		t.Fatalf("Iryna schedule = %+v, total %d, pending %d, tz %q", schedule, schedTotal, pendingCount, tz)
-	}
+	expect.Equal(t, "at least 1 session in Iryna's schedule", schedTotal >= 1, true)
+	expect.Equal(t, "at least 1 proposal waiting for Iryna", pendingCount >= 1, true)
+	expect.Equal(t, "Iryna's time zone", tz, "Europe/Kyiv")
+	expect.Equal(t, "scheduled demo session is in Iryna's schedule",
+		slices.ContainsFunc(schedule, func(s Session) bool { return s.ID == demoScheduledSessionID }), true)
 
 	// Olha's schedule does not include Iryna and Marko's sessions.
 	olhaSchedule, _, _, _, err := store.UserSchedule(ctx, demoOlha, ScheduleFilter{Status: ScheduleAll}, 20, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if slices.ContainsFunc(olhaSchedule, func(s Session) bool { return s.ExchangeID == demoIrynaMarkoExchange }) {
-		t.Fatalf("Olha schedule leaked another exchange's session: %+v", olhaSchedule)
-	}
+	expect.Equal(t, "Olha's schedule has a session of Iryna and Marko's exchange",
+		slices.ContainsFunc(olhaSchedule, func(s Session) bool { return s.ExchangeID == demoIrynaMarkoExchange }), false)
 }
 
 // Runs inside a transaction that is rolled back.
@@ -84,22 +91,21 @@ func TestSessionLifecycleAndConflictsAgainstPostgres(t *testing.T) {
 
 		// CreateExchange creates the 4 initial DRAFT sessions.
 		initial, err := store.ExchangeSessions(ctx, exchangeID)
-		if err != nil || len(initial) != 4 {
-			t.Fatalf("initial sessions = %+v, err %v", initial, err)
-		}
-		if initial[0].Status != SessionDraft || initial[0].Teacher.UserID != demoTaras ||
-			initial[2].Status != SessionDraft || initial[2].Teacher.UserID != demoOlha {
-			t.Fatalf("initial draft teachers = %+v", initial)
-		}
+		expect.NoError(t, "load the initial sessions", err)
+		expect.Equal(t, "initial sessions", len(initial), 4)
+		expect.Equal(t, "first session status", initial[0].Status, SessionDraft)
+		expect.Equal(t, "first session teacher", initial[0].Teacher.UserID, demoTaras)
+		expect.Equal(t, "third session status", initial[2].Status, SessionDraft)
+		expect.Equal(t, "third session teacher", initial[2].Teacher.UserID, demoOlha)
 
 		// Swap draft session teacher between slot 1 (Taras) and slot 3 (Olha).
 		if err := store.SwapDraftSessionTeacher(ctx, exchangeID, initial[0].ID, demoOlha); err != nil {
 			t.Fatal(err)
 		}
 		swapped, err := store.SessionByID(ctx, initial[0].ID)
-		if err != nil || swapped.Teacher.UserID != demoOlha || swapped.Learner.UserID != demoTaras {
-			t.Fatalf("swapped session = %+v, err %v", swapped, err)
-		}
+		expect.NoError(t, "load the swapped session", err)
+		expect.Equal(t, "teacher after the swap", swapped.Teacher.UserID, demoOlha)
+		expect.Equal(t, "learner after the swap", swapped.Learner.UserID, demoTaras)
 
 		// Propose an offline session on slot 1.
 		start1 := time.Now().UTC().Add(72 * time.Hour).Truncate(time.Minute)
@@ -119,19 +125,18 @@ func TestSessionLifecycleAndConflictsAgainstPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if prop1.Status != ProposalPending || prop1.MeetingPlace != "Науково-технічна бібліотека КПІ" {
-			t.Fatalf("prop1 = %+v", prop1)
-		}
+		expect.Equal(t, "status of Olha's proposal", prop1.Status, ProposalPending)
+		expect.Equal(t, "meeting place of Olha's proposal", prop1.MeetingPlace, "Науково-технічна бібліотека КПІ")
 
 		// Taras declines the first proposal -> session returns to DRAFT.
 		declined, err := store.DeclineSessionProposal(ctx, initial[0].ID, demoTaras)
-		if err != nil || declined.Status != ProposalDeclined {
-			t.Fatalf("declined = %+v, err %v", declined, err)
-		}
+		expect.NoError(t, "DeclineSessionProposal", err)
+		expect.Equal(t, "status of the declined proposal", declined.Status, ProposalDeclined)
 		afterDecline, err := store.SessionByID(ctx, initial[0].ID)
-		if err != nil || afterDecline.Status != SessionDraft || afterDecline.StartsAt != nil || len(afterDecline.ConfirmedUserIDs) != 0 {
-			t.Fatalf("after decline = %+v, err %v", afterDecline, err)
-		}
+		expect.NoError(t, "load the session after decline", err)
+		expect.Equal(t, "status after decline", afterDecline.Status, SessionDraft)
+		expect.Equal(t, "start time is set after decline", afterDecline.StartsAt != nil, false)
+		expect.Equal(t, "confirmations after decline", len(afterDecline.ConfirmedUserIDs), 0)
 
 		// Taras proposes a new time and Olha accepts it.
 		start2 := start1.Add(24 * time.Hour)
@@ -150,46 +155,42 @@ func TestSessionLifecycleAndConflictsAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		accepted, err := store.AcceptSessionProposal(ctx, initial[0].ID, demoOlha)
-		if err != nil || accepted.Status != ProposalAccepted {
-			t.Fatalf("accepted = %+v, err %v", accepted, err)
-		}
+		expect.NoError(t, "AcceptSessionProposal", err)
+		expect.Equal(t, "status of the accepted proposal", accepted.Status, ProposalAccepted)
 		scheduled, err := store.SessionByID(ctx, initial[0].ID)
-		if err != nil || scheduled.Status != SessionScheduled || len(scheduled.ConfirmedUserIDs) != 2 ||
-			scheduled.MeetingPlace != "Парк КПІ" {
-			t.Fatalf("scheduled = %+v, err %v", scheduled, err)
-		}
+		expect.NoError(t, "load the scheduled session", err)
+		expect.Equal(t, "status after acceptance", scheduled.Status, SessionScheduled)
+		expect.Equal(t, "confirmations after acceptance", len(scheduled.ConfirmedUserIDs), 2)
+		expect.Equal(t, "meeting place after acceptance", scheduled.MeetingPlace, "Парк КПІ")
 
 		// Conflict checks: overlapping interval conflicts; adjacent interval [end2, end2+1h) does not.
 		conflict, err := store.HasScheduleConflict(ctx, "", demoOlha, demoTaras, start2.Add(30*time.Minute), end2.Add(30*time.Minute))
-		if err != nil || !conflict {
-			t.Fatalf("overlapping conflict = %v, err %v", conflict, err)
-		}
+		expect.NoError(t, "check an overlapping interval", err)
+		expect.Equal(t, "overlapping interval conflicts", conflict, true)
 		adjacent, err := store.HasScheduleConflict(ctx, "", demoOlha, demoTaras, end2, end2.Add(time.Hour))
-		if err != nil || adjacent {
-			t.Fatalf("adjacent conflict = %v, err %v", adjacent, err)
-		}
+		expect.NoError(t, "check an adjacent interval", err)
+		expect.Equal(t, "adjacent interval conflicts", adjacent, false)
 		selfExcluded, err := store.HasScheduleConflict(ctx, initial[0].ID, demoOlha, demoTaras, start2, end2)
-		if err != nil || selfExcluded {
-			t.Fatalf("self-excluded conflict = %v, err %v", selfExcluded, err)
-		}
+		expect.NoError(t, "check the session's own interval", err)
+		expect.Equal(t, "session conflicts with itself", selfExcluded, false)
 
 		// Cancel the scheduled session -> status becomes CANCELLED and a 5th replacement DRAFT session is added.
 		if err := store.CancelSession(ctx, initial[0].ID, demoOlha, "Перенесемо на наступний тиждень"); err != nil {
 			t.Fatal(err)
 		}
 		afterCancel, err := store.ExchangeSessions(ctx, exchangeID)
-		if err != nil || len(afterCancel) != 5 || afterCancel[0].Status != SessionCancelled ||
-			afterCancel[4].Status != SessionDraft || afterCancel[4].PlanOrder != 5 {
-			t.Fatalf("after cancel = %+v, err %v", afterCancel, err)
-		}
+		expect.NoError(t, "load the sessions after cancel", err)
+		expect.Equal(t, "sessions after cancel", len(afterCancel), 5)
+		expect.Equal(t, "cancelled session status", afterCancel[0].Status, SessionCancelled)
+		expect.Equal(t, "replacement session status", afterCancel[4].Status, SessionDraft)
+		expect.Equal(t, "replacement session plan order", afterCancel[4].PlanOrder, 5)
 
 		proposals, err := store.SessionProposals(ctx, initial[0].ID)
-		if err != nil || len(proposals) != 2 || proposals[0].Status != ProposalDeclined || proposals[1].Status != ProposalAccepted {
-			t.Fatalf("proposals = %+v, err %v", proposals, err)
-		}
+		expect.NoError(t, "load the proposals", err)
+		expect.Equal(t, "proposals", len(proposals), 2)
+		expect.Equal(t, "first proposal status", proposals[0].Status, ProposalDeclined)
+		expect.Equal(t, "second proposal status", proposals[1].Status, ProposalAccepted)
 		return rollback
 	})
-	if !errors.Is(err, rollback) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "WithinTx", err, rollback)
 }

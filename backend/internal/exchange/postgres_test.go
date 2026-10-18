@@ -13,6 +13,7 @@ import (
 	"skillswap/backend/internal/communication"
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
+	"skillswap/backend/internal/expect"
 )
 
 // Two acceptances run in separate transactions, so this test commits its data: it creates
@@ -108,12 +109,10 @@ func TestAcceptRequestConcurrentlyAgainstPostgres(t *testing.T) {
 	}
 	wg.Wait()
 	for i := range attempts {
-		if errs[i] != nil {
-			t.Fatalf("acceptance %d: err = %v", i, errs[i])
-		}
-		if results[i].Exchange.ID == "" || results[i].Exchange.ID != results[0].Exchange.ID {
-			t.Fatalf("acceptance %d returned exchange %q, want %q", i, results[i].Exchange.ID, results[0].Exchange.ID)
-		}
+		name := fmt.Sprintf("acceptance %d", i)
+		expect.NoError(t, name, errs[i])
+		expect.Equal(t, name+": exchange ID is set", results[i].Exchange.ID != "", true)
+		expect.Equal(t, name+": exchange", results[i].Exchange.ID, results[0].Exchange.ID)
 	}
 	var exchanges, accepted, conversations, notifications, draftSessions int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM exchanges WHERE source_request_id = $1`, created.ID).Scan(&exchanges); err != nil {
@@ -137,8 +136,9 @@ func TestAcceptRequestConcurrentlyAgainstPostgres(t *testing.T) {
 		WHERE exchange_id = $1 AND status = 'DRAFT'`, results[0].Exchange.ID).Scan(&draftSessions); err != nil {
 		t.Fatal(err)
 	}
-	if exchanges != 1 || accepted != 1 || conversations != 1 || notifications != 1 || draftSessions != 2 {
-		t.Fatalf("exchanges = %d, acceptances = %d, conversations = %d, notifications = %d, draftSessions = %d",
-			exchanges, accepted, conversations, notifications, draftSessions)
-	}
+	expect.Equal(t, "exchanges", exchanges, 1)
+	expect.Equal(t, "acceptances in history", accepted, 1)
+	expect.Equal(t, "exchange conversations", conversations, 1)
+	expect.Equal(t, "requester's notifications", notifications, 1)
+	expect.Equal(t, "draft sessions", draftSessions, 2)
 }

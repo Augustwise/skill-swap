@@ -3,11 +3,13 @@ package discovery
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
+	"skillswap/backend/internal/expect"
 	"skillswap/backend/internal/profile"
 )
 
@@ -67,12 +69,12 @@ func TestMutualMatchesPageWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if matches.limit != PageSize || matches.offset != 2*PageSize {
-		t.Fatalf("limit = %d, offset = %d", matches.limit, matches.offset)
-	}
-	if !result.Eligible || result.Page != 3 || result.Total != 45 || result.Items == nil {
-		t.Fatalf("result = %+v", result)
-	}
+	expect.Equal(t, "limit", matches.limit, PageSize)
+	expect.Equal(t, "offset", matches.offset, 2*PageSize)
+	expect.Equal(t, "eligible for matching", result.Eligible, true)
+	expect.Equal(t, "page", result.Page, 3)
+	expect.Equal(t, "total", result.Total, 45)
+	expect.Equal(t, "items are set", result.Items != nil, true)
 }
 
 // An incomplete own profile gives an empty list without querying matches.
@@ -82,21 +84,20 @@ func TestMutualMatchesSkipsIncompleteProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if matches.calls != 0 || result.Eligible || result.Total != 0 || result.Items == nil || len(result.Items) != 0 {
-		t.Fatalf("calls = %d, result = %+v", matches.calls, result)
-	}
+	expect.Equal(t, "match queries", matches.calls, 0)
+	expect.Equal(t, "eligible for matching", result.Eligible, false)
+	expect.Equal(t, "total", result.Total, 0)
+	expect.Equal(t, "items are set", result.Items != nil, true)
+	expect.Equal(t, "items", len(result.Items), 0)
 }
 
 func TestMutualMatchesRejectsInvalidPage(t *testing.T) {
 	service, matches, userID := newTestService(t, true)
 	for _, page := range []int{0, -1, MaxPage + 1} {
-		if _, err := service.MutualMatches(context.Background(), userID, page); !errors.Is(err, ErrInvalidPage) {
-			t.Fatalf("page %d: err = %v", page, err)
-		}
+		_, err := service.MutualMatches(context.Background(), userID, page)
+		expect.Error(t, fmt.Sprintf("page %d", page), err, ErrInvalidPage)
 	}
-	if matches.calls != 0 {
-		t.Fatalf("calls = %d", matches.calls)
-	}
+	expect.Equal(t, "match queries", matches.calls, 0)
 }
 
 func TestSearchStudentsNormalizesFilter(t *testing.T) {
@@ -109,9 +110,10 @@ func TestSearchStudentsNormalizesFilter(t *testing.T) {
 	}
 	want := data.StudentFilter{Query: "Photoshop", CategoryID: "20000000-0000-0000-0000-00000000000a",
 		Level: "ADVANCED", Format: data.FormatOnline, MutualOnly: true}
-	if search.filter != want || search.limit != PageSize || search.offset != PageSize || result.Page != 2 {
-		t.Fatalf("filter = %+v, limit = %d, offset = %d, page = %d", search.filter, search.limit, search.offset, result.Page)
-	}
+	expect.Equal(t, "normalized filter", search.filter, want)
+	expect.Equal(t, "limit", search.limit, PageSize)
+	expect.Equal(t, "offset", search.offset, PageSize)
+	expect.Equal(t, "page", result.Page, 2)
 }
 
 func TestSearchStudentsRejectsInvalidFilters(t *testing.T) {
@@ -128,23 +130,17 @@ func TestSearchStudentsRejectsInvalidFilters(t *testing.T) {
 			t.Fatalf("missing %s error: %v", field, invalid.Fields)
 		}
 	}
-	if _, err := service.SearchStudents(context.Background(), userID, data.StudentFilter{}, 0); !errors.Is(err, ErrInvalidPage) {
-		t.Fatalf("page 0: err = %v", err)
-	}
-	if search.calls != 0 {
-		t.Fatalf("calls = %d", search.calls)
-	}
+	_, err = service.SearchStudents(context.Background(), userID, data.StudentFilter{}, 0)
+	expect.Error(t, "page 0", err, ErrInvalidPage)
+	expect.Equal(t, "search queries", search.calls, 0)
 }
 
 func TestStudentProfileNotFound(t *testing.T) {
 	service, profiles, userID := newTestService(t, true)
-	if _, err := service.StudentProfile(context.Background(), userID, "not-a-uuid"); !errors.Is(err, ErrStudentNotFound) {
-		t.Fatalf("invalid ID: err = %v", err)
-	}
-	if profiles.calls != 0 {
-		t.Fatalf("calls = %d", profiles.calls)
-	}
-	if _, err := service.StudentProfile(context.Background(), userID, "60000000-0000-0000-0000-000000000099"); !errors.Is(err, ErrStudentNotFound) {
-		t.Fatalf("hidden student: err = %v", err)
-	}
+	_, err := service.StudentProfile(context.Background(), userID, "not-a-uuid")
+	expect.Error(t, "profile with an invalid ID", err, ErrStudentNotFound)
+	expect.Equal(t, "profile queries", profiles.calls, 0)
+
+	_, err = service.StudentProfile(context.Background(), userID, "60000000-0000-0000-0000-000000000099")
+	expect.Error(t, "profile of a hidden student", err, ErrStudentNotFound)
 }

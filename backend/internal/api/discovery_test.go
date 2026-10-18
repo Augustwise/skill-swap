@@ -3,12 +3,12 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"slices"
 	"testing"
 
 	"skillswap/backend/internal/auth"
 	"skillswap/backend/internal/data/datatest"
 	"skillswap/backend/internal/discovery"
+	"skillswap/backend/internal/expect"
 	"skillswap/backend/internal/mailer/mailertest"
 )
 
@@ -59,23 +59,15 @@ type matchesResponse struct {
 
 func (e *discoveryEnv) matches(t *testing.T, s *session, query string) matchesResponse {
 	t.Helper()
-	response := send(t, e.handler, http.MethodGet, "/api/v1/me/matches"+query, "", s)
-	expectStatus(t, response, http.StatusOK)
-	var body matchesResponse
-	decodeJSON(t, response, &body)
-	return body
+	return sendAndDecode[matchesResponse](t, e, http.MethodGet, "/api/v1/me/matches"+query, "", s, http.StatusOK)
 }
 
 // meID returns the signed-in user's ID.
 func (e *discoveryEnv) meID(t *testing.T, s *session) string {
 	t.Helper()
-	response := send(t, e.handler, http.MethodGet, "/api/v1/auth/me", "", s)
-	expectStatus(t, response, http.StatusOK)
-	var body struct {
+	return sendAndDecode[struct {
 		User user `json:"user"`
-	}
-	decodeJSON(t, response, &body)
-	return body.User.ID
+	}](t, e, http.MethodGet, "/api/v1/auth/me", "", s, http.StatusOK).User.ID
 }
 
 func TestMutualMatchesRequireVerifiedSession(t *testing.T) {
@@ -88,9 +80,8 @@ func TestMutualMatchesRequireVerifiedSession(t *testing.T) {
 	assertProblem(t, send(t, e.handler, http.MethodGet, "/api/v1/me/matches", "", pending), http.StatusForbidden, "email_not_verified")
 
 	response := send(t, e.handler, http.MethodPost, "/api/v1/me/matches", "", pending)
-	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet {
-		t.Fatalf("POST status = %d, Allow = %q", response.Code, response.Header().Get("Allow"))
-	}
+	expectStatus(t, response, http.StatusMethodNotAllowed)
+	expect.Equal(t, "Allow", response.Header().Get("Allow"), http.MethodGet)
 }
 
 func TestMutualMatchesGuitarPhotoshop(t *testing.T) {
@@ -104,32 +95,33 @@ func TestMutualMatchesGuitarPhotoshop(t *testing.T) {
 	andriiID := e.meID(t, andrii)
 
 	got := e.matches(t, olha, "")
-	if got.Page != 1 || got.PageSize != discovery.PageSize || got.Total != 1 || !got.EligibleForMatching || len(got.Items) != 1 {
-		t.Fatalf("matches = %+v", got)
-	}
+	expect.Equal(t, "page", got.Page, 1)
+	expect.Equal(t, "page size", got.PageSize, discovery.PageSize)
+	expect.Equal(t, "Olha's match total", got.Total, 1)
+	expect.Equal(t, "Olha eligible for matching", got.EligibleForMatching, true)
+	expect.Equal(t, "Olha's matches", len(got.Items), 1)
 	match := got.Items[0]
-	if match.Student.ID != andriiID || match.Student.University.Name == "" || match.Student.City != "Київ" {
-		t.Fatalf("student = %+v", match.Student)
-	}
-	if len(match.CanTeachYou) != 1 || match.CanTeachYou[0].Name != "Photoshop" || match.CanTeachYou[0].Level != "ADVANCED" {
-		t.Fatalf("canTeachYou = %+v", match.CanTeachYou)
-	}
-	if len(match.WantsToLearn) != 1 || match.WantsToLearn[0].Name != "Гітара" || match.WantsToLearn[0].Level != "BEGINNER" {
-		t.Fatalf("wantsToLearn = %+v", match.WantsToLearn)
-	}
+	expect.Equal(t, "matched student", match.Student.ID, andriiID)
+	expect.Equal(t, "university name is set", match.Student.University.Name != "", true)
+	expect.Equal(t, "matched student's city", match.Student.City, "Київ")
+	expect.Equal(t, "skills Andrii can teach", len(match.CanTeachYou), 1)
+	expect.Equal(t, "skill Andrii can teach", match.CanTeachYou[0].Name, "Photoshop")
+	expect.Equal(t, "Andrii's Photoshop level", match.CanTeachYou[0].Level, "ADVANCED")
+	expect.Equal(t, "skills Andrii wants to learn", len(match.WantsToLearn), 1)
+	expect.Equal(t, "skill Andrii wants to learn", match.WantsToLearn[0].Name, "Гітара")
+	expect.Equal(t, "Andrii's guitar level", match.WantsToLearn[0].Level, "BEGINNER")
 	// Offline is not usable: Olha chose only online lessons.
-	if !slices.Equal(match.CommonFormats, []string{"ONLINE"}) {
-		t.Fatalf("commonFormats = %v", match.CommonFormats)
-	}
-	if got := e.matches(t, andrii, ""); got.Total != 1 || len(got.Items) != 1 {
-		t.Fatalf("Andrii's matches = %+v", got)
-	}
+	expect.Slice(t, "common formats", match.CommonFormats, []string{"ONLINE"})
+	andriiMatches := e.matches(t, andrii, "")
+	expect.Equal(t, "Andrii's match total", andriiMatches.Total, 1)
+	expect.Equal(t, "Andrii's matches", len(andriiMatches.Items), 1)
 
 	// Andrii stops teaching Photoshop: the next request no longer shows the match.
 	expectStatus(t, send(t, e.handler, http.MethodDelete, "/api/v1/me/teaching-skills/"+datatest.PhotoshopSkillID, "", andrii), http.StatusOK)
-	if got := e.matches(t, olha, ""); got.Total != 0 || len(got.Items) != 0 || !got.EligibleForMatching {
-		t.Fatalf("after the change = %+v", got)
-	}
+	after := e.matches(t, olha, "")
+	expect.Equal(t, "Olha's match total after the change", after.Total, 0)
+	expect.Equal(t, "Olha's matches after the change", len(after.Items), 0)
+	expect.Equal(t, "Olha eligible after the change", after.EligibleForMatching, true)
 }
 
 // A user whose own profile is incomplete gets an empty list with the reason.
@@ -139,9 +131,10 @@ func TestMutualMatchesForIncompleteProfile(t *testing.T) {
 	olha := e.student(t, "olha@students.example.test", `["ONLINE"]`, "Київ", datatest.GuitarSkillID, "")
 
 	got := e.matches(t, olha, "")
-	if got.EligibleForMatching || got.Total != 0 || got.Items == nil || len(got.Items) != 0 {
-		t.Fatalf("matches = %+v", got)
-	}
+	expect.Equal(t, "eligible for matching", got.EligibleForMatching, false)
+	expect.Equal(t, "match total", got.Total, 0)
+	expect.Equal(t, "items are an array", got.Items != nil, true)
+	expect.Equal(t, "matches", len(got.Items), 0)
 }
 
 func TestMutualMatchesPages(t *testing.T) {
@@ -149,9 +142,10 @@ func TestMutualMatchesPages(t *testing.T) {
 	olha := e.student(t, "olha@students.example.test", `["ONLINE"]`, "Київ", datatest.GuitarSkillID, datatest.PhotoshopSkillID)
 	e.student(t, "andrii@students.example.test", `["ONLINE"]`, "Київ", datatest.PhotoshopSkillID, datatest.GuitarSkillID)
 
-	if got := e.matches(t, olha, "?page=2"); got.Page != 2 || got.Total != 1 || len(got.Items) != 0 {
-		t.Fatalf("page 2 = %+v", got)
-	}
+	secondPage := e.matches(t, olha, "?page=2")
+	expect.Equal(t, "page", secondPage.Page, 2)
+	expect.Equal(t, "total on page 2", secondPage.Total, 1)
+	expect.Equal(t, "matches on page 2", len(secondPage.Items), 0)
 	for _, page := range []string{"0", "-1", "abc", "1.5", "501"} {
 		t.Run(page, func(t *testing.T) {
 			assertProblem(t, send(t, e.handler, http.MethodGet, "/api/v1/me/matches?page="+page, "", olha),
@@ -169,11 +163,7 @@ type searchResponse struct {
 
 func (e *discoveryEnv) search(t *testing.T, s *session, query string) searchResponse {
 	t.Helper()
-	response := send(t, e.handler, http.MethodGet, "/api/v1/students"+query, "", s)
-	expectStatus(t, response, http.StatusOK)
-	var body searchResponse
-	decodeJSON(t, response, &body)
-	return body
+	return sendAndDecode[searchResponse](t, e, http.MethodGet, "/api/v1/students"+query, "", s, http.StatusOK)
 }
 
 func TestSearchStudentsRequiresVerifiedSession(t *testing.T) {
@@ -185,8 +175,8 @@ func TestSearchStudentsRequiresVerifiedSession(t *testing.T) {
 	assertProblem(t, send(t, e.handler, http.MethodGet, "/api/v1/students", "", pending), http.StatusForbidden, "email_not_verified")
 }
 
-// FR-04 acceptance: "Photoshop" finds only students who offer it, filters apply
-// together, and an empty result is a normal empty page.
+// "Photoshop" finds only students who offer it, filters apply together, and an
+// empty result is a normal empty page.
 func TestSearchStudents(t *testing.T) {
 	e := newDiscoveryEnv()
 	olha := e.student(t, "olha@students.example.test", `["ONLINE"]`, "Київ", datatest.GuitarSkillID, datatest.PhotoshopSkillID)
@@ -218,24 +208,23 @@ func TestSearchStudents(t *testing.T) {
 	} {
 		t.Run(test.query, func(t *testing.T) {
 			got := e.search(t, olha, test.query)
-			if !slices.Equal(names(got), test.want) || got.Total != len(test.want) || got.Page != 1 || got.PageSize != discovery.PageSize {
-				t.Fatalf("search = %v (%+v), want %v", names(got), got, test.want)
-			}
+			expect.Slice(t, "students found", names(got), test.want)
+			expect.Equal(t, "total", got.Total, len(test.want))
+			expect.Equal(t, "page", got.Page, 1)
+			expect.Equal(t, "page size", got.PageSize, discovery.PageSize)
 		})
 	}
 
 	got := e.search(t, olha, "?q=Photoshop")
 	andriiCard, markoCard := got.Items[0], got.Items[1]
-	if !andriiCard.Mutual || markoCard.Mutual {
-		t.Fatalf("mutual: Andrii %v, Marko %v", andriiCard.Mutual, markoCard.Mutual)
-	}
-	if len(markoCard.TeachingSkills) != 1 || markoCard.TeachingSkills[0].Level != "BEGINNER" ||
-		!slices.Equal(markoCard.Formats, []string{"ONLINE"}) || markoCard.Student.City != "Львів" {
-		t.Fatalf("Marko = %+v", markoCard)
-	}
-	if got.Items == nil || e.search(t, olha, "?q=Скрипка").Items == nil {
-		t.Fatal("items must be an array, not null")
-	}
+	expect.Equal(t, "Andrii is a mutual match", andriiCard.Mutual, true)
+	expect.Equal(t, "Marko is a mutual match", markoCard.Mutual, false)
+	expect.Equal(t, "Marko's teaching skills", len(markoCard.TeachingSkills), 1)
+	expect.Equal(t, "Marko's Photoshop level", markoCard.TeachingSkills[0].Level, "BEGINNER")
+	expect.Slice(t, "Marko's formats", markoCard.Formats, []string{"ONLINE"})
+	expect.Equal(t, "Marko's city", markoCard.Student.City, "Львів")
+	expect.Equal(t, "items are an array", got.Items != nil, true)
+	expect.Equal(t, "items of an empty result are an array", e.search(t, olha, "?q=Скрипка").Items != nil, true)
 }
 
 func TestSearchStudentsRejectsInvalidFilters(t *testing.T) {
@@ -256,13 +245,9 @@ func TestSearchStudentsRejectsInvalidFilters(t *testing.T) {
 
 func (e *discoveryEnv) studentProfile(t *testing.T, s *session, id string) studentProfileResponse {
 	t.Helper()
-	response := send(t, e.handler, http.MethodGet, "/api/v1/students/"+id, "", s)
-	expectStatus(t, response, http.StatusOK)
-	var body struct {
+	return sendAndDecode[struct {
 		Student studentProfileResponse `json:"student"`
-	}
-	decodeJSON(t, response, &body)
-	return body.Student
+	}](t, e, http.MethodGet, "/api/v1/students/"+id, "", s, http.StatusOK).Student
 }
 
 func TestStudentProfile(t *testing.T) {
@@ -275,23 +260,25 @@ func TestStudentProfile(t *testing.T) {
 	andriiID, markoID := e.meID(t, andrii), e.meID(t, marko)
 
 	got := e.studentProfile(t, olha, andriiID)
-	if got.ID != andriiID || got.Bio != "Дизайнер" || got.Course == nil || *got.Course != 3 || got.Faculty == nil ||
-		got.University.Name == "" || got.City != "Київ" || !slices.Equal(got.Formats, []string{"ONLINE"}) {
-		t.Fatalf("profile = %+v", got)
-	}
-	if len(got.TeachingSkills) != 1 || got.TeachingSkills[0].Level != "ADVANCED" || len(got.LearningSkills) != 1 {
-		t.Fatalf("skills: teaching %+v, learning %+v", got.TeachingSkills, got.LearningSkills)
-	}
-	if got.AverageRating != nil || got.ReviewCount != 0 || got.Reviews == nil || len(got.Reviews) != 0 {
-		t.Fatalf("reviews: average %v, count %d, items %v", got.AverageRating, got.ReviewCount, got.Reviews)
-	}
-	if got.Mutual == nil || got.Mutual.CanTeachYou[0].Name != "Photoshop" || got.Mutual.WantsToLearn[0].Name != "Гітара" ||
-		!slices.Equal(got.Mutual.CommonFormats, []string{"ONLINE"}) {
-		t.Fatalf("mutual = %+v", got.Mutual)
-	}
-	if got := e.studentProfile(t, olha, markoID); got.Mutual != nil {
-		t.Fatalf("one-sided interest is marked mutual: %+v", got.Mutual)
-	}
+	expect.Equal(t, "student", got.ID, andriiID)
+	expect.Equal(t, "bio", got.Bio, "Дизайнер")
+	expect.Equal(t, "course", valueOf(got.Course), 3)
+	expect.Equal(t, "faculty is set", got.Faculty != nil, true)
+	expect.Equal(t, "university name is set", got.University.Name != "", true)
+	expect.Equal(t, "city", got.City, "Київ")
+	expect.Slice(t, "formats", got.Formats, []string{"ONLINE"})
+	expect.Equal(t, "teaching skills", len(got.TeachingSkills), 1)
+	expect.Equal(t, "teaching skill level", got.TeachingSkills[0].Level, "ADVANCED")
+	expect.Equal(t, "learning skills", len(got.LearningSkills), 1)
+	expect.Equal(t, "average rating is set", got.AverageRating != nil, false)
+	expect.Equal(t, "review count", got.ReviewCount, 0)
+	expect.Equal(t, "reviews are an array", got.Reviews != nil, true)
+	expect.Equal(t, "reviews", len(got.Reviews), 0)
+	expect.Equal(t, "mutual is set", got.Mutual != nil, true)
+	expect.Equal(t, "skill Andrii can teach", got.Mutual.CanTeachYou[0].Name, "Photoshop")
+	expect.Equal(t, "skill Andrii wants to learn", got.Mutual.WantsToLearn[0].Name, "Гітара")
+	expect.Slice(t, "common formats", got.Mutual.CommonFormats, []string{"ONLINE"})
+	expect.Equal(t, "one-sided interest marked mutual", e.studentProfile(t, olha, markoID).Mutual != nil, false)
 
 	expectStatus(t, send(t, e.handler, http.MethodPost, "/api/v1/auth/register",
 		registerBody("pending@students.example.test", testPassword), nil), http.StatusCreated)

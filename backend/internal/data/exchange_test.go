@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"skillswap/backend/internal/expect"
 )
 
 const (
@@ -24,14 +26,15 @@ func TestRequestRecipientOnDemoData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !andrii.AcceptsRequests || andrii.SameUniversityOnly || andrii.UserID != demoAndrii || andrii.City != "Київ" ||
-		len(andrii.TeachingSkills) != 2 || len(andrii.LearningSkills) != 1 {
-		t.Fatalf("Andrii = %+v", andrii)
-	}
+	expect.Equal(t, "Andrii accepts requests", andrii.AcceptsRequests, true)
+	expect.Equal(t, "Andrii accepts only his university", andrii.SameUniversityOnly, false)
+	expect.Equal(t, "Andrii's user ID", andrii.UserID, demoAndrii)
+	expect.Equal(t, "Andrii's city", andrii.City, "Київ")
+	expect.Equal(t, "skills Andrii teaches", len(andrii.TeachingSkills), 2)
+	expect.Equal(t, "skills Andrii learns", len(andrii.LearningSkills), 1)
 	dmytro, err := store.RequestRecipient(ctx, demoIryna, demoDmytro)
-	if err != nil || dmytro.AcceptsRequests {
-		t.Fatalf("Dmytro accepts requests = %v, err %v", dmytro.AcceptsRequests, err)
-	}
+	expect.NoError(t, "load Dmytro as a recipient", err)
+	expect.Equal(t, "Dmytro accepts requests", dmytro.AcceptsRequests, false)
 
 	for _, test := range []struct{ name, sender, recipient string }{
 		{"hidden profile", demoOlha, demoNataliia},
@@ -41,9 +44,8 @@ func TestRequestRecipientOnDemoData(t *testing.T) {
 		{"the sender", demoOlha, demoOlha},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := store.RequestRecipient(ctx, test.sender, test.recipient); !errors.Is(err, ErrNotFound) {
-				t.Fatalf("err = %v, want ErrNotFound", err)
-			}
+			_, err := store.RequestRecipient(ctx, test.sender, test.recipient)
+			expect.Error(t, "load the recipient", err, ErrNotFound)
 		})
 	}
 }
@@ -55,20 +57,26 @@ func TestRequestByIDOnDemoData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Requester.UserID != demoTaras || r.Recipient.UserID != demoOlha || r.Requester.FirstName != "Тарас" ||
-		r.Recipient.UniversityName == "" || r.Format != "OFFLINE" || r.TotalSessions != 4 || r.ExchangeID != "" {
-		t.Fatalf("request = %+v", r)
-	}
-	if r.RequesterTeaches.SkillID != photoshop || r.RequesterTeaches.TeacherLevel != "BEGINNER" ||
-		r.RequesterTeaches.LearnerLevel != "BEGINNER" || r.RequesterTeaches.Sessions != 2 || r.RequesterTeaches.DurationMinutes != 60 {
-		t.Fatalf("Taras teaches %+v", r.RequesterTeaches)
-	}
-	if r.RecipientTeaches.SkillID != guitarSkill || r.RecipientTeaches.TeacherLevel != "ADVANCED" || r.RecipientTeaches.Name != "Гітара" {
-		t.Fatalf("Olha teaches %+v", r.RecipientTeaches)
-	}
-	if _, err := store.RequestByID(context.Background(), "70000000-0000-0000-0000-000000000999"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("unknown request: err = %v", err)
-	}
+	expect.Equal(t, "requester", r.Requester.UserID, demoTaras)
+	expect.Equal(t, "recipient", r.Recipient.UserID, demoOlha)
+	expect.Equal(t, "requester's first name", r.Requester.FirstName, "Тарас")
+	expect.Equal(t, "recipient's university is set", r.Recipient.UniversityName != "", true)
+	expect.Equal(t, "format", r.Format, "OFFLINE")
+	expect.Equal(t, "total sessions", r.TotalSessions, 4)
+	expect.Equal(t, "exchange ID", r.ExchangeID, "")
+
+	expect.Equal(t, "skill Taras teaches", r.RequesterTeaches.SkillID, photoshop)
+	expect.Equal(t, "Taras's teaching level", r.RequesterTeaches.TeacherLevel, "BEGINNER")
+	expect.Equal(t, "Olha's Photoshop level", r.RequesterTeaches.LearnerLevel, "BEGINNER")
+	expect.Equal(t, "sessions Taras teaches", r.RequesterTeaches.Sessions, 2)
+	expect.Equal(t, "length of Taras's sessions", r.RequesterTeaches.DurationMinutes, 60)
+
+	expect.Equal(t, "skill Olha teaches", r.RecipientTeaches.SkillID, guitarSkill)
+	expect.Equal(t, "Olha's teaching level", r.RecipientTeaches.TeacherLevel, "ADVANCED")
+	expect.Equal(t, "name of the skill Olha teaches", r.RecipientTeaches.Name, "Гітара")
+
+	_, err = store.RequestByID(context.Background(), "70000000-0000-0000-0000-000000000999")
+	expect.Error(t, "unknown request", err, ErrNotFound)
 }
 
 // Runs inside a transaction that is rolled back.
@@ -106,33 +114,35 @@ func TestCreateRequestAgainstPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if r.Status != RequestPending || r.Requester.UserID != demoOlha || r.Recipient.UserID != demoAndrii ||
-			r.TotalSessions != 3 || r.Message != "Привіт!" || r.RespondedAt != nil {
-			t.Fatalf("request = %+v", r)
-		}
-		if r.RequesterTeaches.SkillID != guitarSkill || r.RequesterTeaches.TeacherLevel != "ADVANCED" ||
-			r.RequesterTeaches.LearnerLevel != "BEGINNER" || r.RequesterTeaches.Sessions != 2 ||
-			r.RecipientTeaches.SkillID != photoshop || r.RecipientTeaches.DurationMinutes != 120 {
-			t.Fatalf("terms: %+v, %+v", r.RequesterTeaches, r.RecipientTeaches)
-		}
-		var history int
-		if err := store.conn(ctx).QueryRow(ctx, `SELECT count(*) FROM exchange_request_status_history
-			WHERE request_id = $1 AND status = 'PENDING' AND changed_by_user_id = $2`, id, demoOlha).Scan(&history); err != nil || history != 1 {
-			t.Fatalf("history rows = %d, err %v", history, err)
-		}
+		expect.Equal(t, "status", r.Status, RequestPending)
+		expect.Equal(t, "requester", r.Requester.UserID, demoOlha)
+		expect.Equal(t, "recipient", r.Recipient.UserID, demoAndrii)
+		expect.Equal(t, "total sessions", r.TotalSessions, 3)
+		expect.Equal(t, "message", r.Message, "Привіт!")
+		expect.Equal(t, "respondedAt is set", r.RespondedAt != nil, false)
 
-		if _, err := create(olhaToAndrii); !errors.Is(err, ErrDuplicateRequest) {
-			t.Fatalf("the same request again: err = %v", err)
-		}
-		if _, err := create(andriiToOlha); !errors.Is(err, ErrDuplicateRequest) {
-			t.Fatalf("the reverse request: err = %v", err)
-		}
+		expect.Equal(t, "skill Olha teaches", r.RequesterTeaches.SkillID, guitarSkill)
+		expect.Equal(t, "Olha's teaching level", r.RequesterTeaches.TeacherLevel, "ADVANCED")
+		expect.Equal(t, "Andrii's guitar level", r.RequesterTeaches.LearnerLevel, "BEGINNER")
+		expect.Equal(t, "sessions Olha teaches", r.RequesterTeaches.Sessions, 2)
+		expect.Equal(t, "skill Andrii teaches", r.RecipientTeaches.SkillID, photoshop)
+		expect.Equal(t, "length of Andrii's sessions", r.RecipientTeaches.DurationMinutes, 120)
+
+		var history int
+		err = store.conn(ctx).QueryRow(ctx, `SELECT count(*) FROM exchange_request_status_history
+			WHERE request_id = $1 AND status = 'PENDING' AND changed_by_user_id = $2`, id, demoOlha).Scan(&history)
+		expect.NoError(t, "count history rows", err)
+		expect.Equal(t, "PENDING history rows by Olha", history, 1)
+
+		_, err = create(olhaToAndrii)
+		expect.Error(t, "the same request again", err, ErrDuplicateRequest)
+		_, err = create(andriiToOlha)
+		expect.Error(t, "the reverse request", err, ErrDuplicateRequest)
 		// The seed has a pending request from Taras with the same skills.
 		olhaToTaras := olhaToAndrii
 		olhaToTaras.RecipientID, olhaToTaras.Format = demoTaras, FormatOffline
-		if _, err := create(olhaToTaras); !errors.Is(err, ErrDuplicateRequest) {
-			t.Fatalf("the reverse of the demo request: err = %v", err)
-		}
+		_, err = create(olhaToTaras)
+		expect.Error(t, "the reverse of the demo request", err, ErrDuplicateRequest)
 
 		for _, status := range []string{"DECLINED", "WITHDRAWN"} {
 			if _, err := store.conn(ctx).Exec(ctx, `UPDATE exchange_requests SET status = $2, responded_at = now()
@@ -144,21 +154,17 @@ func TestCreateRequestAgainstPostgres(t *testing.T) {
 			}
 		}
 		empty, err := store.RequestByID(ctx, id)
-		if err != nil || empty.Message != "" {
-			t.Fatalf("no message = %q, err %v", empty.Message, err)
-		}
+		expect.NoError(t, "load the request without a message", err)
+		expect.Equal(t, "message", empty.Message, "")
 
 		if err := store.RemoveUserSkill(ctx, TeachingList, demoAndrii, photoshop); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := create(olhaToAndrii); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("after a skill was removed: err = %v", err)
-		}
+		_, err = create(olhaToAndrii)
+		expect.Error(t, "after a skill was removed", err, ErrNotFound)
 		return rollback
 	})
-	if !errors.Is(err, rollback) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "WithinTx", err, rollback)
 }
 
 // Runs inside a transaction that is rolled back.
@@ -188,14 +194,12 @@ func TestRequestRecipientScope(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !recipient.AcceptsRequests || !recipient.SameUniversityOnly || recipient.UniversityID != universityID {
-			t.Fatalf("recipient = %+v", recipient)
-		}
+		expect.Equal(t, "recipient accepts requests", recipient.AcceptsRequests, true)
+		expect.Equal(t, "recipient accepts only their university", recipient.SameUniversityOnly, true)
+		expect.Equal(t, "recipient's university", recipient.UniversityID, universityID)
 		return rollback
 	})
-	if !errors.Is(err, rollback) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "WithinTx", err, rollback)
 }
 
 // Runs inside a transaction that is rolled back.
@@ -225,16 +229,14 @@ func TestUserRequestsAgainstPostgres(t *testing.T) {
 
 		// Requests made inside the transaction are the newest.
 		sent, total := list(demoOlha, RequestFilter{Direction: Outgoing}, 1, 0)
-		if !slices.Equal(sent, []string{id}) || total < 1 {
-			t.Fatalf("Olha's sent requests = %v, total %d", sent, total)
-		}
-		if past, pastTotal := list(demoOlha, RequestFilter{Direction: Outgoing}, 20, 400); len(past) != 0 || pastTotal != total {
-			t.Fatalf("past the end = %v, total %d, want %d", past, pastTotal, total)
-		}
-		if incoming, _ := list(demoOlha, RequestFilter{Direction: Incoming}, 20, 0); slices.Contains(incoming, id) ||
-			!slices.Contains(incoming, demoTarasToOlha) {
-			t.Fatalf("Olha's incoming requests = %v", incoming)
-		}
+		expect.Slice(t, "Olha's newest sent request", sent, []string{id})
+		expect.Equal(t, "at least 1 sent request in total", total >= 1, true)
+		past, pastTotal := list(demoOlha, RequestFilter{Direction: Outgoing}, 20, 400)
+		expect.Equal(t, "sent requests past the end", len(past), 0)
+		expect.Equal(t, "total past the end", pastTotal, total)
+		olhaIncoming, _ := list(demoOlha, RequestFilter{Direction: Incoming}, 20, 0)
+		expect.Equal(t, "Olha's own request is in her incoming requests", slices.Contains(olhaIncoming, id), false)
+		expect.Equal(t, "Taras's request is in Olha's incoming requests", slices.Contains(olhaIncoming, demoTarasToOlha), true)
 		if sent, _ := list(demoTaras, RequestFilter{Direction: Outgoing}, 20, 0); !slices.Contains(sent, demoTarasToOlha) {
 			t.Fatalf("Taras's sent requests = %v", sent)
 		}
@@ -264,14 +266,12 @@ func TestUserRequestsAgainstPostgres(t *testing.T) {
 		if sent, _ := list(demoOlha, RequestFilter{Direction: Outgoing}, 20, 0); !slices.Contains(sent, id) {
 			t.Fatalf("Olha's sent requests after the block = %v", sent)
 		}
-		if r, err := store.RequestByID(ctx, id); err != nil || r.Recipient.FirstName == "" {
-			t.Fatalf("request after the block = %+v, err %v", r, err)
-		}
+		r, err := store.RequestByID(ctx, id)
+		expect.NoError(t, "load the request after the block", err)
+		expect.Equal(t, "recipient's first name is set after the block", r.Recipient.FirstName != "", true)
 		return rollback
 	})
-	if !errors.Is(err, rollback) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "WithinTx", err, rollback)
 }
 
 // Runs inside a transaction that is rolled back.
@@ -294,23 +294,23 @@ func TestRequestHistoryAgainstPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(history) != 2 {
-			t.Fatalf("history = %+v", history)
-		}
-		if h := history[0]; h.Status != RequestPending || h.ChangedByID != demoOlha || h.ChangedByFirstName != "Ольга" || h.ChangedByLastName == "" {
-			t.Fatalf("first change = %+v", h)
-		}
-		if h := history[1]; h.Status != RequestWithdrawn || h.ChangedByID != "" || h.ChangedByFirstName != "" {
-			t.Fatalf("change without a user = %+v", h)
-		}
-		if empty, err := store.RequestHistory(ctx, "70000000-0000-0000-0000-000000000999"); err != nil || len(empty) != 0 {
-			t.Fatalf("unknown request history = %+v, err %v", empty, err)
-		}
+		expect.Equal(t, "history items", len(history), 2)
+		first := history[0]
+		expect.Equal(t, "first change status", first.Status, RequestPending)
+		expect.Equal(t, "first change author", first.ChangedByID, demoOlha)
+		expect.Equal(t, "first change author's first name", first.ChangedByFirstName, "Ольга")
+		expect.Equal(t, "first change author's last name is set", first.ChangedByLastName != "", true)
+		// The second change was made without a user.
+		second := history[1]
+		expect.Equal(t, "second change status", second.Status, RequestWithdrawn)
+		expect.Equal(t, "second change author", second.ChangedByID, "")
+		expect.Equal(t, "second change author's first name", second.ChangedByFirstName, "")
+		empty, err := store.RequestHistory(ctx, "70000000-0000-0000-0000-000000000999")
+		expect.NoError(t, "load the history of an unknown request", err)
+		expect.Equal(t, "history items of an unknown request", len(empty), 0)
 		return rollback
 	})
-	if !errors.Is(err, rollback) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "WithinTx", err, rollback)
 }
 
 // Runs inside a transaction that is rolled back.
@@ -325,39 +325,32 @@ func TestUpdateRequestStatusAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := RequestState{ID: demoTarasToOlha, RequesterID: demoTaras, RecipientID: demoOlha, Status: RequestPending}
-		if state != want {
-			t.Fatalf("state = %+v", state)
-		}
+		expect.Equal(t, "locked request", state, want)
 		if err := store.UpdateRequestStatus(ctx, demoTarasToOlha, RequestDeclined, demoOlha); err != nil {
 			t.Fatal(err)
 		}
 		r, err := store.RequestByID(ctx, demoTarasToOlha)
-		if err != nil || r.Status != RequestDeclined || r.RespondedAt == nil {
-			t.Fatalf("request = %+v, err %v", r, err)
-		}
+		expect.NoError(t, "load the declined request", err)
+		expect.Equal(t, "status", r.Status, RequestDeclined)
+		expect.Equal(t, "respondedAt is set", r.RespondedAt != nil, true)
 		history, err := store.RequestHistory(ctx, demoTarasToOlha)
-		if err != nil || len(history) != 2 {
-			t.Fatalf("history = %+v, err %v", history, err)
-		}
+		expect.NoError(t, "load the history", err)
+		expect.Equal(t, "history items", len(history), 2)
 		last := history[0]
 		if last.Status != RequestDeclined {
 			last = history[1]
 		}
-		if last.Status != RequestDeclined || last.ChangedByID != demoOlha || !last.CreatedAt.Equal(*r.RespondedAt) {
-			t.Fatalf("decline in history = %+v", last)
-		}
+		expect.Equal(t, "decline status in history", last.Status, RequestDeclined)
+		expect.Equal(t, "declined by", last.ChangedByID, demoOlha)
+		expect.Equal(t, "decline time matches respondedAt", last.CreatedAt.Equal(*r.RespondedAt), true)
 
-		if _, err := store.LockRequest(ctx, unknown); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("lock an unknown request: err = %v", err)
-		}
-		if err := store.UpdateRequestStatus(ctx, unknown, RequestDeclined, demoOlha); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("update an unknown request: err = %v", err)
-		}
+		_, err = store.LockRequest(ctx, unknown)
+		expect.Error(t, "lock an unknown request", err, ErrNotFound)
+		err = store.UpdateRequestStatus(ctx, unknown, RequestDeclined, demoOlha)
+		expect.Error(t, "update an unknown request", err, ErrNotFound)
 		return rollback
 	})
-	if !errors.Is(err, rollback) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "WithinTx", err, rollback)
 }
 
 // Runs inside a transaction that is rolled back.
@@ -377,28 +370,34 @@ func TestCreateExchangeAgainstPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if e.ID != id || e.RequestID != demoTarasToOlha || e.Status != ExchangeActive || e.Format != "OFFLINE" ||
-			e.TotalSessions != 4 || e.StartedAt == nil || e.Requester.UserID != demoTaras || e.Recipient.UserID != demoOlha ||
-			e.Recipient.UniversityName == "" {
-			t.Fatalf("exchange = %+v", e)
-		}
+		expect.Equal(t, "exchange ID", e.ID, id)
+		expect.Equal(t, "source request", e.RequestID, demoTarasToOlha)
+		expect.Equal(t, "status", e.Status, ExchangeActive)
+		expect.Equal(t, "format", e.Format, "OFFLINE")
+		expect.Equal(t, "total sessions", e.TotalSessions, 4)
+		expect.Equal(t, "startedAt is set", e.StartedAt != nil, true)
+		expect.Equal(t, "requester", e.Requester.UserID, demoTaras)
+		expect.Equal(t, "recipient", e.Recipient.UserID, demoOlha)
+		expect.Equal(t, "recipient's university is set", e.Recipient.UniversityName != "", true)
+
 		taras := RequestTerms{SkillID: photoshop, CategoryID: e.RequesterTeaches.CategoryID, Name: "Photoshop",
 			TeacherLevel: "BEGINNER", LearnerLevel: "BEGINNER", Sessions: 2, DurationMinutes: 60}
-		if e.RequesterTeaches != taras || e.RequesterTeaches.CategoryID == "" {
-			t.Fatalf("Taras teaches %+v", e.RequesterTeaches)
-		}
+		expect.Equal(t, "terms Taras teaches", e.RequesterTeaches, taras)
+		expect.Equal(t, "category of the skill Taras teaches is set", e.RequesterTeaches.CategoryID != "", true)
 		olha := e.RecipientTeaches
-		if olha.SkillID != guitarSkill || olha.Name != "Гітара" || olha.TeacherLevel != "ADVANCED" || olha.Sessions != 2 {
-			t.Fatalf("Olha teaches %+v", olha)
-		}
-		if r, err := store.RequestByID(ctx, demoTarasToOlha); err != nil || r.ExchangeID != id {
-			t.Fatalf("request exchange ID = %q, err %v", r.ExchangeID, err)
-		}
+		expect.Equal(t, "skill Olha teaches", olha.SkillID, guitarSkill)
+		expect.Equal(t, "name of the skill Olha teaches", olha.Name, "Гітара")
+		expect.Equal(t, "Olha's teaching level", olha.TeacherLevel, "ADVANCED")
+		expect.Equal(t, "sessions Olha teaches", olha.Sessions, 2)
+
+		r, err := store.RequestByID(ctx, demoTarasToOlha)
+		expect.NoError(t, "load the request", err)
+		expect.Equal(t, "request exchange ID", r.ExchangeID, id)
 		var history int
-		if err := store.conn(ctx).QueryRow(ctx, `SELECT count(*) FROM exchange_status_history
-			WHERE exchange_id = $1 AND status = 'ACTIVE' AND changed_by_user_id = $2`, id, demoOlha).Scan(&history); err != nil || history != 1 {
-			t.Fatalf("history rows = %d, err %v", history, err)
-		}
+		err = store.conn(ctx).QueryRow(ctx, `SELECT count(*) FROM exchange_status_history
+			WHERE exchange_id = $1 AND status = 'ACTIVE' AND changed_by_user_id = $2`, id, demoOlha).Scan(&history)
+		expect.NoError(t, "count history rows", err)
+		expect.Equal(t, "ACTIVE history rows by Olha", history, 1)
 
 		// The terms are snapshots: later profile changes do not reach the exchange.
 		if err := store.UpdateUserSkillLevel(ctx, TeachingList, demoOlha, guitarSkill, "BEGINNER"); err != nil {
@@ -411,25 +410,21 @@ func TestCreateExchangeAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		after, err := store.ExchangeByID(ctx, id)
-		if err != nil || after.RequesterTeaches != taras || after.RecipientTeaches != olha {
-			t.Fatalf("after profile changes = %+v, err %v", after, err)
-		}
+		expect.NoError(t, "load the exchange after profile changes", err)
+		expect.Equal(t, "terms Taras teaches after profile changes", after.RequesterTeaches, taras)
+		expect.Equal(t, "terms Olha teaches after profile changes", after.RecipientTeaches, olha)
 
-		if _, err := store.ExchangeByID(ctx, "80000000-0000-0000-0000-000000000999"); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("unknown exchange: err = %v", err)
-		}
-		if _, err := store.CreateExchange(ctx, "70000000-0000-0000-0000-000000000999", demoOlha); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("exchange for an unknown request: err = %v", err)
-		}
+		_, err = store.ExchangeByID(ctx, "80000000-0000-0000-0000-000000000999")
+		expect.Error(t, "unknown exchange", err, ErrNotFound)
+		_, err = store.CreateExchange(ctx, "70000000-0000-0000-0000-000000000999", demoOlha)
+		expect.Error(t, "exchange for an unknown request", err, ErrNotFound)
 		// The last statement: the unique source request fails and aborts the transaction.
 		if _, err := store.CreateExchange(ctx, demoTarasToOlha, demoOlha); err == nil {
 			t.Fatal("a second exchange for the same request was created")
 		}
 		return rollback
 	})
-	if !errors.Is(err, rollback) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "WithinTx", err, rollback)
 }
 
 // Skipped unless TEST_DATABASE_URL points to a migrated, demo-seeded database.
@@ -446,17 +441,15 @@ func TestCreateExchangeRollsBack(t *testing.T) {
 		}
 		return failure
 	})
-	if !errors.Is(err, failure) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "WithinTx", err, failure)
 	r, err := store.RequestByID(ctx, demoTarasToOlha)
-	if err != nil || r.Status != RequestPending || r.ExchangeID != "" || r.RespondedAt != nil {
-		t.Fatalf("request after the rollback = %+v, err %v", r, err)
-	}
+	expect.NoError(t, "load the request after the rollback", err)
+	expect.Equal(t, "status after the rollback", r.Status, RequestPending)
+	expect.Equal(t, "exchange ID after the rollback", r.ExchangeID, "")
+	expect.Equal(t, "respondedAt is set after the rollback", r.RespondedAt != nil, false)
 	history, err := store.RequestHistory(ctx, demoTarasToOlha)
-	if err != nil || len(history) != 1 {
-		t.Fatalf("history after the rollback = %+v, err %v", history, err)
-	}
+	expect.NoError(t, "load the history after the rollback", err)
+	expect.Equal(t, "history items after the rollback", len(history), 1)
 }
 
 // Skipped unless TEST_DATABASE_URL points to a migrated, demo-seeded database.
@@ -491,17 +484,15 @@ func TestRequestIsCurrentAgainstPostgres(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if current, err := store.RequestIsCurrent(ctx, demoTarasToOlha); err != nil || current != test.want {
-					t.Fatalf("current = %v, err %v", current, err)
-				}
+				current, err := store.RequestIsCurrent(ctx, demoTarasToOlha)
+				expect.NoError(t, "RequestIsCurrent", err)
+				expect.Equal(t, "current", current, test.want)
 				return rollback
 			})
-			if !errors.Is(err, rollback) {
-				t.Fatalf("WithinTx err = %v", err)
-			}
+			expect.Error(t, "WithinTx", err, rollback)
 		})
 	}
-	if current, err := store.RequestIsCurrent(context.Background(), "70000000-0000-0000-0000-000000000999"); err != nil || current {
-		t.Fatalf("unknown request: current = %v, err %v", current, err)
-	}
+	current, err := store.RequestIsCurrent(context.Background(), "70000000-0000-0000-0000-000000000999")
+	expect.NoError(t, "RequestIsCurrent for an unknown request", err)
+	expect.Equal(t, "unknown request is current", current, false)
 }

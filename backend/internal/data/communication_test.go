@@ -5,6 +5,8 @@ import (
 	"errors"
 	"slices"
 	"testing"
+
+	"skillswap/backend/internal/expect"
 )
 
 const (
@@ -22,24 +24,27 @@ func TestCommunicationOnDemoData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conv.ID != demoTarasToOlhaConversation || conv.RequestID != demoTarasToOlha ||
-		conv.Requester.UserID != demoTaras || conv.Recipient.UserID != demoOlha ||
-		conv.UnreadCount < 1 || conv.LastMessage == nil || conv.LastMessage.ID != demoTarasToOlhaMessage {
-		t.Fatalf("demo conversation = %+v", conv)
-	}
-	if _, err := store.ConversationByID(ctx, demoAndrii, demoTarasToOlhaConversation); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("stranger conversation access: err = %v", err)
-	}
+	expect.Equal(t, "conversation", conv.ID, demoTarasToOlhaConversation)
+	expect.Equal(t, "conversation request", conv.RequestID, demoTarasToOlha)
+	expect.Equal(t, "requester", conv.Requester.UserID, demoTaras)
+	expect.Equal(t, "recipient", conv.Recipient.UserID, demoOlha)
+	expect.Equal(t, "at least 1 unread message", conv.UnreadCount >= 1, true)
+	expect.Equal(t, "last message is set", conv.LastMessage != nil, true)
+	expect.Equal(t, "last message", conv.LastMessage.ID, demoTarasToOlhaMessage)
+	_, err = store.ConversationByID(ctx, demoAndrii, demoTarasToOlhaConversation)
+	expect.Error(t, "stranger conversation access", err, ErrNotFound)
 
 	msgs, total, err := store.ConversationMessages(ctx, demoOlha, demoTarasToOlhaConversation, "", 20, 0)
-	if err != nil || total < 1 || len(msgs) < 1 || msgs[0].ID != demoTarasToOlhaMessage {
-		t.Fatalf("demo messages = %+v, total %d, err %v", msgs, total, err)
-	}
+	expect.NoError(t, "load demo messages", err)
+	expect.Equal(t, "at least 1 message in total", total >= 1, true)
+	expect.Equal(t, "at least 1 message on the page", len(msgs) >= 1, true)
+	expect.Equal(t, "first message", msgs[0].ID, demoTarasToOlhaMessage)
 
 	notifs, total, unread, err := store.UserNotifications(ctx, demoOlha, true, 20, 0)
-	if err != nil || total < 2 || unread < 2 || len(notifs) < 2 {
-		t.Fatalf("demo notifications = %+v, total %d, unread %d, err %v", notifs, total, unread, err)
-	}
+	expect.NoError(t, "load demo notifications", err)
+	expect.Equal(t, "at least 2 notifications in total", total >= 2, true)
+	expect.Equal(t, "at least 2 unread notifications", unread >= 2, true)
+	expect.Equal(t, "at least 2 notifications on the page", len(notifs) >= 2, true)
 }
 
 // Runs inside a transaction that is rolled back.
@@ -64,22 +69,23 @@ func TestConversationsAndMessagesAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		convID, err := store.EnsureRequestConversation(ctx, reqID)
-		if err != nil || convID == "" {
-			t.Fatalf("EnsureRequestConversation = %q, err %v", convID, err)
-		}
+		expect.NoError(t, "EnsureRequestConversation", err)
+		expect.Equal(t, "conversation ID is set", convID != "", true)
 		// Calling EnsureRequestConversation again returns the same conversation ID.
-		if again, err := store.EnsureRequestConversation(ctx, reqID); err != nil || again != convID {
-			t.Fatalf("EnsureRequestConversation again = %q, err %v", again, err)
-		}
+		again, err := store.EnsureRequestConversation(ctx, reqID)
+		expect.NoError(t, "EnsureRequestConversation again", err)
+		expect.Equal(t, "conversation ID on the second call", again, convID)
 
 		conv, err := store.ConversationByID(ctx, demoOlha, convID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if conv.Type != ConversationRequest || conv.RequestID != reqID || conv.ExchangeID != "" ||
-			conv.RequestStatus != RequestPending || !conv.CanSend || conv.UnreadCount != 0 {
-			t.Fatalf("conversation = %+v", conv)
-		}
+		expect.Equal(t, "conversation type", conv.Type, ConversationRequest)
+		expect.Equal(t, "conversation request", conv.RequestID, reqID)
+		expect.Equal(t, "conversation exchange", conv.ExchangeID, "")
+		expect.Equal(t, "request status", conv.RequestStatus, RequestPending)
+		expect.Equal(t, "Olha can send", conv.CanSend, true)
+		expect.Equal(t, "Olha's unread messages", conv.UnreadCount, 0)
 
 		m1, err := store.CreateMessage(ctx, convID, demoOlha, "Перше повідомлення в чаті запиту")
 		if err != nil {
@@ -92,31 +98,31 @@ func TestConversationsAndMessagesAgainstPostgres(t *testing.T) {
 
 		// Andrii has 1 unread message (m1); Olha has 1 unread message (m2).
 		andriiConv, err := store.ConversationByID(ctx, demoAndrii, convID)
-		if err != nil || andriiConv.UnreadCount != 1 || andriiConv.LastMessage == nil || andriiConv.LastMessage.ID != m2.ID {
-			t.Fatalf("Andrii conversation = %+v, err %v", andriiConv, err)
-		}
+		expect.NoError(t, "load Andrii's conversation", err)
+		expect.Equal(t, "Andrii's unread messages", andriiConv.UnreadCount, 1)
+		expect.Equal(t, "Andrii's last message is set", andriiConv.LastMessage != nil, true)
+		expect.Equal(t, "Andrii's last message", andriiConv.LastMessage.ID, m2.ID)
 
 		// Polling after m1 returns only m2.
 		after, total, err := store.ConversationMessages(ctx, demoAndrii, convID, m1.ID, 20, 0)
-		if err != nil || total != 1 || len(after) != 1 || after[0].ID != m2.ID {
-			t.Fatalf("messages after m1 = %+v, total %d, err %v", after, total, err)
-		}
-		if _, _, err := store.ConversationMessages(ctx, demoAndrii, convID, "73000000-0000-0000-0000-000000000999", 20, 0); !errors.Is(err, ErrInvalidCursor) {
-			t.Fatalf("unknown cursor: err = %v", err)
-		}
-		if _, _, err := store.ConversationMessages(ctx, demoMarko, convID, "", 20, 0); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("stranger messages: err = %v", err)
-		}
+		expect.NoError(t, "load messages after m1", err)
+		expect.Equal(t, "total after m1", total, 1)
+		expect.Equal(t, "messages after m1", len(after), 1)
+		expect.Equal(t, "message after m1", after[0].ID, m2.ID)
+		_, _, err = store.ConversationMessages(ctx, demoAndrii, convID, "73000000-0000-0000-0000-000000000999", 20, 0)
+		expect.Error(t, "unknown cursor", err, ErrInvalidCursor)
+		_, _, err = store.ConversationMessages(ctx, demoMarko, convID, "", 20, 0)
+		expect.Error(t, "stranger messages", err, ErrNotFound)
 
 		// Andrii marks the conversation read.
 		readCount, err := store.MarkConversationRead(ctx, demoAndrii, convID)
-		if err != nil || readCount != 1 {
-			t.Fatalf("MarkConversationRead = %d, err %v", readCount, err)
-		}
+		expect.NoError(t, "MarkConversationRead", err)
+		expect.Equal(t, "messages marked read", readCount, 1)
 		all, total, err := store.ConversationMessages(ctx, demoOlha, convID, "", 20, 0)
-		if err != nil || total != 2 || all[0].ReadAt == nil || all[1].ReadAt != nil {
-			t.Fatalf("messages after read = %+v, total %d, err %v", all, total, err)
-		}
+		expect.NoError(t, "load messages after read", err)
+		expect.Equal(t, "total after read", total, 2)
+		expect.Equal(t, "first message is read", all[0].ReadAt != nil, true)
+		expect.Equal(t, "second message is read", all[1].ReadAt != nil, false)
 
 		// Accept the request and link the existing conversation to the exchange.
 		if err := store.UpdateRequestStatus(ctx, reqID, RequestAccepted, demoAndrii); err != nil {
@@ -127,20 +133,21 @@ func TestConversationsAndMessagesAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		linkedID, err := store.EnsureExchangeConversation(ctx, exchangeID)
-		if err != nil || linkedID != convID {
-			t.Fatalf("EnsureExchangeConversation = %q, want %q, err %v", linkedID, convID, err)
-		}
+		expect.NoError(t, "EnsureExchangeConversation", err)
+		expect.Equal(t, "exchange conversation ID", linkedID, convID)
 		linked, err := store.ConversationByID(ctx, demoOlha, convID)
-		if err != nil || linked.Type != ConversationExchange || linked.ExchangeID != exchangeID ||
-			linked.ExchangeStatus != ExchangeActive || linked.LastMessage == nil || linked.LastMessage.ID != m2.ID {
-			t.Fatalf("linked conversation = %+v, err %v", linked, err)
-		}
+		expect.NoError(t, "load the linked conversation", err)
+		expect.Equal(t, "linked conversation type", linked.Type, ConversationExchange)
+		expect.Equal(t, "linked conversation exchange", linked.ExchangeID, exchangeID)
+		expect.Equal(t, "exchange status", linked.ExchangeStatus, ExchangeActive)
+		expect.Equal(t, "linked last message is set", linked.LastMessage != nil, true)
+		expect.Equal(t, "linked last message", linked.LastMessage.ID, m2.ID)
 
 		// UserConversations lists the most active conversation first.
 		list, listTotal, err := store.UserConversations(ctx, demoOlha, 20, 0)
-		if err != nil || listTotal < 2 || list[0].ID != convID {
-			t.Fatalf("UserConversations = %+v, total %d, err %v", list, listTotal, err)
-		}
+		expect.NoError(t, "UserConversations", err)
+		expect.Equal(t, "at least 2 conversations in total", listTotal >= 2, true)
+		expect.Equal(t, "first conversation", list[0].ID, convID)
 
 		// Blocking disables CanSend in LockConversation while keeping the conversation readable.
 		if _, err := store.conn(ctx).Exec(ctx, `INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2)`,
@@ -148,14 +155,11 @@ func TestConversationsAndMessagesAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		locked, err := store.LockConversation(ctx, demoOlha, convID)
-		if err != nil || locked.CanSend {
-			t.Fatalf("LockConversation after block = %+v, err %v", locked, err)
-		}
+		expect.NoError(t, "LockConversation after block", err)
+		expect.Equal(t, "Olha can send after block", locked.CanSend, false)
 		return rollback
 	})
-	if !errors.Is(err, rollback) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "WithinTx", err, rollback)
 }
 
 // Runs inside a transaction that is rolled back.
@@ -193,50 +197,46 @@ func TestNotificationsAgainstPostgres(t *testing.T) {
 			ConversationID: convID,
 		}
 		created, err := store.CreateNotification(ctx, in)
-		if err != nil || !created {
-			t.Fatalf("first CreateNotification = %v, err %v", created, err)
-		}
+		expect.NoError(t, "first CreateNotification", err)
+		expect.Equal(t, "first notification created", created, true)
 		// Same (recipient_id, event_key) is ignored without error.
 		duplicate, err := store.CreateNotification(ctx, in)
-		if err != nil || duplicate {
-			t.Fatalf("duplicate CreateNotification = %v, err %v", duplicate, err)
-		}
+		expect.NoError(t, "duplicate CreateNotification", err)
+		expect.Equal(t, "duplicate notification created", duplicate, false)
 
 		items, total, unread, err := store.UserNotifications(ctx, demoAndrii, true, 20, 0)
-		if err != nil || total != 1 || unread != 1 || len(items) != 1 {
-			t.Fatalf("Andrii notifications = %+v, total %d, unread %d, err %v", items, total, unread, err)
-		}
+		expect.NoError(t, "load Andrii's notifications", err)
+		expect.Equal(t, "Andrii's notifications in total", total, 1)
+		expect.Equal(t, "Andrii's unread notifications", unread, 1)
+		expect.Equal(t, "Andrii's notifications on the page", len(items), 1)
 		notif := items[0]
-		if notif.EventType != EventExchangeRequest || notif.ActorID != demoOlha ||
-			notif.ActorFirstName != "Ольга" || notif.RequestID != reqID || notif.ConversationID != convID || notif.ReadAt != nil {
-			t.Fatalf("notification = %+v", notif)
-		}
+		expect.Equal(t, "event type", notif.EventType, EventExchangeRequest)
+		expect.Equal(t, "actor", notif.ActorID, demoOlha)
+		expect.Equal(t, "actor's first name", notif.ActorFirstName, "Ольга")
+		expect.Equal(t, "notification request", notif.RequestID, reqID)
+		expect.Equal(t, "notification conversation", notif.ConversationID, convID)
+		expect.Equal(t, "notification is read", notif.ReadAt != nil, false)
 
-		if _, _, err := store.MarkNotificationRead(ctx, demoOlha, notif.ID); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("other user MarkNotificationRead: err = %v", err)
-		}
+		_, _, err = store.MarkNotificationRead(ctx, demoOlha, notif.ID)
+		expect.Error(t, "other user MarkNotificationRead", err, ErrNotFound)
 		readNotif, unreadAfter, err := store.MarkNotificationRead(ctx, demoAndrii, notif.ID)
-		if err != nil || readNotif.ReadAt == nil || unreadAfter != 0 {
-			t.Fatalf("MarkNotificationRead = %+v, unread %d, err %v", readNotif, unreadAfter, err)
-		}
+		expect.NoError(t, "MarkNotificationRead", err)
+		expect.Equal(t, "notification is read after MarkNotificationRead", readNotif.ReadAt != nil, true)
+		expect.Equal(t, "Andrii's unread notifications after MarkNotificationRead", unreadAfter, 0)
 
 		// MarkAllNotificationsRead on Olha's seeded unread notifications.
 		marked, err := store.MarkAllNotificationsRead(ctx, demoOlha)
-		if err != nil || marked < 2 {
-			t.Fatalf("MarkAllNotificationsRead = %d, err %v", marked, err)
-		}
+		expect.NoError(t, "MarkAllNotificationsRead", err)
+		expect.Equal(t, "at least 2 notifications marked read", marked >= 2, true)
 		_, _, olhaUnread, err := store.UserNotifications(ctx, demoOlha, false, 20, 0)
-		if err != nil || olhaUnread != 0 {
-			t.Fatalf("Olha unread after MarkAllNotificationsRead = %d, err %v", olhaUnread, err)
-		}
+		expect.NoError(t, "load Olha's notifications", err)
+		expect.Equal(t, "Olha's unread notifications after MarkAllNotificationsRead", olhaUnread, 0)
 		// Seeded notification IDs are still present in the full list.
 		allOlha, _, _, err := store.UserNotifications(ctx, demoOlha, false, 20, 0)
-		if err != nil || !slices.ContainsFunc(allOlha, func(n Notification) bool { return n.ID == demoOlhaRequestNotification }) {
-			t.Fatalf("Olha all notifications = %+v, err %v", allOlha, err)
-		}
+		expect.NoError(t, "load all of Olha's notifications", err)
+		expect.Equal(t, "seeded notification is in Olha's list",
+			slices.ContainsFunc(allOlha, func(n Notification) bool { return n.ID == demoOlhaRequestNotification }), true)
 		return rollback
 	})
-	if !errors.Is(err, rollback) {
-		t.Fatalf("WithinTx err = %v", err)
-	}
+	expect.Error(t, "WithinTx", err, rollback)
 }

@@ -69,11 +69,13 @@ type Session struct {
 	MeetingURL             string
 	ActiveProposal         *SessionProposal
 	ConfirmedUserIDs       []string
-	CompletedAt            *time.Time
-	CancelledAt            *time.Time
-	CancellationReason     string
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
+	// CompletionConfirmedUserIDs are the participants who confirmed that the session took place.
+	CompletionConfirmedUserIDs []string
+	CompletedAt                *time.Time
+	CancelledAt                *time.Time
+	CancellationReason         string
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
 }
 
 type NewSessionProposal struct {
@@ -100,7 +102,6 @@ type ISessionData interface {
 	ExchangeSessions(ctx context.Context, exchangeID string) ([]Session, error)
 	SessionByID(ctx context.Context, sessionID string) (Session, error)
 	SessionProposals(ctx context.Context, sessionID string) ([]SessionProposal, error)
-	LockExchangeForSession(ctx context.Context, exchangeID string) (Exchange, error)
 	LockSession(ctx context.Context, sessionID string) (Session, error)
 	FindDraftSessionForTeacher(ctx context.Context, exchangeID, teacherID string) (Session, error)
 	SwapDraftSessionTeacher(ctx context.Context, exchangeID, sessionID, newTeacherID string) error
@@ -109,12 +110,14 @@ type ISessionData interface {
 	AcceptSessionProposal(ctx context.Context, sessionID, responderID string) (SessionProposal, error)
 	DeclineSessionProposal(ctx context.Context, sessionID, responderID string) (SessionProposal, error)
 	CancelSession(ctx context.Context, sessionID, cancelledByID, reason string) error
+	ConfirmSessionCompletion(ctx context.Context, sessionID, userID string) error
+	CompleteSession(ctx context.Context, sessionID string) error
 	UserSchedule(ctx context.Context, userID string, filter ScheduleFilter, limit, offset int) ([]Session, int, int, string, error)
 }
 
 var _ ISessionData = (*Postgres)(nil)
 
-const sessionCanInteract = `(ua.deleted_at IS NULL AND ua.account_status = 'ACTIVE'
+const participantsCanInteract = `(ua.deleted_at IS NULL AND ua.account_status = 'ACTIVE'
 	AND ub.deleted_at IS NULL AND ub.account_status = 'ACTIVE'
 	AND NOT EXISTS (SELECT 1 FROM user_blocks b
 		WHERE (b.blocker_id = ua.id AND b.blocked_id = ub.id)
@@ -146,13 +149,15 @@ const sessionActiveProposal = `(SELECT json_build_object(
 	ORDER BY CASE WHEN sp.status = 'PENDING' THEN 0 ELSE 1 END, sp.created_at DESC, sp.id DESC
 	LIMIT 1)`
 
-const sessionConfirmedUsers = `COALESCE((
+func sessionConfirmedUsers(kind string) string {
+	return `COALESCE((
 	SELECT array_agg(sc.user_id::text ORDER BY sc.confirmed_at ASC, sc.user_id ASC)
 	FROM session_confirmations sc
-	WHERE sc.session_id = s.id AND sc.kind = 'SCHEDULE'
+	WHERE sc.session_id = s.id AND sc.kind = '` + kind + `'
 ), ARRAY[]::text[])`
+}
 
-var sessionColumns = `s.id, s.exchange_id, e.status::text, e.format::text, ` + sessionCanInteract + `,
+var sessionColumns = `s.id, s.exchange_id, e.status::text, e.format::text, ` + participantsCanInteract + `,
 	s.plan_order, s.title, COALESCE(s.description, ''), s.status::text,
 	COALESCE(s.format::text, e.format::text),
 	COALESCE(cm.skill_id::text, ''), COALESCE(cm.category_id::text, ''),
@@ -161,7 +166,8 @@ var sessionColumns = `s.id, s.exchange_id, e.status::text, e.format::text, ` + s
 	` + requestParty("st") + `, ` + requestParty("sl") + `,
 	s.scheduled_start, s.scheduled_end,
 	COALESCE(mp.name, ''), COALESCE(s.meeting_url, ''),
-	` + sessionActiveProposal + `, ` + sessionConfirmedUsers + `,
+	` + sessionActiveProposal + `, ` + sessionConfirmedUsers(ConfirmSchedule) + `,
+	` + sessionConfirmedUsers(ConfirmCompletion) + `,
 	s.completed_at, s.cancelled_at, COALESCE(s.cancellation_reason, ''),
 	s.created_at, s.updated_at`
 
@@ -191,7 +197,7 @@ func (s *Session) scanTargets(extra ...any) []any {
 		&s.SkillID, &s.SkillCategoryID, &s.SkillName, &s.PlannedDurationMinutes,
 		&s.Requester, &s.Recipient, &s.Teacher, &s.Learner,
 		&s.StartsAt, &s.EndsAt, &s.MeetingPlace, &s.MeetingURL,
-		&s.ActiveProposal, &s.ConfirmedUserIDs,
+		&s.ActiveProposal, &s.ConfirmedUserIDs, &s.CompletionConfirmedUserIDs,
 		&s.CompletedAt, &s.CancelledAt, &s.CancellationReason,
 		&s.CreatedAt, &s.UpdatedAt,
 	}, extra...)
@@ -265,23 +271,6 @@ func (p *Postgres) proposalByID(ctx context.Context, proposalID string) (Session
 		return SessionProposal{}, notFound(err)
 	}
 	return sp, nil
-}
-
-// LockExchangeForSession locks both exchange participants in canonical UUID order (LR2 5.2, 5.3)
-// and locks the exchange row before creating or modifying a session proposal.
-func (p *Postgres) LockExchangeForSession(ctx context.Context, exchangeID string) (Exchange, error) {
-	var userA, userB string
-	err := p.conn(ctx).QueryRow(ctx, `SELECT user_a_id, user_b_id FROM exchanges WHERE id = $1`, exchangeID).Scan(&userA, &userB)
-	if err != nil {
-		return Exchange{}, notFound(err)
-	}
-	if err := p.LockUsers(ctx, userA, userB); err != nil {
-		return Exchange{}, err
-	}
-	if err := p.conn(ctx).QueryRow(ctx, `SELECT user_a_id, user_b_id FROM exchanges WHERE id = $1 FOR UPDATE`, exchangeID).Scan(&userA, &userB); err != nil {
-		return Exchange{}, notFound(err)
-	}
-	return p.ExchangeByID(ctx, exchangeID)
 }
 
 // LockSession locks both participants of the session's exchange in canonical UUID order and
@@ -377,7 +366,7 @@ func (p *Postgres) SaveSessionProposal(ctx context.Context, in NewSessionProposa
 		return SessionProposal{}, err
 	}
 	if _, err := p.conn(ctx).Exec(ctx, `DELETE FROM session_confirmations
-		WHERE session_id = $1 AND kind = 'SCHEDULE'`, in.SessionID); err != nil {
+		WHERE session_id = $1`, in.SessionID); err != nil {
 		return SessionProposal{}, err
 	}
 	if _, err := p.conn(ctx).Exec(ctx, `INSERT INTO session_confirmations (session_id, user_id, kind)
@@ -494,7 +483,7 @@ func (p *Postgres) CancelSession(ctx context.Context, sessionID, cancelledByID, 
 		return err
 	}
 	if _, err := p.conn(ctx).Exec(ctx, `DELETE FROM session_confirmations
-		WHERE session_id = $1 AND kind = 'SCHEDULE'`, sessionID); err != nil {
+		WHERE session_id = $1`, sessionID); err != nil {
 		return err
 	}
 	tag, err := p.conn(ctx).Exec(ctx, `WITH cancelled AS (
@@ -528,6 +517,35 @@ func (p *Postgres) CancelSession(ctx context.Context, sessionID, cancelledByID, 
 		UPDATE exchanges
 		SET updated_at = now()
 		WHERE id = (SELECT exchange_id FROM cancelled)`, sessionID, reason)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (p *Postgres) ConfirmSessionCompletion(ctx context.Context, sessionID, userID string) error {
+	_, err := p.conn(ctx).Exec(ctx, `WITH confirmed AS (
+			INSERT INTO session_confirmations (session_id, user_id, kind)
+			VALUES ($1, $2, 'COMPLETION')
+			ON CONFLICT (session_id, user_id, kind) DO NOTHING
+			RETURNING session_id
+		)
+		UPDATE exchanges SET updated_at = now()
+		WHERE id = (SELECT s.exchange_id FROM sessions s JOIN confirmed c ON c.session_id = s.id)`, sessionID, userID)
+	return err
+}
+
+func (p *Postgres) CompleteSession(ctx context.Context, sessionID string) error {
+	tag, err := p.conn(ctx).Exec(ctx, `WITH completed AS (
+			UPDATE sessions
+			SET status = 'COMPLETED', completed_at = now(), updated_at = now()
+			WHERE id = $1 AND status = 'SCHEDULED'
+			RETURNING exchange_id
+		)
+		UPDATE exchanges SET updated_at = now() WHERE id IN (SELECT exchange_id FROM completed)`, sessionID)
 	if err != nil {
 		return err
 	}

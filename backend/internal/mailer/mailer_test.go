@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"skillswap/backend/internal/config"
+	"skillswap/backend/internal/expect"
 )
 
 func TestSMTPSendsTextMessage(t *testing.T) {
@@ -51,8 +52,9 @@ func TestSMTPRejectsHeaderInjection(t *testing.T) {
 		To:      []string{"student@example.test"},
 		Subject: "Hello\r\nBcc: attacker@example.test",
 	})
-	if err == nil || !strings.Contains(err.Error(), "subject") {
-		t.Fatalf("Send() error = %v", err)
+	expect.Equal(t, "Send() error is set", err != nil, true)
+	if !strings.Contains(err.Error(), "subject") {
+		t.Fatalf("Send() error = %v, want it to mention the subject", err)
 	}
 }
 

@@ -10,7 +10,7 @@ Run these commands from `backend/` with Go 1.26 and PostgreSQL available:
 
 - `go test ./...` runs all unit tests and any enabled integration tests.
 - `go build ./...` verifies that both commands and internal packages compile.
-- `go run ./cmd/db check` verifies database connectivity; `status` shows migration state, `up` applies migrations, and `seed` inserts demo catalog data, demo students, a demo exchange request, an active exchange with planned/proposed/scheduled sessions, private conversations, and demo notifications.
+- `go run ./cmd/db check` verifies database connectivity; `status` shows migration state, `up` applies migrations, and `seed` inserts demo catalog data, demo students, a demo exchange request, an active exchange with planned/proposed/scheduled sessions, an exchange waiting for its last lesson confirmation, private conversations, and demo notifications.
 - `go run ./cmd/api` starts the API at `127.0.0.1:8080` unless `API_ADDR` sets another loopback address.
 
 Keep all local backend settings in `.env` and set `DATABASE_URL` before starting the API or database command. This is the only configuration file loaded; existing process environment variables take precedence. Use the values documented in `README.md` when creating it.
@@ -21,7 +21,7 @@ Run `gofmt` on changed Go files. Use lowercase package names, exported names onl
 
 ## Tests and Database Changes
 
-Tests use Go's standard `testing` package and `httptest` for HTTP behavior. The catalog integration test runs when `TEST_DATABASE_URL` points to a migrated, demo-seeded local database; without it, the test skips. Add focused tests for changed endpoint, middleware, or configuration behavior. Create a new numbered Goose migration for schema changes instead of rewriting an applied migration, and keep demo inserts idempotent.
+Tests use Go's standard `testing` package and `httptest` for HTTP behavior. Check one value per line with `internal/expect` (`Equal`, `Slice`, `Error`, `NoError`) and a short name for what is checked, instead of long `||` conditions. The catalog integration test runs when `TEST_DATABASE_URL` points to a migrated, demo-seeded local database; without it, the test skips. Add focused tests for changed endpoint, middleware, or configuration behavior. Create a new numbered Goose migration for schema changes instead of rewriting an applied migration, and keep demo inserts idempotent.
 
 ## Review and Security
 

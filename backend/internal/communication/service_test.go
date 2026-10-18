@@ -3,12 +3,13 @@ package communication
 import (
 	"context"
 	"errors"
-	"slices"
+	"fmt"
 	"strings"
 	"testing"
 
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
+	"skillswap/backend/internal/expect"
 	"skillswap/backend/internal/profile"
 )
 
@@ -111,11 +112,14 @@ func TestConversationsAndExchangeLinking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if byRequest.ID == "" || byRequest.Type != data.ConversationRequest || byRequest.RequestID != req.ID ||
-		byRequest.ExchangeID != "" || byRequest.RequestStatus != data.RequestPending || !byRequest.CanSend ||
-		byRequest.UnreadCount != 0 || byRequest.LastMessage != nil {
-		t.Fatalf("conversation = %+v", byRequest)
-	}
+	expect.Equal(t, "conversation ID is set", byRequest.ID != "", true)
+	expect.Equal(t, "conversation type", byRequest.Type, data.ConversationRequest)
+	expect.Equal(t, "request ID", byRequest.RequestID, req.ID)
+	expect.Equal(t, "exchange ID", byRequest.ExchangeID, "")
+	expect.Equal(t, "request status", byRequest.RequestStatus, data.RequestPending)
+	expect.Equal(t, "can send", byRequest.CanSend, true)
+	expect.Equal(t, "unread count", byRequest.UnreadCount, 0)
+	expect.Equal(t, "last message is set", byRequest.LastMessage != nil, false)
 
 	msg, err := f.service.SendMessage(ctx, f.olha, byRequest.ID, "Обговоримо деталі перед прийняттям.")
 	if err != nil {
@@ -142,39 +146,41 @@ func TestConversationsAndExchangeLinking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if byExchange.ID != byRequest.ID || byExchange.Type != data.ConversationExchange ||
-		byExchange.RequestID != req.ID || byExchange.ExchangeID != exchangeID ||
-		byExchange.RequestStatus != data.RequestAccepted || byExchange.ExchangeStatus != data.ExchangeActive ||
-		byExchange.UnreadCount != 1 || byExchange.LastMessage == nil || byExchange.LastMessage.ID != msg.ID {
-		t.Fatalf("linked conversation = %+v", byExchange)
-	}
+	expect.Equal(t, "linked conversation ID", byExchange.ID, byRequest.ID)
+	expect.Equal(t, "linked conversation type", byExchange.Type, data.ConversationExchange)
+	expect.Equal(t, "linked request ID", byExchange.RequestID, req.ID)
+	expect.Equal(t, "linked exchange ID", byExchange.ExchangeID, exchangeID)
+	expect.Equal(t, "linked request status", byExchange.RequestStatus, data.RequestAccepted)
+	expect.Equal(t, "linked exchange status", byExchange.ExchangeStatus, data.ExchangeActive)
+	expect.Equal(t, "linked unread count", byExchange.UnreadCount, 1)
+	expect.Equal(t, "linked last message is set", byExchange.LastMessage != nil, true)
+	expect.Equal(t, "linked last message ID", byExchange.LastMessage.ID, msg.ID)
 
-	for _, user := range []string{f.olha, f.andrii} {
-		conv, err := f.service.Conversation(ctx, user, strings.ToUpper(byRequest.ID))
-		if err != nil || conv.ID != byRequest.ID {
-			t.Fatalf("Conversation(%s) = %+v, err %v", user, conv, err)
-		}
-		list, err := f.service.Conversations(ctx, user, 1)
-		if err != nil || list.Total != 1 || len(list.Items) != 1 || list.Items[0].ID != byRequest.ID {
-			t.Fatalf("Conversations(%s) = %+v, err %v", user, list, err)
-		}
+	participants := []struct{ name, id string }{{"Olha", f.olha}, {"Andrii", f.andrii}}
+	for _, user := range participants {
+		conv, err := f.service.Conversation(ctx, user.id, strings.ToUpper(byRequest.ID))
+		expect.NoError(t, user.name+": open conversation", err)
+		expect.Equal(t, user.name+": conversation ID", conv.ID, byRequest.ID)
+
+		list, err := f.service.Conversations(ctx, user.id, 1)
+		expect.NoError(t, user.name+": list conversations", err)
+		expect.Equal(t, user.name+": conversations total", list.Total, 1)
+		expect.Equal(t, user.name+": conversations on the page", len(list.Items), 1)
+		expect.Equal(t, user.name+": listed conversation ID", list.Items[0].ID, byRequest.ID)
 	}
 
 	// Access checks for a third party and invalid IDs.
 	for _, id := range []string{byRequest.ID, "72000000-0000-0000-0000-000000000999", "not-a-uuid"} {
-		if _, err := f.service.Conversation(ctx, f.stranger, id); !errors.Is(err, ErrConversationNotFound) {
-			t.Fatalf("Conversation(%s): err = %v", id, err)
-		}
+		_, err := f.service.Conversation(ctx, f.stranger, id)
+		expect.Error(t, "stranger opens conversation "+id, err, ErrConversationNotFound)
 	}
 	for _, id := range []string{req.ID, "70000000-0000-0000-0000-000000000999", "not-a-uuid"} {
-		if _, err := f.service.RequestConversation(ctx, f.stranger, id); !errors.Is(err, ErrRequestNotFound) {
-			t.Fatalf("RequestConversation(%s): err = %v", id, err)
-		}
+		_, err := f.service.RequestConversation(ctx, f.stranger, id)
+		expect.Error(t, "stranger opens request conversation "+id, err, ErrRequestNotFound)
 	}
 	for _, id := range []string{exchangeID, "80000000-0000-0000-0000-000000000999", "not-a-uuid"} {
-		if _, err := f.service.ExchangeConversation(ctx, f.stranger, id); !errors.Is(err, ErrExchangeNotFound) {
-			t.Fatalf("ExchangeConversation(%s): err = %v", id, err)
-		}
+		_, err := f.service.ExchangeConversation(ctx, f.stranger, id)
+		expect.Error(t, "stranger opens exchange conversation "+id, err, ErrExchangeNotFound)
 	}
 }
 
@@ -192,11 +198,12 @@ func TestSendMessageValidationAndBlocking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.ID == "" || sent.ConversationID != conv.ID || sent.AuthorID != f.olha ||
-		sent.AuthorFirstName != "Ольга" || sent.Type != data.MessageText ||
-		sent.Body != "Привіт! Ось посилання на зустріч:\nhttps://meet.example.test/skill-swap" {
-		t.Fatalf("message = %+v", sent)
-	}
+	expect.Equal(t, "message ID is set", sent.ID != "", true)
+	expect.Equal(t, "conversation ID", sent.ConversationID, conv.ID)
+	expect.Equal(t, "author ID", sent.AuthorID, f.olha)
+	expect.Equal(t, "author first name", sent.AuthorFirstName, "Ольга")
+	expect.Equal(t, "message type", sent.Type, data.MessageText)
+	expect.Equal(t, "trimmed body", sent.Body, "Привіт! Ось посилання на зустріч:\nhttps://meet.example.test/skill-swap")
 
 	// Exactly 2000 Cyrillic characters is allowed.
 	maxBody := strings.Repeat("ї", MaxMessageLength)
@@ -215,9 +222,9 @@ func TestSendMessageValidationAndBlocking(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := f.service.SendMessage(ctx, f.olha, conv.ID, test.body)
-			if fields := fieldErrors(t, err); fields["body"] == "" || len(fields) != 1 {
-				t.Fatalf("fields = %v, want only body", fields)
-			}
+			fields := fieldErrors(t, err)
+			expect.Equal(t, "body error is set", fields["body"] != "", true)
+			expect.Equal(t, "number of field errors", len(fields), 1)
 		})
 	}
 
@@ -226,25 +233,24 @@ func TestSendMessageValidationAndBlocking(t *testing.T) {
 		{"unknown conversation", f.olha, "72000000-0000-0000-0000-000000000999"},
 		{"not a UUID", f.olha, "chat"},
 	} {
-		if _, err := f.service.SendMessage(ctx, test.user, test.id, "Привіт"); !errors.Is(err, ErrConversationNotFound) {
-			t.Fatalf("%s: err = %v", test.name, err)
-		}
+		_, err := f.service.SendMessage(ctx, test.user, test.id, "Привіт")
+		expect.Error(t, test.name+": send message", err, ErrConversationNotFound)
 	}
 
 	// Blocking stops new messages in both directions while keeping history readable.
 	f.store.SetBlocked(f.andrii, f.olha)
-	for _, user := range []string{f.olha, f.andrii} {
-		if _, err := f.service.SendMessage(ctx, user, conv.ID, "Нове повідомлення"); !errors.Is(err, ErrConversationBlocked) {
-			t.Fatalf("blocked SendMessage(%s): err = %v", user, err)
-		}
-		updated, err := f.service.Conversation(ctx, user, conv.ID)
-		if err != nil || updated.CanSend {
-			t.Fatalf("Conversation(%s) after block = %+v, err %v", user, updated, err)
-		}
-		msgs, err := f.service.Messages(ctx, user, conv.ID, MessageQuery{Page: 1})
-		if err != nil || len(msgs.Items) != 2 {
-			t.Fatalf("Messages(%s) after block = %+v, err %v", user, msgs, err)
-		}
+	participants := []struct{ name, id string }{{"Olha", f.olha}, {"Andrii", f.andrii}}
+	for _, user := range participants {
+		_, err := f.service.SendMessage(ctx, user.id, conv.ID, "Нове повідомлення")
+		expect.Error(t, user.name+": send message after a block", err, ErrConversationBlocked)
+
+		updated, err := f.service.Conversation(ctx, user.id, conv.ID)
+		expect.NoError(t, user.name+": open conversation after a block", err)
+		expect.Equal(t, user.name+": can send after a block", updated.CanSend, false)
+
+		msgs, err := f.service.Messages(ctx, user.id, conv.ID, MessageQuery{Page: 1})
+		expect.NoError(t, user.name+": read messages after a block", err)
+		expect.Equal(t, user.name+": messages after a block", len(msgs.Items), 2)
 	}
 }
 
@@ -274,50 +280,52 @@ func TestMessagesPollingAndReadReceipts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Total != 3 || page.Page != 1 || page.PollIntervalSeconds != PollIntervalSeconds || len(page.Items) != 3 {
-		t.Fatalf("page = %+v", page)
-	}
-	if !slices.Equal([]string{page.Items[0].ID, page.Items[1].ID, page.Items[2].ID}, []string{m1.ID, m2.ID, m3.ID}) {
-		t.Fatalf("message order = %+v", page.Items)
-	}
+	expect.Equal(t, "messages total", page.Total, 3)
+	expect.Equal(t, "page", page.Page, 1)
+	expect.Equal(t, "poll interval", page.PollIntervalSeconds, PollIntervalSeconds)
+	expect.Equal(t, "messages on the page", len(page.Items), 3)
+	expect.Slice(t, "message order",
+		[]string{page.Items[0].ID, page.Items[1].ID, page.Items[2].ID}, []string{m1.ID, m2.ID, m3.ID})
 
-	//Incremental polling with after returns only newer messages.
+	// Incremental polling with after returns only newer messages.
 	polled, err := f.service.Messages(ctx, f.andrii, conv.ID, MessageQuery{AfterID: strings.ToUpper(m1.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if polled.Total != 2 || len(polled.Items) != 2 || polled.Items[0].ID != m2.ID || polled.Items[1].ID != m3.ID {
-		t.Fatalf("polled after m1 = %+v", polled)
-	}
+	expect.Equal(t, "total after m1", polled.Total, 2)
+	expect.Equal(t, "messages after m1", len(polled.Items), 2)
+	expect.Equal(t, "first message after m1", polled.Items[0].ID, m2.ID)
+	expect.Equal(t, "second message after m1", polled.Items[1].ID, m3.ID)
+
 	none, err := f.service.Messages(ctx, f.andrii, conv.ID, MessageQuery{AfterID: m3.ID})
-	if err != nil || none.Total != 0 || len(none.Items) != 0 {
-		t.Fatalf("polled after m3 = %+v, err %v", none, err)
-	}
+	expect.NoError(t, "poll after m3", err)
+	expect.Equal(t, "total after m3", none.Total, 0)
+	expect.Equal(t, "messages after m3", len(none.Items), 0)
 
 	// Andrii has 2 unread messages from Olha (m1 and m3); Olha has 1 from Andrii (m2).
 	andriiConv, _ := f.service.Conversation(ctx, f.andrii, conv.ID)
 	olhaConv, _ := f.service.Conversation(ctx, f.olha, conv.ID)
-	if andriiConv.UnreadCount != 2 || olhaConv.UnreadCount != 1 {
-		t.Fatalf("unread counts: Andrii %d, Olha %d", andriiConv.UnreadCount, olhaConv.UnreadCount)
-	}
+	expect.Equal(t, "Andrii's unread count", andriiConv.UnreadCount, 2)
+	expect.Equal(t, "Olha's unread count", olhaConv.UnreadCount, 1)
 
 	readResult, err := f.service.MarkConversationRead(ctx, f.andrii, conv.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if readResult.ReadCount != 2 || readResult.Conversation.UnreadCount != 0 {
-		t.Fatalf("read result = %+v", readResult)
-	}
+	expect.Equal(t, "messages marked read", readResult.ReadCount, 2)
+	expect.Equal(t, "unread count after reading", readResult.Conversation.UnreadCount, 0)
+
 	// Repeating MarkConversationRead is idempotent.
 	again, err := f.service.MarkConversationRead(ctx, f.andrii, conv.ID)
-	if err != nil || again.ReadCount != 0 {
-		t.Fatalf("repeated read = %+v, err %v", again, err)
-	}
+	expect.NoError(t, "mark the conversation read again", err)
+	expect.Equal(t, "messages marked read again", again.ReadCount, 0)
+
 	// Olha now sees ReadAt on her messages (m1 and m3).
 	afterRead, err := f.service.Messages(ctx, f.olha, conv.ID, MessageQuery{Page: 1})
-	if err != nil || afterRead.Items[0].ReadAt == nil || afterRead.Items[1].ReadAt != nil || afterRead.Items[2].ReadAt == nil {
-		t.Fatalf("messages after read = %+v, err %v", afterRead, err)
-	}
+	expect.NoError(t, "Olha reads messages after Andrii read them", err)
+	expect.Equal(t, "m1 readAt is set", afterRead.Items[0].ReadAt != nil, true)
+	expect.Equal(t, "m2 readAt is set", afterRead.Items[1].ReadAt != nil, false)
+	expect.Equal(t, "m3 readAt is set", afterRead.Items[2].ReadAt != nil, true)
 
 	// Validation and access errors on Messages and MarkConversationRead.
 	for _, badAfter := range []string{"not-a-uuid", "73000000-0000-0000-0000-000000000999"} {
@@ -331,16 +339,13 @@ func TestMessagesPollingAndReadReceipts(t *testing.T) {
 		t.Fatalf("after with page 2: fields = %v", fields)
 	}
 	for _, p := range []int{-1, MaxPage + 1} {
-		if _, err := f.service.Messages(ctx, f.olha, conv.ID, MessageQuery{Page: p}); !errors.Is(err, ErrInvalidPage) {
-			t.Fatalf("page %d: err = %v", p, err)
-		}
+		_, err := f.service.Messages(ctx, f.olha, conv.ID, MessageQuery{Page: p})
+		expect.Error(t, fmt.Sprintf("messages page %d", p), err, ErrInvalidPage)
 	}
-	if _, err := f.service.Messages(ctx, f.stranger, conv.ID, MessageQuery{Page: 1}); !errors.Is(err, ErrConversationNotFound) {
-		t.Fatalf("stranger messages: err = %v", err)
-	}
-	if _, err := f.service.MarkConversationRead(ctx, f.stranger, conv.ID); !errors.Is(err, ErrConversationNotFound) {
-		t.Fatalf("stranger mark read: err = %v", err)
-	}
+	_, err = f.service.Messages(ctx, f.stranger, conv.ID, MessageQuery{Page: 1})
+	expect.Error(t, "stranger reads messages", err, ErrConversationNotFound)
+	_, err = f.service.MarkConversationRead(ctx, f.stranger, conv.ID)
+	expect.Error(t, "stranger marks the conversation read", err, ErrConversationNotFound)
 }
 
 func TestNotificationsLifecycleAndIdempotency(t *testing.T) {
@@ -354,57 +359,67 @@ func TestNotificationsLifecycleAndIdempotency(t *testing.T) {
 	}
 
 	// Only Andrii (the recipient) received EXCHANGE_REQUEST; Olha and stranger have none.
-	if olhaList, err := f.service.Notifications(ctx, f.olha, false, 1); err != nil || olhaList.Total != 0 || olhaList.UnreadCount != 0 {
-		t.Fatalf("Olha notifications = %+v, err %v", olhaList, err)
-	}
+	olhaList, err := f.service.Notifications(ctx, f.olha, false, 1)
+	expect.NoError(t, "Olha's notifications", err)
+	expect.Equal(t, "Olha's notifications total", olhaList.Total, 0)
+	expect.Equal(t, "Olha's unread count", olhaList.UnreadCount, 0)
+
 	andriiList, err := f.service.Notifications(ctx, f.andrii, false, 1)
-	if err != nil || andriiList.Total != 1 || andriiList.UnreadCount != 1 || len(andriiList.Items) != 1 {
-		t.Fatalf("Andrii notifications = %+v, err %v", andriiList, err)
-	}
+	expect.NoError(t, "Andrii's notifications", err)
+	expect.Equal(t, "Andrii's notifications total", andriiList.Total, 1)
+	expect.Equal(t, "Andrii's unread count", andriiList.UnreadCount, 1)
+	expect.Equal(t, "Andrii's notifications on the page", len(andriiList.Items), 1)
+
 	first := andriiList.Items[0]
-	if first.EventType != data.EventExchangeRequest || first.RequestID != req.ID || first.ConversationID == "" ||
-		first.ActorID != f.olha || first.ReadAt != nil {
-		t.Fatalf("notification = %+v", first)
-	}
+	expect.Equal(t, "event type", first.EventType, data.EventExchangeRequest)
+	expect.Equal(t, "request ID", first.RequestID, req.ID)
+	expect.Equal(t, "conversation ID is set", first.ConversationID != "", true)
+	expect.Equal(t, "actor ID", first.ActorID, f.olha)
+	expect.Equal(t, "readAt is set", first.ReadAt != nil, false)
 
 	// Olha sends a chat message -> Andrii gets CHAT_MESSAGE (now 2 unread).
 	if _, err := f.service.SendMessage(ctx, f.olha, first.ConversationID, "Коли зручно почати?"); err != nil {
 		t.Fatal(err)
 	}
 	andriiList, err = f.service.Notifications(ctx, f.andrii, true, 1)
-	if err != nil || andriiList.Total != 2 || andriiList.UnreadCount != 2 {
-		t.Fatalf("Andrii unread notifications = %+v, err %v", andriiList, err)
-	}
+	expect.NoError(t, "Andrii's unread notifications", err)
+	expect.Equal(t, "Andrii's unread notifications total", andriiList.Total, 2)
+	expect.Equal(t, "Andrii's unread count after the message", andriiList.UnreadCount, 2)
 
 	// Andrii marks the first notification as read.
 	marked, err := f.service.MarkNotificationRead(ctx, f.andrii, strings.ToUpper(first.ID))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if marked.Notification.ID != first.ID || marked.Notification.ReadAt == nil || marked.UnreadCount != 1 {
-		t.Fatalf("marked = %+v", marked)
-	}
+	expect.Equal(t, "marked notification ID", marked.Notification.ID, first.ID)
+	expect.Equal(t, "marked readAt is set", marked.Notification.ReadAt != nil, true)
+	expect.Equal(t, "unread count after marking", marked.UnreadCount, 1)
+
 	// Repeating MarkNotificationRead keeps the same ReadAt and unreadCount.
 	again, err := f.service.MarkNotificationRead(ctx, f.andrii, first.ID)
-	if err != nil || !again.Notification.ReadAt.Equal(*marked.Notification.ReadAt) || again.UnreadCount != 1 {
-		t.Fatalf("marked again = %+v, err %v", again, err)
-	}
+	expect.NoError(t, "mark the notification read again", err)
+	expect.Equal(t, "readAt is set after marking again", again.Notification.ReadAt != nil, true)
+	expect.Equal(t, "readAt kept after marking again", again.Notification.ReadAt.Equal(*marked.Notification.ReadAt), true)
+	expect.Equal(t, "unread count after marking again", again.UnreadCount, 1)
 
 	// Unread-only filter returns only the 1 remaining unread notification, while all returns 2.
 	unreadPage, err := f.service.Notifications(ctx, f.andrii, true, 1)
-	if err != nil || unreadPage.Total != 1 || unreadPage.UnreadCount != 1 || len(unreadPage.Items) != 1 {
-		t.Fatalf("unread only = %+v, err %v", unreadPage, err)
-	}
+	expect.NoError(t, "unread notifications", err)
+	expect.Equal(t, "unread-only total", unreadPage.Total, 1)
+	expect.Equal(t, "unread-only unread count", unreadPage.UnreadCount, 1)
+	expect.Equal(t, "unread-only notifications on the page", len(unreadPage.Items), 1)
+
 	allPage, err := f.service.Notifications(ctx, f.andrii, false, 1)
-	if err != nil || allPage.Total != 2 || allPage.UnreadCount != 1 || len(allPage.Items) != 2 {
-		t.Fatalf("all notifications = %+v, err %v", allPage, err)
-	}
+	expect.NoError(t, "all notifications", err)
+	expect.Equal(t, "all notifications total", allPage.Total, 2)
+	expect.Equal(t, "all notifications unread count", allPage.UnreadCount, 1)
+	expect.Equal(t, "all notifications on the page", len(allPage.Items), 2)
 
 	// Andrii marks all notifications read.
 	readAll, err := f.service.MarkAllNotificationsRead(ctx, f.andrii)
-	if err != nil || readAll.MarkedCount != 1 || readAll.UnreadCount != 0 {
-		t.Fatalf("read all = %+v, err %v", readAll, err)
-	}
+	expect.NoError(t, "mark all notifications read", err)
+	expect.Equal(t, "notifications marked read", readAll.MarkedCount, 1)
+	expect.Equal(t, "unread count after marking all", readAll.UnreadCount, 0)
 
 	// Andrii accepts the request -> Olha gets REQUEST_RESPONSE; repeating does not duplicate.
 	if err := f.store.UpdateRequestStatus(ctx, req.ID, data.RequestAccepted, f.andrii); err != nil {
@@ -421,13 +436,15 @@ func TestNotificationsLifecycleAndIdempotency(t *testing.T) {
 	if err := f.service.RecordRequestAccepted(ctx, acceptedReq, exchangeID); err != nil {
 		t.Fatal(err)
 	}
-	olhaList, err := f.service.Notifications(ctx, f.olha, false, 1)
-	if err != nil || olhaList.Total != 1 || olhaList.UnreadCount != 1 {
-		t.Fatalf("Olha notifications after acceptance = %+v, err %v", olhaList, err)
-	}
-	if n := olhaList.Items[0]; n.EventType != data.EventRequestResponse || n.RequestID != req.ID || n.ExchangeID != exchangeID {
-		t.Fatalf("acceptance notification = %+v", n)
-	}
+	olhaList, err = f.service.Notifications(ctx, f.olha, false, 1)
+	expect.NoError(t, "Olha's notifications after acceptance", err)
+	expect.Equal(t, "Olha's notifications total after acceptance", olhaList.Total, 1)
+	expect.Equal(t, "Olha's unread count after acceptance", olhaList.UnreadCount, 1)
+
+	n := olhaList.Items[0]
+	expect.Equal(t, "acceptance event type", n.EventType, data.EventRequestResponse)
+	expect.Equal(t, "acceptance request ID", n.RequestID, req.ID)
+	expect.Equal(t, "acceptance exchange ID", n.ExchangeID, exchangeID)
 
 	// Access and validation checks.
 	for _, test := range []struct{ name, user, id string }{
@@ -435,16 +452,13 @@ func TestNotificationsLifecycleAndIdempotency(t *testing.T) {
 		{"unknown notification", f.andrii, "74000000-0000-0000-0000-000000000999"},
 		{"not a UUID", f.andrii, "notif"},
 	} {
-		if _, err := f.service.MarkNotificationRead(ctx, test.user, test.id); !errors.Is(err, ErrNotificationNotFound) {
-			t.Fatalf("%s: err = %v", test.name, err)
-		}
+		_, err := f.service.MarkNotificationRead(ctx, test.user, test.id)
+		expect.Error(t, test.name+": mark read", err, ErrNotificationNotFound)
 	}
 	for _, p := range []int{0, MaxPage + 1} {
-		if _, err := f.service.Notifications(ctx, f.andrii, false, p); !errors.Is(err, ErrInvalidPage) {
-			t.Fatalf("Notifications page %d: err = %v", p, err)
-		}
-		if _, err := f.service.Conversations(ctx, f.andrii, p); !errors.Is(err, ErrInvalidPage) {
-			t.Fatalf("Conversations page %d: err = %v", p, err)
-		}
+		_, err := f.service.Notifications(ctx, f.andrii, false, p)
+		expect.Error(t, fmt.Sprintf("notifications page %d", p), err, ErrInvalidPage)
+		_, err = f.service.Conversations(ctx, f.andrii, p)
+		expect.Error(t, fmt.Sprintf("conversations page %d", p), err, ErrInvalidPage)
 	}
 }

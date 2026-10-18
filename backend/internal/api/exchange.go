@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"skillswap/backend/internal/data"
@@ -165,17 +166,19 @@ func (a *API) answerRequest(answer answerFunc) userHandler {
 }
 
 type exchangeProgressResponse struct {
-	CompletedSessions          int `json:"completedSessions"`
-	TotalSessions              int `json:"totalSessions"`
-	RequesterCompletedSessions int `json:"requesterCompletedSessions"`
-	RequesterPlannedSessions   int `json:"requesterPlannedSessions"`
-	RecipientCompletedSessions int `json:"recipientCompletedSessions"`
-	RecipientPlannedSessions   int `json:"recipientPlannedSessions"`
-	ScheduledSessions          int `json:"scheduledSessions"`
-	ProposedSessions           int `json:"proposedSessions"`
-	DraftSessions              int `json:"draftSessions"`
-	CancelledSessions          int `json:"cancelledSessions"`
-	Percent                    int `json:"percent"`
+	CompletedSessions            int  `json:"completedSessions"`
+	TotalSessions                int  `json:"totalSessions"`
+	RequesterCompletedSessions   int  `json:"requesterCompletedSessions"`
+	RequesterPlannedSessions     int  `json:"requesterPlannedSessions"`
+	RecipientCompletedSessions   int  `json:"recipientCompletedSessions"`
+	RecipientPlannedSessions     int  `json:"recipientPlannedSessions"`
+	ScheduledSessions            int  `json:"scheduledSessions"`
+	ProposedSessions             int  `json:"proposedSessions"`
+	DraftSessions                int  `json:"draftSessions"`
+	CancelledSessions            int  `json:"cancelledSessions"`
+	AwaitingConfirmationSessions int  `json:"awaitingConfirmationSessions"`
+	Percent                      int  `json:"percent"`
+	PlanCompleted                bool `json:"planCompleted"`
 }
 
 type nextSessionResponse struct {
@@ -193,52 +196,69 @@ type nextSessionResponse struct {
 }
 
 type exchangeResponse struct {
-	ID                 string                   `json:"id"`
-	RequestID          *string                  `json:"requestId"`
-	Status             string                   `json:"status"`
-	Format             string                   `json:"format"`
-	TotalSessions      int                      `json:"totalSessions"`
-	Partner            studentSummary           `json:"partner"`
-	Requester          studentSummary           `json:"requester"`
-	Recipient          studentSummary           `json:"recipient"`
-	RequesterTeaches   requestTerms             `json:"requesterTeaches"`
-	RecipientTeaches   requestTerms             `json:"recipientTeaches"`
-	Progress           exchangeProgressResponse `json:"progress"`
-	NextSession        *nextSessionResponse     `json:"nextSession"`
-	StartedAt          *time.Time               `json:"startedAt"`
-	CompletedAt        *time.Time               `json:"completedAt"`
-	CancelledAt        *time.Time               `json:"cancelledAt"`
-	CancellationReason *string                  `json:"cancellationReason"`
-	CreatedAt          time.Time                `json:"createdAt"`
-	UpdatedAt          time.Time                `json:"updatedAt"`
+	ID                           string                   `json:"id"`
+	RequestID                    *string                  `json:"requestId"`
+	Status                       string                   `json:"status"`
+	Format                       string                   `json:"format"`
+	TotalSessions                int                      `json:"totalSessions"`
+	Partner                      studentSummary           `json:"partner"`
+	Requester                    studentSummary           `json:"requester"`
+	Recipient                    studentSummary           `json:"recipient"`
+	RequesterTeaches             requestTerms             `json:"requesterTeaches"`
+	RecipientTeaches             requestTerms             `json:"recipientTeaches"`
+	Progress                     exchangeProgressResponse `json:"progress"`
+	NextSession                  *nextSessionResponse     `json:"nextSession"`
+	CompletionConfirmedByMe      bool                     `json:"completionConfirmedByMe"`
+	CompletionConfirmedByPartner bool                     `json:"completionConfirmedByPartner"`
+	CanConfirmCompletion         bool                     `json:"canConfirmCompletion"`
+	CanCancel                    bool                     `json:"canCancel"`
+	StartedAt                    *time.Time               `json:"startedAt"`
+	CompletedAt                  *time.Time               `json:"completedAt"`
+	CancelledAt                  *time.Time               `json:"cancelledAt"`
+	CancellationReason           *string                  `json:"cancellationReason"`
+	CreatedAt                    time.Time                `json:"createdAt"`
+	UpdatedAt                    time.Time                `json:"updatedAt"`
 }
 
 func toExchange(e data.Exchange, viewerID ...string) exchangeResponse {
 	requester := toRequestParty(e.Requester)
 	recipient := toRequestParty(e.Recipient)
-	partner := recipient
-	if len(viewerID) > 0 && viewerID[0] == e.Recipient.UserID {
-		partner = requester
+	partner, partnerID := recipient, e.Recipient.UserID
+	viewer := ""
+	if len(viewerID) > 0 {
+		viewer = viewerID[0]
 	}
+	if viewer == e.Recipient.UserID {
+		partner, partnerID = requester, e.Requester.UserID
+	}
+	confirmedByMe := viewer != "" && slices.Contains(e.ConfirmedUserIDs, viewer)
+	active := e.Status == data.ExchangeActive
+	canConfirm := active && e.Progress.PlanCompleted() && e.CanInteract && !confirmedByMe
 	response := exchangeResponse{
 		ID: e.ID, Status: e.Status, Format: e.Format, TotalSessions: e.TotalSessions,
 		Partner:   partner,
 		Requester: requester, Recipient: recipient,
 		RequesterTeaches: toRequestTerms(e.RequesterTeaches), RecipientTeaches: toRequestTerms(e.RecipientTeaches),
 		Progress: exchangeProgressResponse{
-			CompletedSessions:          e.Progress.CompletedSessions,
-			TotalSessions:              e.Progress.TotalSessions,
-			RequesterCompletedSessions: e.Progress.RequesterCompletedSessions,
-			RequesterPlannedSessions:   e.Progress.RequesterPlannedSessions,
-			RecipientCompletedSessions: e.Progress.RecipientCompletedSessions,
-			RecipientPlannedSessions:   e.Progress.RecipientPlannedSessions,
-			ScheduledSessions:          e.Progress.ScheduledSessions,
-			ProposedSessions:           e.Progress.ProposedSessions,
-			DraftSessions:              e.Progress.DraftSessions,
-			CancelledSessions:          e.Progress.CancelledSessions,
-			Percent:                    e.Progress.Percent,
+			CompletedSessions:            e.Progress.CompletedSessions,
+			TotalSessions:                e.Progress.TotalSessions,
+			RequesterCompletedSessions:   e.Progress.RequesterCompletedSessions,
+			RequesterPlannedSessions:     e.Progress.RequesterPlannedSessions,
+			RecipientCompletedSessions:   e.Progress.RecipientCompletedSessions,
+			RecipientPlannedSessions:     e.Progress.RecipientPlannedSessions,
+			ScheduledSessions:            e.Progress.ScheduledSessions,
+			ProposedSessions:             e.Progress.ProposedSessions,
+			DraftSessions:                e.Progress.DraftSessions,
+			CancelledSessions:            e.Progress.CancelledSessions,
+			AwaitingConfirmationSessions: e.Progress.AwaitingConfirmationSessions,
+			Percent:                      e.Progress.Percent,
+			PlanCompleted:                e.Progress.PlanCompleted(),
 		},
-		StartedAt: e.StartedAt, CompletedAt: e.CompletedAt, CancelledAt: e.CancelledAt,
+		CompletionConfirmedByMe:      confirmedByMe,
+		CompletionConfirmedByPartner: slices.Contains(e.ConfirmedUserIDs, partnerID),
+		CanConfirmCompletion:         canConfirm,
+		CanCancel:                    active,
+		StartedAt:                    e.StartedAt, CompletedAt: e.CompletedAt, CancelledAt: e.CancelledAt,
 		CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
 	}
 	if e.RequestID != "" {
@@ -309,26 +329,74 @@ func (a *API) listExchanges(w http.ResponseWriter, r *http.Request, current data
 	})
 }
 
+type exchangeStatusChange struct {
+	Status    string    `json:"status"`
+	ChangedBy *person   `json:"changedBy"`
+	Reason    *string   `json:"reason"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 func (a *API) exchangeDetails(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
 	ctx, cancel := context.WithTimeout(r.Context(), exchangeTimeout)
 	defer cancel()
-	exchangeID := r.PathValue("exchangeId")
-	found, err := a.app.Exchange(ctx, current.ID, exchangeID)
+	found, err := a.app.ExchangeDetails(ctx, current.ID, r.PathValue("exchangeId"))
 	if err != nil {
 		a.exchangeError(w, err)
 		return
 	}
 	sessions := []sessionResponse{}
-	if result, err := a.app.ExchangeSessions(ctx, current.ID, found.ID); err == nil {
+	if result, err := a.app.ExchangeSessions(ctx, current.ID, found.Exchange.ID); err == nil {
 		sessions = make([]sessionResponse, 0, len(result.Items))
 		for _, item := range result.Items {
 			sessions = append(sessions, toSession(item, current.ID))
 		}
 	}
+	history := make([]exchangeStatusChange, 0, len(found.History))
+	for _, c := range found.History {
+		change := exchangeStatusChange{Status: c.Status, CreatedAt: c.CreatedAt}
+		if c.ChangedByID != "" {
+			change.ChangedBy = &person{ID: c.ChangedByID, FirstName: c.ChangedByFirstName, LastName: c.ChangedByLastName}
+		}
+		if c.Reason != "" {
+			change.Reason = &c.Reason
+		}
+		history = append(history, change)
+	}
 	respond(w, http.StatusOK, map[string]any{
-		"exchange": toExchange(found, current.ID),
+		"exchange": toExchange(found.Exchange, current.ID),
 		"sessions": sessions,
+		"history":  history,
 	})
+}
+
+func (a *API) completeExchange(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
+	ctx, cancel := context.WithTimeout(r.Context(), exchangeTimeout)
+	defer cancel()
+	completed, err := a.app.CompleteExchange(ctx, current.ID, r.PathValue("exchangeId"))
+	if err != nil {
+		a.exchangeError(w, err)
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{"exchange": toExchange(completed, current.ID)})
+}
+
+type cancelExchangeBody struct {
+	Reason string `json:"reason"`
+}
+
+func (a *API) cancelExchange(w http.ResponseWriter, r *http.Request, current data.User, _ string) {
+	var body cancelExchangeBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), exchangeTimeout)
+	defer cancel()
+	cancelled, err := a.app.CancelExchange(ctx, current.ID, r.PathValue("exchangeId"), body.Reason)
+	if err != nil {
+		a.exchangeError(w, err)
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{"exchange": toExchange(cancelled, current.ID)})
 }
 
 func (a *API) exchangeError(w http.ResponseWriter, err error) {
@@ -355,6 +423,12 @@ func (a *API) exchangeError(w http.ResponseWriter, err error) {
 			"The request can no longer be accepted: a student or one of the skills is no longer available")
 	case errors.Is(err, exchange.ErrExchangeNotFound):
 		problem(w, http.StatusNotFound, "exchange_not_found", "Exchange was not found")
+	case errors.Is(err, exchange.ErrExchangeNotActive):
+		problem(w, http.StatusConflict, "exchange_not_active", "The exchange is no longer active")
+	case errors.Is(err, exchange.ErrExchangeBlocked):
+		problem(w, http.StatusConflict, "exchange_blocked", "Exchange actions are blocked because a participant is unavailable or blocked")
+	case errors.Is(err, exchange.ErrPlanNotCompleted):
+		problem(w, http.StatusConflict, "plan_not_completed", "Not all planned sessions have been confirmed in both directions")
 	case errors.Is(err, exchange.ErrInvalidPage):
 		problem(w, http.StatusBadRequest, "invalid_page", fmt.Sprintf("page must be a whole number from 1 to %d", exchange.MaxPage))
 	default:

@@ -1,8 +1,11 @@
 package validate
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"skillswap/backend/internal/expect"
 )
 
 func TestName(t *testing.T) {
@@ -19,22 +22,21 @@ func TestName(t *testing.T) {
 	}
 	for _, test := range tests {
 		got, ok := Name(test.raw)
-		if got != test.want || ok != test.ok {
-			t.Errorf("Name(%q) = %q, %t; want %q, %t", test.raw, got, ok, test.want, test.ok)
-		}
+		expect.Equal(t, fmt.Sprintf("Name(%q) result", test.raw), got, test.want)
+		expect.Equal(t, fmt.Sprintf("Name(%q) valid", test.raw), ok, test.ok)
 	}
 }
 
 func TestLineAndText(t *testing.T) {
-	if got, ok := Line("", 10); !ok || got != "" {
-		t.Fatalf("empty line = %q, %t", got, ok)
-	}
+	got, ok := Line("", 10)
+	expect.Equal(t, "empty line valid", ok, true)
+	expect.Equal(t, "empty line", got, "")
 	if _, ok := Line("Київ\tЦентр", 100); ok {
 		t.Fatal("a single line must reject tabs and line breaks")
 	}
-	if got, ok := Text(" Перший рядок\nДругий\t рядок ", 100); !ok || got != "Перший рядок\nДругий\t рядок" {
-		t.Fatalf("text = %q, %t", got, ok)
-	}
+	got, ok = Text(" Перший рядок\nДругий\t рядок ", 100)
+	expect.Equal(t, "text valid", ok, true)
+	expect.Equal(t, "text", got, "Перший рядок\nДругий\t рядок")
 	if _, ok := Text("a\x00b", 100); ok {
 		t.Fatal("text must reject NUL")
 	}
