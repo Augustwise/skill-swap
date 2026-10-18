@@ -10,6 +10,7 @@ Run frontend commands from `frontend/` after `npm ci`:
 
 - `npm run dev` starts the app at `http://localhost:3000`.
 - `npm run build` creates a production build; `npm start` serves it.
+- `npm test` runs the `node:test` unit tests in `frontend/tests/`.
 - `npm run lint` checks ESLint rules; `npm run format:check` checks Prettier formatting.
 
 Run backend commands from `backend/` with Go 1.26 and a configured PostgreSQL URL:
@@ -24,7 +25,7 @@ Use TypeScript with strict type checking for frontend changes. Follow the existi
 
 ## Testing Guidelines
 
-Go tests use the standard `testing` package and `*_test.go` files beside the code they cover. Add focused tests for changed API or configuration behavior. The catalog integration test runs only when `TEST_DATABASE_URL` points to a prepared local PostgreSQL database; otherwise it skips. There is currently no frontend test script, so run lint, formatting checks, and a production build for frontend changes.
+Go tests use the standard `testing` package and `*_test.go` files beside the code they cover. Add focused tests for changed API or configuration behavior. The catalog integration test runs only when `TEST_DATABASE_URL` points to a prepared local PostgreSQL database; otherwise it skips. Frontend unit tests live in `frontend/tests/*.test.mjs` and compile the `app/components/*.ts` modules in memory; add tests there for changed client logic. For frontend changes run `npm test`, lint, formatting checks, and a production build.
 
 ## Commit & Pull Request Guidelines
 

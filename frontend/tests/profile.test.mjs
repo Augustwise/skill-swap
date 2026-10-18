@@ -1,25 +1,9 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { test } from "node:test";
-import ts from "typescript";
-
-// Compile the small API modules in memory; no browser or test framework is needed.
-function loadSource(filename) {
-  const source = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  });
-  const compiled = { exports: {} };
-  new Function("require", "module", "exports", source.outputText)(
-    (name) => loadSource(path.resolve(path.dirname(filename), `${name}.ts`)),
-    compiled,
-    compiled.exports,
-  );
-  return compiled.exports;
-}
+import { loadSource } from "./load-source.mjs";
 
 const { validateProfile, saveProfile, changeProfileSkill, profileErrors } = loadSource(
-  path.resolve("app/components/ProfileApi.ts"),
+  "app/components/ProfileApi.ts",
 );
 const draft = {
   firstName: "Олена",
@@ -33,7 +17,7 @@ const draft = {
 };
 
 test("login returns to the profile and rejects untrusted destinations", () => {
-  const { loginDestination } = loadSource(path.resolve("app/components/AuthValidation.ts"));
+  const { loginDestination } = loadSource("app/components/AuthValidation.ts");
   assert.equal(loginDestination("?next=/profile"), "/profile");
   assert.equal(loginDestination("?next=/main"), "/main");
   assert.equal(loginDestination("?next=https://example.com"), "/onboarding");

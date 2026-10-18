@@ -233,6 +233,9 @@ acceptance cases:
 different city, so she has no mutual matches. `demo.iryna` has two matches with a
 different number of skill pairs (Dmytro 3, Marko 2) to check the ordering.
 
+The web client shows the same cases at <http://localhost:3000/search>, `/matches`, and
+`/students/{id}`; the frontend checklist is in [`frontend/SPRINT4.md`](../frontend/SPRINT4.md).
+
 `GET /api/v1/me/matches?page=1` returns the signed-in user's mutual matches, 20 per page.
 It needs a session with a verified email, like the profile endpoints. Two students match
 when each teaches at least one catalog skill the other wants and they share a format;

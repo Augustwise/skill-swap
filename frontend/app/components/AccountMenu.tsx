@@ -85,6 +85,20 @@ export function AccountMenu({
         >
           <Icon name="dashboard" /> Головна
         </Link>
+        <Link
+          href="/search"
+          aria-current={pathname === "/search" ? "page" : undefined}
+          onClick={() => setOpen(false)}
+        >
+          <Icon name="nav-search" /> Пошук навичок
+        </Link>
+        <Link
+          href="/matches"
+          aria-current={pathname === "/matches" ? "page" : undefined}
+          onClick={() => setOpen(false)}
+        >
+          <Icon name="nav-sparkles" /> Мої збіги
+        </Link>
         <button type="button" disabled={pending} onClick={onLogout}>
           <Icon name="logout" /> {pending ? "Виходимо…" : "Вийти"}
         </button>

@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
-import { Logo } from "./Logo";
+import { AppMessage } from "./AppMessage";
 import { ProfileShell } from "./ProfileShell";
 import { ProfileSummary } from "./ProfileSummary";
 import { ProfileEditor } from "./ProfileEditor";
@@ -15,40 +14,12 @@ export function Profile() {
   const { profile, session, status, retry, setProfile } = useProfile();
   if (status !== "ready" || !profile || !session) {
     return (
-      <main className="dashboard-message-page">
-        <div className="dashboard-message" role={status === "loading" ? "status" : "alert"}>
-          <Logo variant="app" />
-          <h1>
-            {status === "loading"
-              ? "Завантажуємо профіль…"
-              : status === "login"
-                ? "Увійди, щоб продовжити"
-                : "Не вдалося завантажити профіль"}
-          </h1>
-          <p>
-            {status === "loading"
-              ? "Готуємо твої збережені дані."
-              : "Перевір з’єднання або увійди в акаунт знову."}
-          </p>
-          {status === "login" && (
-            <Link
-              className="dashboard-button dashboard-button--primary"
-              href="/login?next=/profile"
-            >
-              Увійти
-            </Link>
-          )}
-          {status === "error" && (
-            <button
-              className="dashboard-button dashboard-button--primary"
-              type="button"
-              onClick={retry}
-            >
-              Спробувати ще раз
-            </button>
-          )}
-        </div>
-      </main>
+      <AppMessage
+        status={status === "ready" ? "loading" : status}
+        subject="профіль"
+        path="/profile"
+        onRetry={retry}
+      />
     );
   }
   return (

@@ -1,16 +1,3 @@
-export type DashboardMatch = {
-  id: string;
-  name: string;
-  initials: string;
-  color: string;
-  university: string;
-  score: number;
-  rating: string;
-  reviews: string;
-  teaching: readonly string[];
-  learning: readonly string[];
-};
-
 export type DashboardExchange = {
   name: string;
   initials: string;
@@ -30,33 +17,6 @@ export type DashboardRequest = {
 };
 
 // Design fixtures only. The live dashboard stays empty until activity APIs are available.
-export const demoMatches = [
-  {
-    id: "olena",
-    name: "Олена Ковальчук",
-    initials: "ОК",
-    color: "purple",
-    university: "КПІ · ФІОТ, 3 курс",
-    score: 94,
-    rating: "4.9",
-    reviews: "23 відгуки",
-    teaching: ["Photoshop", "Figma"],
-    learning: ["Гітара", "Сольфеджіо"],
-  },
-  {
-    id: "dmytro",
-    name: "Дмитро Савчук",
-    initials: "ДС",
-    color: "blue",
-    university: "КНУ · Філологія, 2 курс",
-    score: 88,
-    rating: "4.7",
-    reviews: "14 відгуків",
-    teaching: ["Англійська B2", "IELTS"],
-    learning: ["Гітара", "Укулеле"],
-  },
-] as const;
-
 export const demoExchanges = [
   {
     name: "Марія Гнатюк",
