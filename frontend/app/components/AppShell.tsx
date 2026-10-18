@@ -2,32 +2,39 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AccountMenu } from "./AccountMenu";
 import { AuthError, authRequest, requestError } from "./AuthApi";
 import { navigation, type AppSection } from "./AppNavigation";
 import { DashboardIcon as Icon } from "./DashboardIcon";
 import { DashboardModal } from "./DashboardModal";
+import { unreadMessageCount } from "./ChatApi";
 import { normalizeQuery, searchQueryString, emptyFilters } from "./DiscoveryApi";
 import { pendingRequestCount } from "./ExchangeApi";
 import { Logo } from "./Logo";
+import { NotificationBell } from "./NotificationBell";
+import { unreadNotificationCount } from "./NotificationApi";
 import type { Profile } from "./OnboardingApi";
+import { usePolling } from "./usePolling";
 
 export type { AppSection };
 
-const RequestsChanged = createContext<() => void>(() => {});
+const COUNTERS_INTERVAL = 30_000;
+const CountersChanged = createContext<() => void>(() => {});
 
-// Pages call this after answering or sending a request so the navigation counter stays current.
-export function useRequestsChanged() {
-  return useContext(RequestsChanged);
+// Pages call this after an action that changes a navigation counter: a request decision,
+// a sent or read message, a read notification.
+export function useCountersChanged() {
+  return useContext(CountersChanged);
+}
+
+const badgeLabels: Partial<Record<AppSection, string>> = {
+  requests: "очікують відповіді",
+  messages: "непрочитані",
+};
+
+function badgeText(count: number) {
+  return count > 99 ? "99+" : String(count);
 }
 
 export function AppShell({
@@ -61,14 +68,32 @@ export function AppShell({
   const [pending, setPending] = useState(false);
   const [query, setQuery] = useState("");
   const logoutPending = useRef(false);
-  const [incoming, setIncoming] = useState(0);
-  const [requestsVersion, setRequestsVersion] = useState(0);
+  const [counters, setCounters] = useState({ requests: 0, messages: 0, notifications: 0 });
+  const [countersVersion, setCountersVersion] = useState(0);
+  const countersChanged = () => setCountersVersion((value) => value + 1);
+  const badges: Partial<Record<AppSection, number>> = {
+    requests: counters.requests,
+    messages: counters.messages,
+  };
 
-  useEffect(() => {
-    const controller = new AbortController();
-    pendingRequestCount("incoming", controller.signal).then(setIncoming, () => {});
-    return () => controller.abort();
-  }, [requestsVersion]);
+  usePolling(
+    async (signal) => {
+      const [requests, messages, notifications] = await Promise.allSettled([
+        pendingRequestCount("incoming", signal),
+        unreadMessageCount(signal),
+        unreadNotificationCount(signal),
+      ]);
+      if (signal.aborted) return;
+      setCounters((current) => ({
+        requests: requests.status === "fulfilled" ? requests.value : current.requests,
+        messages: messages.status === "fulfilled" ? messages.value : current.messages,
+        notifications:
+          notifications.status === "fulfilled" ? notifications.value : current.notifications,
+      }));
+    },
+    COUNTERS_INTERVAL,
+    countersVersion,
+  );
 
   async function logout() {
     if (logoutPending.current || (canLeave && !canLeave())) return;
@@ -122,24 +147,25 @@ export function AppShell({
           <Logo variant="app" />
         </div>
         <nav className="dashboard-nav" aria-label="Основна навігація">
-          {navigation.map((item) =>
-            item.href ? (
+          {navigation.map((item) => {
+            const badge = item.section ? (badges[item.section] ?? 0) : 0;
+            return item.href ? (
               <Link
                 className={`dashboard-nav-item ${item.section === section ? "dashboard-nav-item--active" : ""}`}
                 href={item.href}
                 aria-current={item.section === section ? "page" : undefined}
                 aria-label={
-                  item.section === "requests" && incoming > 0
-                    ? `${item.label}: ${incoming} очікують відповіді`
+                  badge > 0 && item.section
+                    ? `${item.label}: ${badge} ${badgeLabels[item.section]}`
                     : item.label
                 }
                 key={item.label}
               >
                 <Icon name={item.icon} />
                 <span>{item.label}</span>
-                {item.section === "requests" && incoming > 0 && (
+                {badge > 0 && (
                   <span className="dashboard-nav-badge" aria-hidden="true">
-                    {incoming > 99 ? "99+" : incoming}
+                    {badgeText(badge)}
                   </span>
                 )}
               </Link>
@@ -155,8 +181,8 @@ export function AppShell({
                 <Icon name={item.icon} />
                 <span>{item.label}</span>
               </button>
-            ),
-          )}
+            );
+          })}
         </nav>
         <div className="dashboard-sidebar__footer">
           <Link
@@ -209,17 +235,20 @@ export function AppShell({
             </form>
           )}
           {toolbar}
+          <NotificationBell
+            csrfToken={csrfToken}
+            unreadCount={counters.notifications}
+            onRead={countersChanged}
+          />
           <AccountMenu
             profile={profile}
             pending={pending}
-            incoming={incoming}
+            badges={{ "/requests": counters.requests, "/messages": counters.messages }}
             onLogout={() => void logout()}
           />
         </header>
         <main className="dashboard-content" id={contentId} tabIndex={-1}>
-          <RequestsChanged.Provider value={() => setRequestsVersion((value) => value + 1)}>
-            {children}
-          </RequestsChanged.Provider>
+          <CountersChanged.Provider value={countersChanged}>{children}</CountersChanged.Provider>
         </main>
       </div>
       {modal && <DashboardModal title={modal} onClose={() => setModal("")} />}

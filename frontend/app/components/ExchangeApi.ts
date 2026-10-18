@@ -1,4 +1,4 @@
-import { AuthError, authRequest, type AuthSession } from "./AuthApi";
+import { AuthError, authRequest, writeRequest } from "./AuthApi";
 import { isUuid } from "./AppRoutes";
 import {
   readPage,
@@ -307,19 +307,9 @@ export function staleRequest(error: unknown) {
   return error instanceof AuthError && error.code === "request_not_pending";
 }
 
-async function exchangeWrite<T>(path: string, options: RequestInit, csrfToken: string) {
-  try {
-    return await authRequest<T>(path, { method: "POST", ...options }, csrfToken);
-  } catch (error) {
-    if (!(error instanceof AuthError) || error.code !== "csrf_invalid") throw error;
-    const session = await authRequest<AuthSession>("auth/me");
-    return authRequest<T>(path, { method: "POST", ...options }, session.csrfToken);
-  }
-}
-
 export async function createRequest(recipientId: string, draft: ProposalDraft, csrfToken: string) {
   const message = draft.message.trim();
-  const data = await exchangeWrite<{ request: ExchangeRequest }>(
+  const data = await writeRequest<{ request: ExchangeRequest }>(
     "exchange-requests",
     {
       body: JSON.stringify({
@@ -357,7 +347,7 @@ export async function requestDetails(id: string, signal?: AbortSignal) {
 }
 
 export async function answerRequest(id: string, action: "decline" | "withdraw", csrfToken: string) {
-  const data = await exchangeWrite<{ request: ExchangeRequest }>(
+  const data = await writeRequest<{ request: ExchangeRequest }>(
     `exchange-requests/${encodeURIComponent(id)}/${action}`,
     {},
     csrfToken,
@@ -366,7 +356,7 @@ export async function answerRequest(id: string, action: "decline" | "withdraw", 
 }
 
 export function acceptRequest(id: string, csrfToken: string) {
-  return exchangeWrite<Acceptance>(
+  return writeRequest<Acceptance>(
     `exchange-requests/${encodeURIComponent(id)}/accept`,
     {},
     csrfToken,

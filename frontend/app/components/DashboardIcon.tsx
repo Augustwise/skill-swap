@@ -1,6 +1,5 @@
 import Image from "next/image";
 
-// Keep the original Figma geometry for each icon and color variant.
 const assets = {
   dashboard: ["icon-dashboard", 20],
   "dashboard-muted": ["icon-dashboard-muted", 20],
@@ -40,6 +39,11 @@ const assets = {
   "declined-dot": ["requests/status-declined", 6],
   "neutral-dot": ["requests/status-neutral", 6],
   handshake: ["requests/handshake", 20],
+  send: ["chat/send", 18],
+  check: ["chat/check", 16],
+  sent: ["chat/sent", 14],
+  read: ["chat/read", 14],
+  "chat-white": ["chat/chat-white", 18],
 } as const;
 
 export type DashboardIconName = keyof typeof assets;

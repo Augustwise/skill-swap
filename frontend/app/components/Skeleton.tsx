@@ -376,6 +376,53 @@ function SkeletonRequests() {
   );
 }
 
+function SkeletonMessages() {
+  return (
+    <div className="chat-layout" aria-hidden="true">
+      <div className="account-card chat-sidebar">
+        <Skeleton kind="title" width={110} />
+        {Array.from({ length: 4 }, (_, index) => (
+          <span className="skeleton-row" key={index}>
+            <Skeleton kind="avatar-40" />
+            <Lines widths={["60%", "45%", "85%"]} />
+          </span>
+        ))}
+      </div>
+      <div className="account-card chat-panel">
+        <span className="chat-skeleton">
+          <PersonRow avatar={40} badge={false} />
+          <span className="chat-skeleton__messages">
+            <Skeleton kind="block" width="46%" height={44} />
+            <Skeleton kind="block" width="38%" height={44} />
+            <Skeleton kind="block" width="52%" height={62} />
+          </span>
+          <Skeleton kind="field" />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SkeletonNotifications() {
+  return (
+    <>
+      <span className="skeleton-tabs" aria-hidden="true">
+        <Skeleton width={40} />
+        <Skeleton width={110} />
+      </span>
+      <div className="account-card skeleton-section" aria-hidden="true">
+        <Skeleton kind="title" width="30%" />
+        {Array.from({ length: 5 }, (_, index) => (
+          <span className="skeleton-row" key={index}>
+            <Skeleton kind="icon" width={36} height={36} />
+            <Lines widths={["50%", "85%"]} />
+          </span>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function SkeletonDetailPage() {
   return (
     <>
@@ -391,6 +438,8 @@ const layouts = {
   matches: SkeletonMatches,
   requests: SkeletonRequests,
   detail: SkeletonDetailPage,
+  messages: SkeletonMessages,
+  notifications: SkeletonNotifications,
   profile: SkeletonProfile,
 };
 
@@ -446,6 +495,9 @@ export function AppSkeleton({ page, section }: { page: AppPage; section?: AppSec
           <span className="dashboard-search skeleton-search" aria-hidden="true">
             <Image src="/figma/main/icon-search.svg" alt="" width={18} height={18} />
             <Skeleton width="60%" />
+          </span>
+          <span className="dashboard-notifications" aria-hidden="true">
+            <Icon name="bell" />
           </span>
           <span className="account-menu" aria-hidden="true">
             <span className="dashboard-user">

@@ -1,7 +1,15 @@
 import type { DashboardIconName } from "./DashboardIcon";
 
-export type AppSection = "main" | "search" | "matches" | "requests" | "profile";
-export type SkeletonLayout = "dashboard" | "search" | "matches" | "requests" | "detail" | "profile";
+export type AppSection = "main" | "search" | "matches" | "requests" | "messages" | "profile";
+export type SkeletonLayout =
+  | "dashboard"
+  | "search"
+  | "matches"
+  | "requests"
+  | "detail"
+  | "messages"
+  | "notifications"
+  | "profile";
 
 export const navigation: {
   label: string;
@@ -14,7 +22,7 @@ export const navigation: {
   { label: "Мої збіги", icon: "nav-sparkles", section: "matches", href: "/matches" },
   { label: "Запити на обмін", icon: "inbox", section: "requests", href: "/requests" },
   { label: "Активні обміни", icon: "nav-swap" },
-  { label: "Повідомлення", icon: "nav-chat" },
+  { label: "Повідомлення", icon: "nav-chat", section: "messages", href: "/messages" },
   { label: "Календар", icon: "calendar" },
 ];
 
@@ -68,6 +76,20 @@ export const pageShells = {
     subtitle: "Погоджені умови та прогрес обміну",
     subject: "обмін",
     layout: "detail",
+  },
+  messages: {
+    section: "messages",
+    title: "Повідомлення",
+    subtitle: "Приватні чати з учасниками твоїх запитів і обмінів",
+    subject: "повідомлення",
+    layout: "messages",
+  },
+  notifications: {
+    section: undefined,
+    title: "Сповіщення",
+    subtitle: "Запити, рішення, нові повідомлення та зміни занять",
+    subject: "сповіщення",
+    layout: "notifications",
   },
   profile: {
     section: "profile",

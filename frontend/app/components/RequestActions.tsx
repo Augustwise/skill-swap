@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { AppDialog, closeDialog } from "./AppDialog";
 import { loginHref } from "./AppRoutes";
-import { useRequestsChanged } from "./AppShell";
+import { useCountersChanged } from "./AppShell";
 import { AuthError } from "./AuthApi";
 import { fullName } from "./DiscoveryFormat";
 import {
@@ -68,7 +68,7 @@ export function RequestActions({
   onChanged: (notice: string) => void;
 }) {
   const router = useRouter();
-  const requestsChanged = useRequestsChanged();
+  const countersChanged = useCountersChanged();
   const [pending, setPending] = useState<RequestAction | null>(null);
   const [confirm, setConfirm] = useState<"decline" | "withdraw" | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -86,19 +86,19 @@ export function RequestActions({
     try {
       if (action === "accept") {
         const { exchange } = await acceptRequest(request.id, csrfToken);
-        requestsChanged();
+        countersChanged();
         leaving = true;
         router.push(`${exchangeHref(exchange.id)}?started=1`);
         return;
       }
       await answerRequest(request.id, action, csrfToken);
-      requestsChanged();
+      countersChanged();
       closeDialog(trigger ?? null);
       onChanged(done[action]);
     } catch (failure) {
       if (changedElsewhere(failure)) {
         closeDialog(trigger ?? null);
-        requestsChanged();
+        countersChanged();
         onChanged(exchangeErrorMessage(failure));
       } else {
         setError(failure);

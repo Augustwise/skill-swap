@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AppDialog, closeDialog } from "./AppDialog";
-import { useRequestsChanged } from "./AppShell";
+import { useCountersChanged } from "./AppShell";
 import { AuthError } from "./AuthApi";
 import { DashboardIcon as Icon } from "./DashboardIcon";
 import type { StudentProfile } from "./DiscoveryApi";
@@ -96,7 +96,7 @@ export function ExchangeProposal({
   csrfToken: string;
   onClose: () => void;
 }) {
-  const requestsChanged = useRequestsChanged();
+  const countersChanged = useCountersChanged();
   const id = useId();
   const [draft, setDraft] = useState(() => initialProposal(options));
   const [mirrored, setMirrored] = useState(true);
@@ -148,7 +148,7 @@ export function ExchangeProposal({
     setPending(true);
     try {
       const request = await createRequest(student.id, draft, csrfToken);
-      requestsChanged();
+      countersChanged();
       setCreated(request);
     } catch (error) {
       setServerErrors(proposalErrors(error));
