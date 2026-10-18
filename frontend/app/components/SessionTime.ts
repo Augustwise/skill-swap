@@ -19,7 +19,7 @@ export function timestamp(value: string) {
 }
 
 export function meetingLink(value: string | null) {
-  if (!value || /\s/.test(value)) return null;
+  if (!value || /[\s\\]/.test(value) || !/^https?:\/\//i.test(value)) return null;
   try {
     const url = new URL(value);
     return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password
@@ -33,7 +33,7 @@ export function meetingLink(value: string | null) {
 export function sessionDraftErrors(draft: SessionDraft, teacherIds: string[], now = Date.now()) {
   const errors: Partial<Record<keyof SessionDraft, string>> = {};
   const length = (value: string) => Array.from(value.trim()).length;
-  if (!length(draft.title) || length(draft.title) > 255 || /[\r\n]/.test(draft.title))
+  if (!length(draft.title) || length(draft.title) > 255 || /[\r\n\p{Cc}]/u.test(draft.title))
     errors.title = "Вкажи тему від 1 до 255 символів в одному рядку.";
   if (length(draft.description) > 1000) errors.description = "Опис — до 1000 символів.";
   if (!teacherIds.includes(draft.teacherId)) errors.teacherId = "Обери викладача цього обміну.";

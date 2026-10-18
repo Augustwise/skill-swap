@@ -14,6 +14,7 @@ const links = [
   { href: "/matches", icon: "nav-sparkles", label: "Мої збіги" },
   { href: "/requests", icon: "inbox", label: "Запити на обмін" },
   { href: "/exchanges", icon: "nav-swap", label: "Активні обміни" },
+  { href: "/schedule", icon: "calendar", label: "Розклад" },
   { href: "/messages", icon: "nav-chat", label: "Повідомлення" },
 ] as const;
 

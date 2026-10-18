@@ -1,7 +1,7 @@
 import type { DashboardIconName } from "./DashboardIcon";
 
 export type AppSection =
-  "main" | "search" | "matches" | "requests" | "exchanges" | "messages" | "profile";
+  "main" | "search" | "matches" | "requests" | "exchanges" | "messages" | "schedule" | "profile";
 export type SkeletonLayout =
   | "dashboard"
   | "search"
@@ -24,7 +24,7 @@ export const navigation: {
   { label: "Запити на обмін", icon: "inbox", section: "requests", href: "/requests" },
   { label: "Активні обміни", icon: "nav-swap", section: "exchanges", href: "/exchanges" },
   { label: "Повідомлення", icon: "nav-chat", section: "messages", href: "/messages" },
-  { label: "Календар", icon: "calendar" },
+  { label: "Календар", icon: "calendar", section: "schedule", href: "/schedule" },
 ];
 
 // One title per page, shared by the page itself and its loading skeleton.
@@ -91,6 +91,13 @@ export const pageShells = {
     subtitle: "Тема, час і погодження зустрічі",
     subject: "заняття",
     layout: "detail",
+  },
+  schedule: {
+    section: "schedule",
+    title: "Розклад",
+    subtitle: "Твої зустрічі у хронологічному порядку",
+    subject: "розклад",
+    layout: "requests",
   },
   messages: {
     section: "messages",

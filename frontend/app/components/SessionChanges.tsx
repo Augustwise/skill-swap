@@ -118,8 +118,8 @@ export function SessionCancellation({
       onClose={onClose}
     >
       <form className="session-form" onSubmit={submit} noValidate>
-        <label className="session-field" htmlFor={id}>
-          Причина скасування
+        <div className="session-field">
+          <label htmlFor={id}>Причина скасування</label>
           <textarea
             id={id}
             rows={3}
@@ -136,7 +136,7 @@ export function SessionCancellation({
               Вкажи причину від 1 до 500 символів.
             </span>
           )}
-        </label>
+        </div>
         {error != null && (
           <p className="exchange-error" role="alert">
             {sessionErrorMessage(error)}{" "}

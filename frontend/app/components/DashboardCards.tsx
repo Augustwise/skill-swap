@@ -109,15 +109,3 @@ export function DashboardStats({
     </section>
   );
 }
-
-export function DashboardSessions({ onOpenModal }: ModalActionProps) {
-  return (
-    <section className="dashboard-panel dashboard-sessions" aria-labelledby="sessions-title">
-      <div className="dashboard-section-heading">
-        <h2 id="sessions-title">Найближчі сесії</h2>
-        <SectionAction onOpenModal={onOpenModal}>Календар</SectionAction>
-      </div>
-      <DashboardEmptyState icon="calendar" message="Тут з’являться заплановані сесії." />
-    </section>
-  );
-}

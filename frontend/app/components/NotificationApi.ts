@@ -3,6 +3,7 @@ import { isUuid } from "./AppRoutes";
 import { messagesHref } from "./ChatApi";
 import { readPage, type Person, type ResultPage } from "./DiscoveryApi";
 import { exchangeHref, requestHref } from "./ExchangeApi";
+import { sessionHref } from "./SessionApi";
 
 export type NotificationEvent =
   "EXCHANGE_REQUEST" | "REQUEST_RESPONSE" | "CHAT_MESSAGE" | "SESSION_UPDATED";
@@ -63,6 +64,7 @@ export function notificationHref(notification: Pick<AppNotification, "target">) 
       if (isUuid(id)) return messagesHref(id);
       break;
     case "SESSION":
+      if (isUuid(id)) return sessionHref(id);
       if (exchangeId && isUuid(exchangeId)) return exchangeHref(exchangeId);
       break;
   }

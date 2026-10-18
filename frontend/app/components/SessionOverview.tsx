@@ -115,6 +115,9 @@ function SessionView({ sessionId, session, profile }: AppContext & { sessionId: 
           </div>
           <SessionFacts lesson={lesson} />
           <p className="profile-hint">
+            Часовий пояс: {Intl.DateTimeFormat().resolvedOptions().timeZone}
+          </p>
+          <p className="profile-hint">
             Викладач: {fullName(lesson.teacher)} · Учень: {fullName(lesson.learner)}
           </p>
           {lesson.description && <p className="profile-biography">{lesson.description}</p>}

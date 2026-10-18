@@ -45,7 +45,9 @@ export function SessionForm({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy.current) return;
-    const invalid = sessionDraftErrors(draft, [lesson.teacher.id]);
+    const teacherIds =
+      lesson.status === "DRAFT" ? [lesson.teacher.id, lesson.learner.id] : [lesson.teacher.id];
+    const invalid = sessionDraftErrors(draft, teacherIds);
     setErrors(invalid);
     if (Object.keys(invalid).length) {
       event.currentTarget
@@ -81,8 +83,8 @@ export function SessionForm({
     maxLength?: number,
   ) {
     return (
-      <label className="session-field" htmlFor={`${id}-${name}`}>
-        {label}
+      <div className="session-field">
+        <label htmlFor={`${id}-${name}`}>{label}</label>
         <input
           id={`${id}-${name}`}
           name={name}
@@ -98,7 +100,7 @@ export function SessionForm({
             {errors[name]}
           </span>
         )}
-      </label>
+      </div>
     );
   }
 
@@ -118,6 +120,29 @@ export function SessionForm({
             Викладач: {fullName(lesson.teacher)} · {lesson.skill.name} · планова тривалість{" "}
             {lesson.plannedDurationMinutes} хв.
           </p>
+          {lesson.status === "DRAFT" && (
+            <div className="session-field">
+              <label htmlFor={`${id}-teacher`}>Хто навчає</label>
+              <select
+                id={`${id}-teacher`}
+                name="teacherId"
+                value={draft.teacherId}
+                aria-invalid={Boolean(errors.teacherId)}
+                aria-describedby={`${id}-teacher-note`}
+                onChange={(event) => setDraft({ ...draft, teacherId: event.target.value })}
+              >
+                {[lesson.teacher, lesson.learner].map((teacher) => (
+                  <option key={teacher.id} value={teacher.id}>
+                    {fullName(teacher)}
+                  </option>
+                ))}
+              </select>
+              <span id={`${id}-teacher-note`} className="profile-hint">
+                {errors.teacherId ??
+                  "Зміна викладача використає вільне заняття з іншого напрямку плану."}
+              </span>
+            </div>
+          )}
           <label className="session-field" htmlFor={`${id}-description`}>
             Опис (необов’язково)
             <textarea
