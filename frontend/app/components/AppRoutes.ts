@@ -9,7 +9,7 @@ const pages = new Set([
   "/messages",
   "/notifications",
 ]);
-const entityPage = /^\/(?:students|requests|exchanges|messages)\/([^/]+)$/;
+const entityPage = /^\/(?:students|requests|exchanges|messages|sessions)\/([^/]+)$/;
 
 export function isUuid(value: string) {
   return uuid.test(value);

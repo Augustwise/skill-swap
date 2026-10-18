@@ -77,6 +77,13 @@ export const pageShells = {
     subject: "обмін",
     layout: "detail",
   },
+  lesson: {
+    section: undefined,
+    title: "Заняття",
+    subtitle: "Тема, час і погодження зустрічі",
+    subject: "заняття",
+    layout: "detail",
+  },
   messages: {
     section: "messages",
     title: "Повідомлення",
