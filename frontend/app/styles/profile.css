@@ -32,6 +32,85 @@
   gap: 22px;
   min-width: 0;
 }
+.profile-sections[hidden] {
+  display: none;
+}
+.profile-skill-rows {
+  display: grid;
+  gap: 14px;
+}
+.profile-skill-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #edf0f7;
+  border-radius: 14px;
+  background: #fcfcfe;
+}
+.profile-skill-row strong {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  font-weight: 600;
+}
+.profile-skill-row select {
+  width: 140px;
+  height: 36px;
+}
+.profile-skill-icon {
+  display: grid;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  background: #ffe9f3;
+}
+.profile-skill-row--learn .profile-skill-icon {
+  background: #e4f2ff;
+}
+.profile-remove-skill {
+  padding: 8px;
+  border: 1px solid #f7dcdd;
+  border-radius: 8px;
+  background: white;
+  color: #a32126;
+  font-size: 12px;
+}
+.profile-add-button,
+.profile-add-skill {
+  padding: 14px;
+  border: 1px dashed #c9bcff;
+  border-radius: 12px;
+  background: #faf9ff;
+  color: var(--purple-dark);
+  font-size: 13px;
+}
+.profile-add-skill .profile-fields {
+  display: grid;
+  gap: 16px;
+}
+.profile-add-skill__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+@media (max-width: 700px) {
+  .profile-skill-row {
+    flex-wrap: wrap;
+  }
+  .profile-skill-row strong {
+    flex-basis: calc(100% - 50px);
+  }
+  .profile-skill-row select {
+    width: 100%;
+  }
+  .profile-add-skill__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .account-card {
   display: grid;
   gap: 16px;
@@ -58,21 +137,6 @@
 .profile-hint,
 .profile-identity p {
   color: var(--muted);
-}
-.profile-details {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px 16px;
-  margin: 0;
-}
-.profile-details dt {
-  margin-bottom: 7px;
-  color: #313960;
-  font-size: 13px;
-}
-.profile-details dd {
-  margin: 0;
-  font-size: 14px;
 }
 .profile-preview {
   display: grid;
@@ -130,11 +194,57 @@
   .account-card {
     padding: 18px 16px;
   }
-  .profile-details,
   .profile-rail {
     grid-template-columns: minmax(0, 1fr);
   }
   .profile-topbar-user {
     flex-shrink: 0;
+  }
+}
+.profile-editor {
+  display: grid;
+  gap: 22px;
+}
+.profile-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.profile-fields .onboarding-intro[hidden] {
+  display: none;
+}
+.profile-fields .onboarding-profile {
+  display: grid;
+  gap: 20px;
+}
+.profile-fields textarea:focus-visible {
+  outline: 3px solid #b9afff;
+  outline-offset: 3px;
+}
+.profile-save-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 1;
+}
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.profile-text-button {
+  margin-left: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--purple-dark);
+  text-decoration: underline;
+}
+@media (max-width: 600px) {
+  .profile-fields .register-form__name-row {
+    flex-direction: column;
+  }
+  .profile-actions .dashboard-button {
+    flex: 1;
   }
 }
