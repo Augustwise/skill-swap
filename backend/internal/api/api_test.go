@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"skillswap/backend/internal/auth"
+	"skillswap/backend/internal/communication"
 	"skillswap/backend/internal/core"
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/data/datatest"
@@ -79,14 +80,16 @@ func testHandler(app *fakeApp) http.Handler {
 func postgresHandler(pool *pgxpool.Pool, mail mailer.IMailer) http.Handler {
 	store := data.NewPostgres(pool)
 	access := auth.NewService(store, store, mail, testAuthConfig, discardLogger())
+	comm := communication.NewService(store, store, store)
 	app := core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store),
-		exchange.NewService(store, store, store))
+		exchange.NewService(store, store, store, comm), comm)
 	return New(app, access, store, testSettings, discardLogger())
 }
 
 func memoryApp(store *datatest.Memory) *core.Application {
+	comm := communication.NewService(store, store, store)
 	return core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store),
-		exchange.NewService(store, store, store))
+		exchange.NewService(store, store, store, comm), comm)
 }
 
 func request(t *testing.T, handler http.Handler, method, target string) *httptest.ResponseRecorder {
@@ -122,7 +125,10 @@ func TestOpenAPIContract(t *testing.T) {
 		"/universities/{universityId}/faculties:", "/me/profile:", "/me/teaching-skills/{skillId}:", "/me/learning-skills:", "/me/matches:", "/students:", "/students/{userId}:", "/exchange-requests:",
 		"/me/exchange-requests:", "/exchange-requests/{requestId}:",
 		"/exchange-requests/{requestId}/accept:", "/exchange-requests/{requestId}/decline:", "/exchange-requests/{requestId}/withdraw:",
-		"/exchanges/{exchangeId}:"} {
+		"/exchange-requests/{requestId}/conversation:", "/exchanges/{exchangeId}:", "/exchanges/{exchangeId}/conversation:",
+		"/me/conversations:", "/conversations/{conversationId}:", "/conversations/{conversationId}/messages:",
+		"/conversations/{conversationId}/read:", "/me/notifications:", "/me/notifications/{notificationId}/read:",
+		"/me/notifications/read-all:"} {
 		if !strings.Contains(response.Body.String(), fragment) {
 			t.Fatalf("OpenAPI contract does not contain %q", fragment)
 		}

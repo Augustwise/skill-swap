@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 
+	"skillswap/backend/internal/communication"
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/discovery"
 	"skillswap/backend/internal/exchange"
@@ -32,18 +33,34 @@ type IApplication interface {
 	WithdrawRequest(ctx context.Context, userID, requestID string) (data.ExchangeRequest, error)
 	AcceptRequest(ctx context.Context, userID, requestID string) (exchange.Acceptance, error)
 	Exchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error)
+
+	Conversations(ctx context.Context, userID string, page int) (communication.ConversationPage, error)
+	Conversation(ctx context.Context, userID, conversationID string) (data.Conversation, error)
+	RequestConversation(ctx context.Context, userID, requestID string) (data.Conversation, error)
+	ExchangeConversation(ctx context.Context, userID, exchangeID string) (data.Conversation, error)
+	Messages(ctx context.Context, userID, conversationID string, query communication.MessageQuery) (communication.MessagePage, error)
+	SendMessage(ctx context.Context, userID, conversationID, body string) (data.Message, error)
+	MarkConversationRead(ctx context.Context, userID, conversationID string) (communication.ConversationReadResult, error)
+	Notifications(ctx context.Context, userID string, unreadOnly bool, page int) (communication.NotificationPage, error)
+	MarkNotificationRead(ctx context.Context, userID, notificationID string) (communication.NotificationReadResult, error)
+	MarkAllNotificationsRead(ctx context.Context, userID string) (communication.NotificationsReadAllResult, error)
 }
 
 type Application struct {
-	profiles  *profile.Service
-	discovery *discovery.Service
-	exchanges *exchange.Service
+	profiles      *profile.Service
+	discovery     *discovery.Service
+	exchanges     *exchange.Service
+	communication *communication.Service
 }
 
 var _ IApplication = (*Application)(nil)
 
-func NewApplication(profiles *profile.Service, discovery *discovery.Service, exchanges *exchange.Service) *Application {
-	return &Application{profiles: profiles, discovery: discovery, exchanges: exchanges}
+func NewApplication(profiles *profile.Service, discovery *discovery.Service, exchanges *exchange.Service, comm ...*communication.Service) *Application {
+	var c *communication.Service
+	if len(comm) > 0 {
+		c = comm[0]
+	}
+	return &Application{profiles: profiles, discovery: discovery, exchanges: exchanges, communication: c}
 }
 
 func (a *Application) Universities(ctx context.Context) ([]data.University, error) {
@@ -120,4 +137,44 @@ func (a *Application) AcceptRequest(ctx context.Context, userID, requestID strin
 
 func (a *Application) Exchange(ctx context.Context, userID, exchangeID string) (data.Exchange, error) {
 	return a.exchanges.Exchange(ctx, userID, exchangeID)
+}
+
+func (a *Application) Conversations(ctx context.Context, userID string, page int) (communication.ConversationPage, error) {
+	return a.communication.Conversations(ctx, userID, page)
+}
+
+func (a *Application) Conversation(ctx context.Context, userID, conversationID string) (data.Conversation, error) {
+	return a.communication.Conversation(ctx, userID, conversationID)
+}
+
+func (a *Application) RequestConversation(ctx context.Context, userID, requestID string) (data.Conversation, error) {
+	return a.communication.RequestConversation(ctx, userID, requestID)
+}
+
+func (a *Application) ExchangeConversation(ctx context.Context, userID, exchangeID string) (data.Conversation, error) {
+	return a.communication.ExchangeConversation(ctx, userID, exchangeID)
+}
+
+func (a *Application) Messages(ctx context.Context, userID, conversationID string, query communication.MessageQuery) (communication.MessagePage, error) {
+	return a.communication.Messages(ctx, userID, conversationID, query)
+}
+
+func (a *Application) SendMessage(ctx context.Context, userID, conversationID, body string) (data.Message, error) {
+	return a.communication.SendMessage(ctx, userID, conversationID, body)
+}
+
+func (a *Application) MarkConversationRead(ctx context.Context, userID, conversationID string) (communication.ConversationReadResult, error) {
+	return a.communication.MarkConversationRead(ctx, userID, conversationID)
+}
+
+func (a *Application) Notifications(ctx context.Context, userID string, unreadOnly bool, page int) (communication.NotificationPage, error) {
+	return a.communication.Notifications(ctx, userID, unreadOnly, page)
+}
+
+func (a *Application) MarkNotificationRead(ctx context.Context, userID, notificationID string) (communication.NotificationReadResult, error) {
+	return a.communication.MarkNotificationRead(ctx, userID, notificationID)
+}
+
+func (a *Application) MarkAllNotificationsRead(ctx context.Context, userID string) (communication.NotificationsReadAllResult, error) {
+	return a.communication.MarkAllNotificationsRead(ctx, userID)
 }

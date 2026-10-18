@@ -276,10 +276,18 @@ func (p *Postgres) RequestHistory(ctx context.Context, requestID string) ([]Requ
 	})
 }
 
-// LockRequest holds the request row until the surrounding transaction ends.
+// LockRequest holds the participant and request rows until the surrounding transaction ends.
 func (p *Postgres) LockRequest(ctx context.Context, requestID string) (RequestState, error) {
 	var r RequestState
 	err := p.conn(ctx).QueryRow(ctx, `SELECT id, requester_id, recipient_id, status::text
+		FROM exchange_requests WHERE id = $1`, requestID).Scan(&r.ID, &r.RequesterID, &r.RecipientID, &r.Status)
+	if err != nil {
+		return RequestState{}, notFound(err)
+	}
+	if err := p.LockUsers(ctx, r.RequesterID, r.RecipientID); err != nil {
+		return RequestState{}, err
+	}
+	err = p.conn(ctx).QueryRow(ctx, `SELECT id, requester_id, recipient_id, status::text
 		FROM exchange_requests WHERE id = $1 FOR UPDATE`, requestID).Scan(&r.ID, &r.RequesterID, &r.RecipientID, &r.Status)
 	if err != nil {
 		return RequestState{}, notFound(err)

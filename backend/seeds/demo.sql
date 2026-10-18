@@ -166,3 +166,55 @@ INSERT INTO exchange_request_status_history (id, request_id, status, changed_by_
 SELECT '71000000-0000-0000-0000-000000000001', id, 'PENDING', requester_id, created_at
 FROM exchange_requests WHERE id = '70000000-0000-0000-0000-000000000001'
 ON CONFLICT (id) DO NOTHING;
+
+-- Sprint 6 (FR-08, FR-13): private chat and notifications for Taras's request to Olha.
+INSERT INTO conversations (id, type, exchange_request_id, exchange_id, created_by_user_id, created_at, last_message_at)
+SELECT '72000000-0000-0000-0000-000000000001',
+  CASE WHEN e.id IS NOT NULL THEN 'EXCHANGE'::conversation_type ELSE 'REQUEST'::conversation_type END,
+  r.id, e.id, r.requester_id, r.created_at, r.created_at
+FROM exchange_requests r
+LEFT JOIN exchanges e ON e.source_request_id = r.id
+WHERE r.id = '70000000-0000-0000-0000-000000000001'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO conversation_participants (conversation_id, user_id, joined_at)
+SELECT c.id, p.user_id, c.created_at
+FROM conversations c
+JOIN exchange_requests r ON r.id = c.exchange_request_id
+CROSS JOIN LATERAL (VALUES (r.requester_id), (r.recipient_id)) AS p(user_id)
+WHERE c.id = '72000000-0000-0000-0000-000000000001'
+ON CONFLICT (conversation_id, user_id) DO NOTHING;
+
+INSERT INTO messages (id, conversation_id, author_id, type, body, created_at)
+SELECT '73000000-0000-0000-0000-000000000001', c.id, r.requester_id, 'TEXT',
+  'Привіт! Можемо зустрітися біля корпусу в будні після пар і домовитися про перше заняття.',
+  c.created_at
+FROM conversations c
+JOIN exchange_requests r ON r.id = c.exchange_request_id
+WHERE c.id = '72000000-0000-0000-0000-000000000001'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO notifications (id, recipient_id, actor_id, event_type, event_key, title, body,
+  exchange_request_id, conversation_id, created_at)
+SELECT '74000000-0000-0000-0000-000000000001', r.recipient_id, r.requester_id,
+  'EXCHANGE_REQUEST', 'exchange-request:70000000-0000-0000-0000-000000000001',
+  'Новий запит на обмін',
+  'Тарас Лисенко пропонує обмін: Photoshop ↔ Гітара.',
+  r.id, c.id, r.created_at
+FROM exchange_requests r
+JOIN conversations c ON c.exchange_request_id = r.id
+WHERE r.id = '70000000-0000-0000-0000-000000000001'
+ON CONFLICT (recipient_id, event_key) DO NOTHING;
+
+INSERT INTO notifications (id, recipient_id, actor_id, event_type, event_key, title, body,
+  exchange_request_id, conversation_id, message_id, created_at)
+SELECT '74000000-0000-0000-0000-000000000002', r.recipient_id, r.requester_id,
+  'CHAT_MESSAGE', 'chat-message:73000000-0000-0000-0000-000000000001',
+  'Нове повідомлення',
+  'Тарас Лисенко: Привіт! Можемо зустрітися біля корпусу в будні після пар і домовитися про перше заняття.',
+  r.id, c.id, m.id, m.created_at
+FROM exchange_requests r
+JOIN conversations c ON c.exchange_request_id = r.id
+JOIN messages m ON m.id = '73000000-0000-0000-0000-000000000001'
+WHERE r.id = '70000000-0000-0000-0000-000000000001'
+ON CONFLICT (recipient_id, event_key) DO NOTHING;

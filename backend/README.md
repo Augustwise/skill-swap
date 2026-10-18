@@ -100,7 +100,7 @@ for 40 minutes (NFR-08; `login_throttles`, migration `00002_auth.sql`).
 | ----------------- | ------- |
 | HTTP handlers: routes, DTOs, errors | `internal/api` |
 | Access and authentication | `internal/auth` |
-| Domain core and `IApplication` | `internal/core` (modules such as `internal/profile`) |
+| Domain core and `IApplication` | `internal/core` (`internal/profile`, `internal/discovery`, `internal/exchange`, `internal/communication`) |
 | Shared input checks (names, text length, UUID) | `internal/validate` |
 | Data access: `IData` / `ITransaction`, pgx v5, pgxpool | `internal/data` |
 | Mail adapter `IMailer` | `internal/mailer` |
@@ -401,6 +401,88 @@ on your own database: the seed does not reset an answered demo request.
 `TestAcceptRequestConcurrentlyAgainstPostgres` commits its data, because two parallel
 acceptances need separate transactions; it creates its own students and deletes them
 afterwards.
+
+## Private chat and notifications (Sprint 6, FR-08, FR-13)
+
+Migration `00006_communication.sql` adds integrity checks for request and exchange
+conversations, text message length (1–2000 characters), message authorship, and
+notification titles and idempotency keys. Back up a shared database before applying it
+(NFR-04):
+
+```bash
+pg_dump --format=custom --file=../backups/skillswap-before-00006.dump "$DATABASE_URL"
+go run ./cmd/db up
+go run ./cmd/db seed
+```
+
+The seed adds a private conversation (`72000000-0000-0000-0000-000000000001`), an
+initial chat message from Taras (`73000000-0000-0000-0000-000000000001`), and two
+unread notifications (`EXCHANGE_REQUEST` and `CHAT_MESSAGE`) for Olha on Taras's
+demo request.
+
+`CommunicationService` (`internal/communication`) manages private chats, messages, and
+in-app notifications. `ExchangeService` calls `CommunicationService` inside the same
+`WithinTx` transaction when a request is created, accepted, or declined:
+
+- Creating a request opens its `REQUEST` conversation for both participants and records
+  an `EXCHANGE_REQUEST` notification for the recipient (`event_key = exchange-request:{requestId}`).
+- Accepting a request links the existing request conversation to the created exchange
+  (`type = EXCHANGE`, preserving all messages sent while the request was pending) and
+  records a `REQUEST_RESPONSE` notification for the requester
+  (`event_key = request-response:{requestId}`).
+- Declining a request records a `REQUEST_RESPONSE` notification for the requester.
+- Sending a chat message locks both participants in canonical UUID order (LR2 5.2),
+  checks membership in `conversation_participants` and absence of blocks in either
+  direction, stores the message, updates `conversations.last_message_at`, and records a
+  `CHAT_MESSAGE` notification (`event_key = chat-message:{messageId}`) for the other
+  participant.
+
+Every notification uses `ON CONFLICT (recipient_id, event_key) DO NOTHING` (ARCH-08),
+so retries or concurrent acceptances never create duplicate notifications.
+
+### Conversation and chat routes (FR-08, NFR-02)
+
+| Method | Path | Session | Purpose |
+| ------ | ---- | ------- | ------- |
+| GET | `/api/v1/me/conversations?page=1` | cookie | List your conversations, newest activity first, 20 per page |
+| GET | `/api/v1/exchange-requests/{requestId}/conversation` | cookie | Open the conversation of an exchange request |
+| GET | `/api/v1/exchanges/{exchangeId}/conversation` | cookie | Open the conversation of an exchange |
+| GET | `/api/v1/conversations/{conversationId}` | cookie | Open a conversation by ID |
+| GET | `/api/v1/conversations/{conversationId}/messages?page=1&after=` | cookie | List messages chronologically or poll newer messages after `after` |
+| POST | `/api/v1/conversations/{conversationId}/messages` | cookie + CSRF | Send `{ "body" }` (1–2000 characters, plain text and links) |
+| POST | `/api/v1/conversations/{conversationId}/read` | cookie + CSRF | Mark incoming messages and chat notifications in this conversation as read |
+
+Each `conversation` object includes `partner` (the other student relative to the
+signed-in viewer), `requester`, `recipient`, `requesterTeaches`, `recipientTeaches`,
+`lastMessage`, `lastMessageAt`, `unreadCount`, and `canSend`.
+
+For an open chat, the frontend loads the initial history with
+`GET /api/v1/conversations/{conversationId}/messages` and then polls
+`GET /api/v1/conversations/{conversationId}/messages?after={lastMessageId}` every
+5 seconds (`pollIntervalSeconds: 5`) so only new messages are transferred (LR2 7.1).
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `conversation_not_found` | 404 | no conversation has this ID, or you are not in `conversation_participants` |
+| `request_not_found` | 404 | no request has this ID, or you do not take part in it |
+| `exchange_not_found` | 404 | no exchange has this ID, or you do not take part in it |
+| `conversation_blocked` | 409 | one participant blocked the other, or an account is suspended or deleted; existing history stays readable |
+| `validation_failed` | 422 | `body` is empty, over 2000 characters, or has control characters; or `after` is not a message in this conversation |
+
+### Notification routes (FR-13)
+
+| Method | Path | Session | Purpose |
+| ------ | ---- | ------- | ------- |
+| GET | `/api/v1/me/notifications?unreadOnly=false&page=1` | cookie | List notifications (newest first, 20 per page) and `unreadCount` |
+| POST | `/api/v1/me/notifications/{notificationId}/read` | cookie + CSRF | Mark one notification as read; returns `{ notification, unreadCount }` |
+| POST | `/api/v1/me/notifications/read-all` | cookie + CSRF | Mark all unread notifications as read; returns `{ markedCount, unreadCount }` |
+
+Each `notification` has `eventType` (`EXCHANGE_REQUEST`, `REQUEST_RESPONSE`,
+`CHAT_MESSAGE`, `SESSION_UPDATED`), `title`, `body`, `actor`, `isRead`, `readAt`,
+`requestId`, `exchangeId`, `conversationId`, `messageId`, `sessionId`, and `target`
+(`{ kind, id, requestId, exchangeId, conversationId, sessionId }`) so clicking a
+notification in the UI can open the corresponding request, exchange, conversation, or
+session directly.
 
 ## Run Mailpit on Windows without Docker
 

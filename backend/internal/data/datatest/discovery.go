@@ -49,7 +49,7 @@ func (m *Memory) SearchStudents(_ context.Context, viewerID string, filter data.
 	query := strings.ToLower(filter.Query)
 	var all []data.StudentCard
 	for id, c := range m.users {
-		if !visible(viewerID, id, c) || (filter.Format != "" && !slices.Contains(c.profile.Formats, filter.Format)) {
+		if !m.visible(viewerID, id, c) || (filter.Format != "" && !slices.Contains(c.profile.Formats, filter.Format)) {
 			continue
 		}
 		nameFits := strings.Contains(strings.ToLower(c.profile.FirstName+" "+c.profile.LastName), query)
@@ -86,13 +86,12 @@ func (m *Memory) SearchStudents(_ context.Context, viewerID string, filter data.
 	return append([]data.StudentCard{}, all[min(offset, len(all)):min(offset+limit, len(all))]...), len(all), nil
 }
 
-// The memory store has no hidden profiles or blocks; the PostgreSQL tests cover them.
-func visible(viewerID, id string, c *account) bool {
-	return id != viewerID && c.user.EmailVerified && c.user.Status == "ACTIVE"
+func (m *Memory) visible(viewerID, id string, c *account) bool {
+	return id != viewerID && c != nil && c.user.EmailVerified && c.user.Status == "ACTIVE" && !m.blocked(viewerID, id)
 }
 
 func (m *Memory) matchWith(viewer *account, id string, c *account) (data.Match, bool) {
-	if !visible(viewer.user.ID, id, c) {
+	if !m.visible(viewer.user.ID, id, c) {
 		return data.Match{}, false
 	}
 	match := data.Match{
@@ -142,7 +141,7 @@ func (m *Memory) StudentProfile(ctx context.Context, viewerID, studentID string)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	viewer, student := m.users[viewerID], m.users[studentID]
-	if viewer == nil || !visible(viewerID, studentID, student) {
+	if viewer == nil || !m.visible(viewerID, studentID, student) {
 		return data.StudentProfile{}, data.ErrNotFound
 	}
 	result := data.StudentProfile{Profile: profile, Reviews: []data.Review{}}

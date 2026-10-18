@@ -36,7 +36,7 @@ func (m *Memory) SetRequestStatus(requestID, status string) {
 func (m *Memory) RequestRecipient(ctx context.Context, senderID, recipientID string) (data.RequestRecipient, error) {
 	m.mu.Lock()
 	c, ok := m.users[recipientID]
-	shown := ok && visible(senderID, recipientID, c)
+	shown := ok && m.visible(senderID, recipientID, c)
 	settings := m.settings[recipientID]
 	m.mu.Unlock()
 	if !shown {
@@ -172,7 +172,6 @@ func (m *Memory) UpdateRequestStatus(_ context.Context, requestID, status, chang
 	return nil
 }
 
-// RequestIsCurrent has no blocks to check; the PostgreSQL tests cover them.
 func (m *Memory) RequestIsCurrent(_ context.Context, requestID string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -181,7 +180,8 @@ func (m *Memory) RequestIsCurrent(_ context.Context, requestID string) (bool, er
 		return false, nil
 	}
 	requester, recipient := m.users[r.Requester.UserID], m.users[r.Recipient.UserID]
-	if requester == nil || recipient == nil || requester.user.Status != "ACTIVE" || recipient.user.Status != "ACTIVE" {
+	if requester == nil || recipient == nil || requester.user.Status != "ACTIVE" || recipient.user.Status != "ACTIVE" ||
+		m.blocked(r.Requester.UserID, r.Recipient.UserID) {
 		return false, nil
 	}
 	_, ok1 := requester.skills[data.TeachingList][r.RequesterTeaches.SkillID]

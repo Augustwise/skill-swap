@@ -41,14 +41,25 @@ var (
 	ErrExchangeNotFound   = errors.New("exchange was not found or the user does not take part in it")
 )
 
+type ICommunication interface {
+	RecordRequestCreated(ctx context.Context, request data.ExchangeRequest) error
+	RecordRequestAccepted(ctx context.Context, request data.ExchangeRequest, exchangeID string) error
+	RecordRequestDeclined(ctx context.Context, request data.ExchangeRequest) error
+}
+
 type Service struct {
 	profiles  data.IProfileData
 	exchanges data.IExchangeData
 	tx        data.ITransaction
+	comm      ICommunication
 }
 
-func NewService(profiles data.IProfileData, exchanges data.IExchangeData, tx data.ITransaction) *Service {
-	return &Service{profiles: profiles, exchanges: exchanges, tx: tx}
+func NewService(profiles data.IProfileData, exchanges data.IExchangeData, tx data.ITransaction, comm ...ICommunication) *Service {
+	var c ICommunication
+	if len(comm) > 0 {
+		c = comm[0]
+	}
+	return &Service{profiles: profiles, exchanges: exchanges, tx: tx, comm: c}
 }
 
 type NewRequest struct {
@@ -102,7 +113,13 @@ func (s *Service) CreateRequest(ctx context.Context, userID string, in NewReques
 			return err
 		}
 		created, err = s.exchanges.RequestByID(ctx, id)
-		return err
+		if err != nil {
+			return err
+		}
+		if s.comm != nil {
+			return s.comm.RecordRequestCreated(ctx, created)
+		}
+		return nil
 	})
 	return created, err
 }
@@ -194,7 +211,13 @@ func (s *Service) answerRequest(ctx context.Context, userID, requestID string, a
 			return ErrRequestNotPending
 		}
 		answered, err = s.exchanges.RequestByID(ctx, request.ID)
-		return err
+		if err != nil {
+			return err
+		}
+		if status == data.RequestDeclined && s.comm != nil {
+			return s.comm.RecordRequestDeclined(ctx, answered)
+		}
+		return nil
 	})
 	return answered, err
 }
@@ -235,8 +258,13 @@ func (s *Service) AcceptRequest(ctx context.Context, userID, requestID string) (
 		if accepted.Request, err = s.exchanges.RequestByID(ctx, request.ID); err != nil {
 			return err
 		}
-		accepted.Exchange, err = s.exchanges.ExchangeByID(ctx, accepted.Request.ExchangeID)
-		return err
+		if accepted.Exchange, err = s.exchanges.ExchangeByID(ctx, accepted.Request.ExchangeID); err != nil {
+			return err
+		}
+		if s.comm != nil {
+			return s.comm.RecordRequestAccepted(ctx, accepted.Request, accepted.Exchange.ID)
+		}
+		return nil
 	})
 	return accepted, err
 }
