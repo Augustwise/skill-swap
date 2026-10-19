@@ -66,7 +66,7 @@ open the exact lesson; an active exchange chat links to its lesson plan.
 ## Verification
 
 Before every push: frontend unit tests, ESLint, Prettier and production build.
-Final frontend suite: 50 tests. `go test ./...` also passes. PostgreSQL integration tests
+Frontend unit suite: 52 tests. `go test ./...` also passes. PostgreSQL integration tests
 require `TEST_DATABASE_URL`; it was not configured for this run.
 
 Browser checks use isolated API fixtures, without modifying the user's database:
@@ -82,3 +82,16 @@ Browser checks use isolated API fixtures, without modifying the user's database:
 
 Visual QA follows Figma's exchange plan and existing application tokens. Live two-account
 acceptance against a prepared PostgreSQL database remains an integration-environment check.
+
+## Refresh and return regression checks
+
+The exchange page loads its conditions, progress, nearest meeting and lesson plan from
+one `/exchanges/{id}/sessions` response. The plan's refresh button reloads all these cards.
+Lesson links retain a validated `from` URL, including schedule status, dates and page.
+The same URL survives session-expiry links in planning and cancellation dialogs.
+
+Run `npm run build`, then `npx playwright install chromium` (once) and `npm run test:browser`.
+With Chrome already installed, use `$env:PLAYWRIGHT_CHANNEL="chrome"` in PowerShell instead
+of installing Chromium. The tests start the production app on loopback port 3100 and use
+isolated API fixtures. They verify a joint refresh, API failure/retry and cancellation
+followed by return to the same filtered schedule.

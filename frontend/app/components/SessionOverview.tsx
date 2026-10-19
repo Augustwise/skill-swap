@@ -22,8 +22,13 @@ import { SessionFacts } from "./SessionFacts";
 import { SkeletonDetail } from "./Skeleton";
 import { useApiQuery } from "./useApiQuery";
 
-function SessionView({ sessionId, session, profile }: AppContext & { sessionId: string }) {
-  const path = sessionHref(sessionId);
+function SessionView({
+  sessionId,
+  session,
+  profile,
+  from,
+}: AppContext & { sessionId: string; from?: string }) {
+  const path = sessionHref(sessionId, from);
   const result = useApiQuery(path, (signal) => sessionDetails(sessionId, signal));
   const lesson = result.state.status === "ready" ? result.state.data.session : null;
   const exchange = useApiQuery(lesson?.exchangeId ?? null, (signal) =>
@@ -77,9 +82,9 @@ function SessionView({ sessionId, session, profile }: AppContext & { sessionId: 
     >
       <Link
         className="discovery-back"
-        href={lesson ? exchangeHref(lesson.exchangeId) : "/requests"}
+        href={from ?? (lesson ? exchangeHref(lesson.exchangeId) : "/schedule")}
       >
-        ← До обміну
+        ← {from?.startsWith("/schedule") ? "До розкладу" : from ? "Назад" : "До обміну"}
       </Link>
       {notice && (
         <p className="profile-success" role="status">
@@ -195,6 +200,7 @@ function SessionView({ sessionId, session, profile }: AppContext & { sessionId: 
       {cancelling && lesson && (
         <SessionCancellation
           lesson={lesson}
+          path={path}
           csrfToken={session.csrfToken}
           onClose={() => setCancelling(false)}
           onSaved={() => changed("Заняття скасовано. Історію збережено.")}
@@ -203,6 +209,7 @@ function SessionView({ sessionId, session, profile }: AppContext & { sessionId: 
       {planning && lesson && (
         <SessionForm
           lesson={lesson}
+          path={path}
           csrfToken={session.csrfToken}
           onClose={() => setPlanning(false)}
           onSaved={() => changed("Пропозицію надіслано. Очікуємо погодження партнера.")}
@@ -212,10 +219,10 @@ function SessionView({ sessionId, session, profile }: AppContext & { sessionId: 
   );
 }
 
-export function SessionOverview({ sessionId }: { sessionId: string }) {
+export function SessionOverview({ sessionId, from }: { sessionId: string; from?: string }) {
   return (
-    <AppGate page="lesson" path={sessionHref(sessionId)}>
-      {(context) => <SessionView {...context} sessionId={sessionId} />}
+    <AppGate page="lesson" path={sessionHref(sessionId, from)}>
+      {(context) => <SessionView {...context} sessionId={sessionId} from={from} />}
     </AppGate>
   );
 }

@@ -1,5 +1,5 @@
 import { AuthError, authRequest, writeRequest } from "./AuthApi";
-import { isUuid } from "./AppRoutes";
+import { isUuid, safeAppPath } from "./AppRoutes";
 import type { LessonFormat, Person, ResultPage, StudentSummary } from "./DiscoveryApi";
 import type { Exchange } from "./ExchangeApi";
 
@@ -61,7 +61,10 @@ export type SessionDraft = {
   meetingUrl: string;
 };
 
-export const sessionHref = (id: string) => `/sessions/${encodeURIComponent(id)}`;
+export function sessionHref(id: string, from?: string) {
+  const path = `/sessions/${encodeURIComponent(id)}`;
+  return from ? `${path}?from=${encodeURIComponent(safeAppPath(from, "/schedule"))}` : path;
+}
 
 export function exchangeSessions(id: string, signal?: AbortSignal) {
   if (!isUuid(id)) return Promise.reject(new AuthError(404, "exchange_not_found"));

@@ -88,13 +88,13 @@ function ScheduleView({ profile, session, filters }: AppContext & { filters: Sch
               {data.items.map((lesson) => (
                 <li className="account-card session-detail" key={lesson.id}>
                   <h2>
-                    <Link className="exchange-person__link" href={sessionHref(lesson.id)}>
+                    <Link className="exchange-person__link" href={sessionHref(lesson.id, path)}>
                       {lesson.title}
                     </Link>
                   </h2>
                   <p className="profile-hint">Партнер: {fullName(lesson.partner)}</p>
                   <SessionFacts lesson={lesson} timezone={data.timezone} />
-                  <Link className="dashboard-button" href={sessionHref(lesson.id)}>
+                  <Link className="dashboard-button" href={sessionHref(lesson.id, path)}>
                     {lesson.canRespondToProposal ? "Переглянути пропозицію" : "Деталі заняття"} →
                   </Link>
                 </li>

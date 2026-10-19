@@ -31,7 +31,7 @@ export function UpcomingLessons() {
           <ul className="session-list">
             {data.items.slice(0, 3).map((lesson) => (
               <li key={lesson.id}>
-                <Link className="exchange-person__link" href={sessionHref(lesson.id)}>
+                <Link className="exchange-person__link" href={sessionHref(lesson.id, "/main")}>
                   {lesson.title}
                 </Link>
                 {lesson.startsAt && (

@@ -187,6 +187,33 @@ test("schedule filters preserve status, dates and pagination in shareable URLs",
   );
 });
 
+test("lesson links retain schedule filters and pagination through login and return", () => {
+  for (const status of schedule.scheduleStatuses) {
+    const from = schedule.scheduleHref({ status, upcoming: false, page: 3 });
+    const href = api.sessionHref(id, from);
+    const url = new URL(href, "http://localhost");
+    assert.equal(url.pathname, `/sessions/${id}`);
+    assert.equal(url.searchParams.get("from"), from);
+    assert.equal(routes.safeAppPath(href, "/main"), href);
+    const login = new URL(routes.loginHref(href), "http://localhost");
+    assert.equal(login.searchParams.get("next"), href);
+  }
+  assert.equal(api.sessionHref(id), `/sessions/${id}`);
+  for (const from of ["/main", `/exchanges/${id}`]) {
+    assert.equal(
+      new URL(api.sessionHref(id, from), "http://localhost").searchParams.get("from"),
+      from,
+    );
+  }
+});
+
+test("lesson return paths cannot redirect to external or unknown pages", () => {
+  for (const from of ["https://evil.example", "//evil.example", "/\\evil.example", "/admin"]) {
+    const href = api.sessionHref(id, from);
+    assert.equal(new URL(href, "http://localhost").searchParams.get("from"), "/schedule");
+  }
+});
+
 test("schedule uses server pagination and filters without client-side exclusions", async () => {
   const original = globalThis.fetch;
   let request;

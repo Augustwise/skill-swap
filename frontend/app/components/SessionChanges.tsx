@@ -9,7 +9,6 @@ import { fullName } from "./DiscoveryFormat";
 import {
   cancelSession,
   sessionErrorMessage,
-  sessionHref,
   type LessonSession,
   type SessionProposal,
 } from "./SessionApi";
@@ -75,11 +74,13 @@ export function SessionCancellation({
   csrfToken,
   onClose,
   onSaved,
+  path,
 }: {
   lesson: LessonSession;
   csrfToken: string;
   onClose: () => void;
   onSaved: () => void;
+  path: string;
 }) {
   const id = useId();
   const busy = useRef(false);
@@ -141,7 +142,7 @@ export function SessionCancellation({
           <p className="exchange-error" role="alert">
             {sessionErrorMessage(error)}{" "}
             {error instanceof AuthError && error.status === 401 && (
-              <Link href={loginHref(sessionHref(lesson.id))}>Увійти</Link>
+              <Link href={loginHref(path)}>Увійти</Link>
             )}
           </p>
         )}
