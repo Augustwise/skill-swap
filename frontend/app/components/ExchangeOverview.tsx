@@ -12,15 +12,9 @@ import { DiscoveryError } from "./DiscoveryError";
 import { countLabel, formatList } from "./DiscoveryFormat";
 import { ExchangeDirections, PartnerHeading, StatusBadge } from "./ExchangeCards";
 import { ExchangeLessons } from "./ExchangeLessons";
-import { sessionHref } from "./SessionApi";
+import { exchangeSessions, sessionHref } from "./SessionApi";
 import { meetingLink } from "./SessionTime";
-import {
-  exchangeDetails,
-  exchangeHref,
-  requestHref,
-  requestPerspective,
-  type Exchange,
-} from "./ExchangeApi";
+import { exchangeHref, requestHref, requestPerspective, type Exchange } from "./ExchangeApi";
 import { formatDateTime, sessionForms, totalTime } from "./ExchangeFormat";
 import { SkeletonDetail } from "./Skeleton";
 import { useApiQuery } from "./useApiQuery";
@@ -81,7 +75,10 @@ function NextStepsCard({ exchange }: { exchange: Exchange }) {
       <h2 id="exchange-next-title">Найближче заняття</h2>
       {next ? (
         <div className="exchange-next">
-          <Link className="exchange-person__link" href={sessionHref(next.id)}>
+          <Link
+            className="exchange-person__link"
+            href={sessionHref(next.id, exchangeHref(exchange.id))}
+          >
             <strong>{next.title}</strong>
           </Link>
           <p>
@@ -119,8 +116,9 @@ function ExchangeView({
   started,
 }: AppContext & { exchangeId: string; started: boolean }) {
   const path = exchangeHref(exchangeId);
-  const result = useApiQuery(path, (signal) => exchangeDetails(exchangeId, signal));
-  const exchange = result.state.status === "ready" ? result.state.data : null;
+  const result = useApiQuery(path, (signal) => exchangeSessions(exchangeId, signal));
+  const data = result.state.status === "ready" ? result.state.data : null;
+  const exchange = data?.exchange;
   const view = exchange ? requestPerspective(exchange, profile.id) : null;
 
   return (
@@ -173,7 +171,7 @@ function ExchangeView({
           }
         />
       )}
-      {exchange && view && (
+      {data && exchange && view && (
         <div className="profile-columns">
           <div className="profile-sections">
             <section className="account-card" aria-labelledby="exchange-partner">
@@ -234,7 +232,7 @@ function ExchangeView({
                 <p className="profile-biography">{exchange.cancellationReason}</p>
               </section>
             )}
-            <ExchangeLessons exchangeId={exchangeId} />
+            <ExchangeLessons exchange={exchange} lessons={data.items} onRefresh={result.retry} />
           </div>
           <aside className="profile-rail" aria-label="Прогрес і заняття">
             <ProgressCard exchange={exchange} viewerId={profile.id} />
