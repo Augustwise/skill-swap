@@ -349,7 +349,7 @@ test("notification filters round-trip through the URL", () => {
   );
 });
 
-test("a notification opens its request, exchange or chat", () => {
+test("a notification opens its request, exchange, chat or lesson", () => {
   const target = (kind, targetId, extra = {}) => ({
     target: {
       kind,
@@ -375,9 +375,16 @@ test("a notification opens its request, exchange or chat", () => {
   );
   assert.equal(
     notifications.notificationHref(target("SESSION", notificationId, { exchangeId })),
+    `/sessions/${notificationId}`,
+  );
+  assert.equal(
+    notifications.notificationHref(target("SESSION", notificationId)),
+    `/sessions/${notificationId}`,
+  );
+  assert.equal(
+    notifications.notificationHref(target("SESSION", "invalid", { exchangeId })),
     `/exchanges/${exchangeId}`,
   );
-  assert.equal(notifications.notificationHref(target("SESSION", notificationId)), "/notifications");
   assert.equal(notifications.notificationHref(target("CONVERSATION", "../x")), "/notifications");
   assert.equal(notifications.notificationHref(target("UNKNOWN", requestId)), "/notifications");
 });

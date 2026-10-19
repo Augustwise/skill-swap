@@ -372,5 +372,11 @@ export async function exchangeDetails(id: string, signal?: AbortSignal) {
 }
 
 export function activeExchanges(signal?: AbortSignal) {
-  return authRequest<ExchangePage>("me/exchanges?status=ACTIVE", { signal });
+  return listActiveExchanges(1, signal);
+}
+
+export function listActiveExchanges(page = 1, signal?: AbortSignal) {
+  const query = new URLSearchParams({ status: "ACTIVE" });
+  if (page > 1) query.set("page", String(page));
+  return authRequest<ExchangePage>(`me/exchanges?${query}`, { signal });
 }

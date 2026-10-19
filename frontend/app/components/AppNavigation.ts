@@ -1,6 +1,7 @@
 import type { DashboardIconName } from "./DashboardIcon";
 
-export type AppSection = "main" | "search" | "matches" | "requests" | "messages" | "profile";
+export type AppSection =
+  "main" | "search" | "matches" | "requests" | "exchanges" | "messages" | "schedule" | "profile";
 export type SkeletonLayout =
   | "dashboard"
   | "search"
@@ -21,9 +22,9 @@ export const navigation: {
   { label: "Пошук навичок", icon: "nav-search", section: "search", href: "/search" },
   { label: "Мої збіги", icon: "nav-sparkles", section: "matches", href: "/matches" },
   { label: "Запити на обмін", icon: "inbox", section: "requests", href: "/requests" },
-  { label: "Активні обміни", icon: "nav-swap" },
+  { label: "Активні обміни", icon: "nav-swap", section: "exchanges", href: "/exchanges" },
   { label: "Повідомлення", icon: "nav-chat", section: "messages", href: "/messages" },
-  { label: "Календар", icon: "calendar" },
+  { label: "Календар", icon: "calendar", section: "schedule", href: "/schedule" },
 ];
 
 // One title per page, shared by the page itself and its loading skeleton.
@@ -71,11 +72,32 @@ export const pageShells = {
     layout: "detail",
   },
   exchange: {
-    section: undefined,
+    section: "exchanges",
     title: "Обмін навичками",
     subtitle: "Погоджені умови та прогрес обміну",
     subject: "обмін",
     layout: "detail",
+  },
+  exchanges: {
+    section: "exchanges",
+    title: "Активні обміни",
+    subtitle: "Погоджені умови, прогрес і найближчі заняття",
+    subject: "активні обміни",
+    layout: "requests",
+  },
+  lesson: {
+    section: undefined,
+    title: "Заняття",
+    subtitle: "Тема, час і погодження зустрічі",
+    subject: "заняття",
+    layout: "detail",
+  },
+  schedule: {
+    section: "schedule",
+    title: "Розклад",
+    subtitle: "Твої зустрічі у хронологічному порядку",
+    subject: "розклад",
+    layout: "requests",
   },
   messages: {
     section: "messages",

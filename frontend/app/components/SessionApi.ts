@@ -89,6 +89,22 @@ export function decideSession(id: string, action: "accept" | "decline", csrfToke
   );
 }
 
+// Check the proposal again before acting on a page that may have been open for a while.
+export async function decideCurrentSession(
+  lesson: LessonSession,
+  action: "accept" | "decline",
+  csrfToken: string,
+) {
+  const latest = await sessionDetails(lesson.id);
+  if (
+    !latest.session.canRespondToProposal ||
+    latest.session.activeProposal?.id !== lesson.activeProposal?.id
+  ) {
+    throw new AuthError(409, "session_not_proposed");
+  }
+  return decideSession(lesson.id, action, csrfToken);
+}
+
 export function cancelSession(id: string, reason: string, csrfToken: string) {
   return writeRequest<{ session: LessonSession }>(
     `sessions/${encodeURIComponent(id)}/cancel`,

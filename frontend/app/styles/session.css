@@ -1,0 +1,159 @@
+.session-detail,
+.session-facts,
+.session-form,
+.session-form fieldset {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.session-form fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.session-dialog {
+  width: min(680px, calc(100vw - 32px));
+}
+.session-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+.session-field :is(input, textarea, select) {
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  color: var(--foreground);
+  font: inherit;
+}
+.session-field textarea {
+  resize: vertical;
+}
+.session-field [aria-invalid="true"] {
+  border-color: #cf304d;
+}
+.exchange-field__error {
+  color: #9f2940;
+  font-size: 13px;
+}
+.session-field :is(input, textarea, select):focus-visible {
+  outline: 3px solid #b9afff;
+  outline-offset: 2px;
+}
+.session-time-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.session-agreement {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #ddd6ff;
+  border-radius: 14px;
+  background: #faf9ff;
+}
+.session-status {
+  justify-self: start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef0f7;
+  color: #4b5478;
+  font-size: 12px;
+}
+.session-facts {
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.session-facts > a,
+.session-plan__body > .dashboard-button {
+  justify-self: start;
+}
+.session-history {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 0;
+  list-style: none;
+}
+.session-list {
+  display: grid;
+  gap: 16px;
+  padding: 0;
+  list-style: none;
+}
+.session-list > .account-card {
+  display: grid;
+  gap: 16px;
+}
+.session-plan {
+  margin-top: 20px;
+}
+.session-plan > li {
+  display: flex;
+  align-items: start;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.session-plan__body {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+.session-plan h3 {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.session-number {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--purple-soft);
+  color: var(--purple);
+  font-size: 12px;
+}
+.session-history li {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow-wrap: anywhere;
+}
+.session-status--proposed {
+  background: #fff5db;
+  color: #805b08;
+}
+.session-status--scheduled {
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+}
+.session-status--completed {
+  background: #e4f8ef;
+  color: #17613d;
+}
+.session-status--cancelled {
+  background: #fff0f2;
+  color: #9f2940;
+}
+@media (max-width: 600px) {
+  .session-time-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

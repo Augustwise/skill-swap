@@ -288,6 +288,7 @@ test("request and exchange pages are allowed as return paths", () => {
   );
   assert.equal(routes.safeAppPath(`/requests/${requestId}`, "/main"), `/requests/${requestId}`);
   assert.equal(routes.safeAppPath(`/exchanges/${exchangeId}`, "/main"), `/exchanges/${exchangeId}`);
-  for (const unsafe of ["/requests/not-a-uuid", `/exchanges/${exchangeId}/x`, "/exchanges"])
+  assert.equal(routes.safeAppPath("/exchanges", "/main"), "/exchanges");
+  for (const unsafe of ["/requests/not-a-uuid", `/exchanges/${exchangeId}/x`])
     assert.equal(routes.safeAppPath(unsafe, "/main"), "/main", unsafe);
 });

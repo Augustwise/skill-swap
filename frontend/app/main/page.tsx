@@ -3,6 +3,7 @@ import { Dashboard } from "../components/Dashboard";
 import "../styles/dashboard.css";
 import "../styles/discovery.css";
 import "../styles/exchange.css";
+import "../styles/session.css";
 
 export const metadata: Metadata = {
   title: "Головна — SkillSwap",
