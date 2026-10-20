@@ -1,0 +1,54 @@
+.completion-panel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--purple-soft);
+  overflow-wrap: anywhere;
+}
+
+.completion-panel :is(h3, p),
+.completion-confirmations {
+  margin: 0;
+}
+
+.completion-confirmations {
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.completion-confirmations > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.completion-confirmations dd {
+  margin: 0;
+  color: var(--muted);
+}
+
+.completion-confirmations [data-confirmed="true"] dd {
+  color: #16704a;
+  font-weight: 600;
+}
+
+.completion-panel > .dashboard-button {
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
+}
+
+@media (max-width: 480px) {
+  .completion-panel {
+    padding: 16px;
+  }
+
+  .completion-panel > .dashboard-button {
+    width: 100%;
+  }
+}
