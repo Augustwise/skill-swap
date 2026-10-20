@@ -80,9 +80,9 @@ export const pageShells = {
   },
   exchanges: {
     section: "exchanges",
-    title: "Активні обміни",
-    subtitle: "Погоджені умови, прогрес і найближчі заняття",
-    subject: "активні обміни",
+    title: "Мої обміни",
+    subtitle: "Активне навчання та історія завершених і скасованих обмінів",
+    subject: "обміни",
     layout: "requests",
   },
   lesson: {

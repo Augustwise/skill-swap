@@ -20,6 +20,7 @@ import { formatDateTime, formatRelative, sessionForms } from "./ExchangeFormat";
 import { RequestActions } from "./RequestActions";
 import { SkeletonPanelRows } from "./Skeleton";
 import { useApiQuery, type QueryState } from "./useApiQuery";
+import { completionMessage } from "./CompletionApi";
 
 const shownRequests = 3;
 const shownExchanges = 2;
@@ -153,7 +154,12 @@ export function ExchangeRow({ exchange, viewerId }: { exchange: Exchange; viewer
           <Icon name="clock" />
           {exchange.nextSession
             ? formatDateTime(exchange.nextSession.startsAt)
-            : "Заняття ще не заплановані"}
+            : exchange.status === "COMPLETED" ||
+                exchange.status === "CANCELLED" ||
+                exchange.completionConfirmedByMe ||
+                exchange.canConfirmCompletion
+              ? completionMessage(exchange, "exchange")
+              : "Заняття ще не заплановані"}
         </p>
       </div>
     </article>
