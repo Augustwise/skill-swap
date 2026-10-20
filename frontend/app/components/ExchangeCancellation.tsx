@@ -43,8 +43,8 @@ export function ExchangeCancellation({
       className="session-dialog"
     >
       <form className="session-form" onSubmit={submit} noValidate>
-        <label className="session-field" htmlFor={id}>
-          Причина скасування
+        <div className="session-field">
+          <label htmlFor={id}>Причина скасування</label>
           <textarea
             id={id}
             rows={4}
@@ -59,7 +59,7 @@ export function ExchangeCancellation({
             aria-invalid={Boolean(invalid)}
             aria-describedby={`${id}-hint${invalid ? ` ${id}-error` : ""}`}
           />
-        </label>
+        </div>
         <p className="profile-hint" id={`${id}-hint`}>
           {Array.from(reason.trim()).length} / 500 символів. Причину побачить партнер.
         </p>

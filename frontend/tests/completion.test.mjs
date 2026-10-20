@@ -39,7 +39,14 @@ test("exchange completion explains the two-direction plan and mutual decision", 
 });
 
 test("cancellation validates Unicode length, whitespace and control characters", () => {
-  for (const invalid of ["", "  \n ", "я".repeat(501), "🙂".repeat(501), "bad\u0000reason"]) {
+  for (const invalid of [
+    "",
+    "  \n ",
+    "я".repeat(501),
+    "🙂".repeat(501),
+    "bad\u0000reason",
+    "bad\u0085reason",
+  ]) {
     assert.ok(api.cancellationError(invalid));
   }
   for (const valid of [" Змінився розклад ", "🙂".repeat(500), "Причина\nДругий рядок"]) {
