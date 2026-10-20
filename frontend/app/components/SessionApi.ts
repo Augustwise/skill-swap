@@ -42,6 +42,11 @@ export type LessonSession = {
   scheduleConfirmedByPartner: boolean;
   canRespondToProposal: boolean;
   canCancel: boolean;
+  completionConfirmedByMe: boolean;
+  completionConfirmedByPartner: boolean;
+  canConfirmCompletion: boolean;
+  completedAt: string | null;
+  cancelledAt: string | null;
   cancellationReason: string | null;
 };
 export type SessionDetails = { session: LessonSession; proposals: SessionProposal[] };

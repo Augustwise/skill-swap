@@ -55,6 +55,8 @@ export type ExchangeProgress = {
   draftSessions: number;
   cancelledSessions: number;
   percent: number;
+  awaitingConfirmationSessions: number;
+  planCompleted: boolean;
 };
 export type NextSession = {
   id: string;
@@ -77,6 +79,10 @@ export type Exchange = {
   recipientTeaches: RequestTerms;
   progress: ExchangeProgress;
   nextSession: NextSession | null;
+  completionConfirmedByMe: boolean;
+  completionConfirmedByPartner: boolean;
+  canConfirmCompletion: boolean;
+  canCancel: boolean;
   startedAt: string | null;
   completedAt: string | null;
   cancelledAt: string | null;
