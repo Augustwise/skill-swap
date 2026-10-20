@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -187,16 +186,6 @@ func (p *Postgres) SearchStudents(ctx context.Context, viewerID string, filter S
 
 var likeEscaper = strings.NewReplacer(`\`, `\`, `%`, `\%`, `_`, `\_`)
 
-type Review struct {
-	ID              string
-	AuthorID        string
-	AuthorFirstName string
-	AuthorLastName  string
-	Rating          int
-	Comment         string
-	CreatedAt       time.Time
-}
-
 type StudentProfile struct {
 	Profile
 	AverageRating float64
@@ -210,39 +199,22 @@ type StudentProfile struct {
 const latestReviews = 20
 
 func (p *Postgres) StudentProfile(ctx context.Context, viewerID, studentID string) (StudentProfile, error) {
-	var visible bool
-	err := p.conn(ctx).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users c WHERE c.id = $2 AND `+visibleStudent+`)`,
-		viewerID, studentID).Scan(&visible)
+	visible, err := p.StudentVisible(ctx, viewerID, studentID)
 	if err != nil {
 		return StudentProfile{}, err
 	}
 	if !visible {
 		return StudentProfile{}, ErrNotFound
 	}
-	result := StudentProfile{Reviews: []Review{}}
+	var result StudentProfile
 	if result.Profile, err = p.ProfileByUserID(ctx, studentID); err != nil {
 		return StudentProfile{}, err
 	}
-
-	rows, err := p.conn(ctx).Query(ctx, `SELECT r.id, r.author_id, a.first_name, a.last_name, r.rating,
-			COALESCE(r.comment, ''), r.created_at, avg(r.rating) OVER ()::float8, count(*) OVER ()
-		FROM exchange_reviews r
-		JOIN users a ON a.id = r.author_id
-		WHERE r.recipient_id = $1
-		ORDER BY r.created_at DESC, r.id
-		LIMIT $2`, studentID, latestReviews)
+	reviews, summary, err := p.UserReviews(ctx, studentID, latestReviews, 0)
 	if err != nil {
 		return StudentProfile{}, err
 	}
-	result.Reviews, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Review, error) {
-		var r Review
-		err := row.Scan(&r.ID, &r.AuthorID, &r.AuthorFirstName, &r.AuthorLastName, &r.Rating, &r.Comment,
-			&r.CreatedAt, &result.AverageRating, &result.ReviewCount)
-		return r, err
-	})
-	if err != nil {
-		return StudentProfile{}, err
-	}
+	result.Reviews, result.AverageRating, result.ReviewCount = reviews, summary.AverageRating, summary.ReviewCount
 
 	var match Match
 	err = p.conn(ctx).QueryRow(ctx, mutualMatches+`SELECT ARRAY(SELECT f.format::text `+usableFormat+` ORDER BY f.format),

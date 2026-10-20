@@ -166,7 +166,9 @@ type Exchange struct {
 	Progress         ExchangeProgress
 	NextSession      *NextSessionSummary
 	// ConfirmedUserIDs are the participants who confirmed that the exchange is finished.
-	ConfirmedUserIDs   []string
+	ConfirmedUserIDs []string
+	// ReviewAuthorIDs are the participants who have reviewed their partner.
+	ReviewAuthorIDs    []string
 	StartedAt          *time.Time
 	CompletedAt        *time.Time
 	CancelledAt        *time.Time
@@ -507,12 +509,18 @@ const exchangeConfirmedUsers = `COALESCE((
 	WHERE c.exchange_id = e.id
 ), ARRAY[]::text[])`
 
+const exchangeReviewAuthors = `COALESCE((
+	SELECT array_agg(r.author_id::text ORDER BY r.created_at ASC, r.author_id ASC)
+	FROM exchange_reviews r
+	WHERE r.exchange_id = e.id
+), ARRAY[]::text[])`
+
 var exchangeColumns = `e.id, COALESCE(e.source_request_id::text, ''), e.status::text,
 	e.format::text, e.total_sessions, ` + participantsCanInteract + `,
 	` + requestParty("ua") + `, ` + requestParty("ub") + `,
 	` + commitmentTerms("e.user_a_id") + `, ` + commitmentTerms("e.user_b_id") + `,
 	` + exchangeProgressObject + `, ` + exchangeNextSessionObject + `, ` + exchangeConfirmedUsers + `,
-	e.started_at, e.completed_at, e.cancelled_at, COALESCE(e.cancellation_reason, ''),
+	` + exchangeReviewAuthors + `, e.started_at, e.completed_at, e.cancelled_at, COALESCE(e.cancellation_reason, ''),
 	e.created_at, e.updated_at`
 
 const exchangeFrom = `
@@ -523,7 +531,7 @@ const exchangeFrom = `
 func (e *Exchange) scanTargets(extra ...any) []any {
 	return append([]any{&e.ID, &e.RequestID, &e.Status, &e.Format, &e.TotalSessions, &e.CanInteract,
 		&e.Requester, &e.Recipient, &e.RequesterTeaches, &e.RecipientTeaches,
-		&e.Progress, &e.NextSession, &e.ConfirmedUserIDs,
+		&e.Progress, &e.NextSession, &e.ConfirmedUserIDs, &e.ReviewAuthorIDs,
 		&e.StartedAt, &e.CompletedAt, &e.CancelledAt, &e.CancellationReason,
 		&e.CreatedAt, &e.UpdatedAt}, extra...)
 }

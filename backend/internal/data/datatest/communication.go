@@ -347,6 +347,7 @@ func (m *Memory) CreateNotification(_ context.Context, in data.NewNotification) 
 		ConversationID: in.ConversationID,
 		MessageID:      in.MessageID,
 		SessionID:      in.SessionID,
+		ReviewID:       in.ReviewID,
 		CreatedAt:      now,
 	}
 	if a, ok := m.users[in.ActorID]; ok {

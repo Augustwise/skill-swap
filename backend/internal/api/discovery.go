@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -153,14 +152,6 @@ func (a *API) discoveryError(w http.ResponseWriter, err error) {
 	}
 }
 
-type reviewResponse struct {
-	ID        string    `json:"id"`
-	Author    person    `json:"author"`
-	Rating    int       `json:"rating"`
-	Comment   string    `json:"comment"`
-	CreatedAt time.Time `json:"createdAt"`
-}
-
 type person struct {
 	ID        string `json:"id"`
 	FirstName string `json:"firstName"`
@@ -197,17 +188,8 @@ func toStudentProfile(s data.StudentProfile) studentProfileResponse {
 		ID: p.ID, FirstName: p.FirstName, LastName: p.LastName, University: p.University, Faculty: p.Faculty,
 		Course: p.Course, City: p.City, Bio: p.Bio, Formats: p.Formats,
 		TeachingSkills: p.TeachingSkills, LearningSkills: p.LearningSkills,
-		ReviewCount: s.ReviewCount, Reviews: make([]reviewResponse, 0, len(s.Reviews)),
-	}
-	if s.ReviewCount > 0 {
-		average := math.Round(s.AverageRating*100) / 100
-		response.AverageRating = &average
-	}
-	for _, r := range s.Reviews {
-		response.Reviews = append(response.Reviews, reviewResponse{
-			ID: r.ID, Author: person{ID: r.AuthorID, FirstName: r.AuthorFirstName, LastName: r.AuthorLastName},
-			Rating: r.Rating, Comment: r.Comment, CreatedAt: r.CreatedAt,
-		})
+		AverageRating: averageRating(data.RatingSummary{AverageRating: s.AverageRating, ReviewCount: s.ReviewCount}),
+		ReviewCount:   s.ReviewCount, Reviews: toReviews(s.Reviews),
 	}
 	if s.Match != nil {
 		response.Mutual = &mutualDetails{

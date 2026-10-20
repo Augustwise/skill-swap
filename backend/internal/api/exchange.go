@@ -212,6 +212,9 @@ type exchangeResponse struct {
 	CompletionConfirmedByPartner bool                     `json:"completionConfirmedByPartner"`
 	CanConfirmCompletion         bool                     `json:"canConfirmCompletion"`
 	CanCancel                    bool                     `json:"canCancel"`
+	ReviewedByMe                 bool                     `json:"reviewedByMe"`
+	ReviewedByPartner            bool                     `json:"reviewedByPartner"`
+	CanReview                    bool                     `json:"canReview"`
 	StartedAt                    *time.Time               `json:"startedAt"`
 	CompletedAt                  *time.Time               `json:"completedAt"`
 	CancelledAt                  *time.Time               `json:"cancelledAt"`
@@ -234,6 +237,7 @@ func toExchange(e data.Exchange, viewerID ...string) exchangeResponse {
 	confirmedByMe := viewer != "" && slices.Contains(e.ConfirmedUserIDs, viewer)
 	active := e.Status == data.ExchangeActive
 	canConfirm := active && e.Progress.PlanCompleted() && e.CanInteract && !confirmedByMe
+	reviewedByMe := viewer != "" && slices.Contains(e.ReviewAuthorIDs, viewer)
 	response := exchangeResponse{
 		ID: e.ID, Status: e.Status, Format: e.Format, TotalSessions: e.TotalSessions,
 		Partner:   partner,
@@ -258,6 +262,9 @@ func toExchange(e data.Exchange, viewerID ...string) exchangeResponse {
 		CompletionConfirmedByPartner: slices.Contains(e.ConfirmedUserIDs, partnerID),
 		CanConfirmCompletion:         canConfirm,
 		CanCancel:                    active,
+		ReviewedByMe:                 reviewedByMe,
+		ReviewedByPartner:            slices.Contains(e.ReviewAuthorIDs, partnerID),
+		CanReview:                    viewer != "" && e.Status == data.ExchangeCompleted && !reviewedByMe,
 		StartedAt:                    e.StartedAt, CompletedAt: e.CompletedAt, CancelledAt: e.CancelledAt,
 		CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
 	}

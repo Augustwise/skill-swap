@@ -279,6 +279,10 @@ func (m *Memory) hydrateExchange(e *data.Exchange) data.Exchange {
 		ua.user.Status == "ACTIVE" && ub.user.Status == "ACTIVE" &&
 		!m.blocked(out.Requester.UserID, out.Recipient.UserID)
 	out.ConfirmedUserIDs = append([]string{}, m.exchangeConfirmations[out.ID]...)
+	out.ReviewAuthorIDs = []string{}
+	for _, r := range m.exchangeReviews(out.ID) {
+		out.ReviewAuthorIDs = append(out.ReviewAuthorIDs, r.AuthorID)
+	}
 	progress := data.ExchangeProgress{
 		TotalSessions:            out.TotalSessions,
 		RequesterPlannedSessions: out.RequesterTeaches.Sessions,

@@ -18,6 +18,7 @@ const (
 	EventRequestResponse = "REQUEST_RESPONSE"
 	EventChatMessage     = "CHAT_MESSAGE"
 	EventSessionUpdated  = "SESSION_UPDATED"
+	EventReviewReceived  = "REVIEW_RECEIVED"
 )
 
 var ErrInvalidCursor = errors.New("message cursor does not belong to this conversation")
@@ -75,6 +76,7 @@ type NewNotification struct {
 	ConversationID string
 	MessageID      string
 	SessionID      string
+	ReviewID       string
 }
 
 type Notification struct {
@@ -92,6 +94,7 @@ type Notification struct {
 	ConversationID string
 	MessageID      string
 	SessionID      string
+	ReviewID       string
 	CreatedAt      time.Time
 	ReadAt         *time.Time
 }
@@ -447,15 +450,16 @@ func (p *Postgres) MarkConversationRead(ctx context.Context, userID, conversatio
 func (p *Postgres) CreateNotification(ctx context.Context, n NewNotification) (bool, error) {
 	tag, err := p.conn(ctx).Exec(ctx, `INSERT INTO notifications (
 			recipient_id, actor_id, event_type, event_key, title, body,
-			exchange_request_id, exchange_id, conversation_id, message_id, session_id
+			exchange_request_id, exchange_id, conversation_id, message_id, session_id, review_id
 		)
 		VALUES (
 			$1, NULLIF($2, '')::uuid, $3::notification_event_type, $4, $5, NULLIF($6, ''),
-			NULLIF($7, '')::uuid, NULLIF($8, '')::uuid, NULLIF($9, '')::uuid, NULLIF($10, '')::uuid, NULLIF($11, '')::uuid
+			NULLIF($7, '')::uuid, NULLIF($8, '')::uuid, NULLIF($9, '')::uuid, NULLIF($10, '')::uuid, NULLIF($11, '')::uuid,
+			NULLIF($12, '')::uuid
 		)
 		ON CONFLICT (recipient_id, event_key) DO NOTHING`,
 		n.RecipientID, n.ActorID, n.EventType, n.EventKey, n.Title, n.Body,
-		n.RequestID, n.ExchangeID, n.ConversationID, n.MessageID, n.SessionID)
+		n.RequestID, n.ExchangeID, n.ConversationID, n.MessageID, n.SessionID, n.ReviewID)
 	if err != nil {
 		return false, err
 	}
@@ -466,7 +470,8 @@ const notificationColumns = `n.id, n.recipient_id, COALESCE(n.actor_id::text, ''
 	COALESCE(a.first_name, ''), COALESCE(a.last_name, ''), n.event_type::text, n.event_key,
 	n.title, COALESCE(n.body, ''), COALESCE(n.exchange_request_id::text, ''),
 	COALESCE(n.exchange_id::text, ''), COALESCE(n.conversation_id::text, ''),
-	COALESCE(n.message_id::text, ''), COALESCE(n.session_id::text, ''), n.created_at, n.read_at`
+	COALESCE(n.message_id::text, ''), COALESCE(n.session_id::text, ''), COALESCE(n.review_id::text, ''),
+	n.created_at, n.read_at`
 
 const notificationFrom = `
 	FROM notifications n
@@ -475,7 +480,7 @@ const notificationFrom = `
 func (n *Notification) scanTargets(extra ...any) []any {
 	return append([]any{&n.ID, &n.RecipientID, &n.ActorID, &n.ActorFirstName, &n.ActorLastName,
 		&n.EventType, &n.EventKey, &n.Title, &n.Body, &n.RequestID, &n.ExchangeID,
-		&n.ConversationID, &n.MessageID, &n.SessionID, &n.CreatedAt, &n.ReadAt}, extra...)
+		&n.ConversationID, &n.MessageID, &n.SessionID, &n.ReviewID, &n.CreatedAt, &n.ReadAt}, extra...)
 }
 
 func (p *Postgres) UserNotifications(ctx context.Context, userID string, unreadOnly bool, limit, offset int) ([]Notification, int, int, error) {

@@ -48,6 +48,7 @@ type Memory struct {
 	completionConfirmations map[string][]string
 	exchangeConfirmations   map[string][]string
 	exchangeHistory         map[string][]data.ExchangeStatusChange
+	reviews                 map[string]*data.Review
 }
 
 type catalogSkill struct {
@@ -120,6 +121,7 @@ func NewMemory() *Memory {
 		completionConfirmations: map[string][]string{},
 		exchangeConfirmations:   map[string][]string{},
 		exchangeHistory:         map[string][]data.ExchangeStatusChange{},
+		reviews:                 map[string]*data.Review{},
 	}
 }
 

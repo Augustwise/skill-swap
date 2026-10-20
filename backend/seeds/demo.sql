@@ -497,3 +497,136 @@ JOIN conversations c ON c.exchange_id = s.exchange_id
 WHERE s.id = '81000000-0000-0000-0000-000000000006' AND s.status = 'SCHEDULED'
 ON CONFLICT (recipient_id, event_key) DO NOTHING;
 
+
+-- Sprint 9 (FR-12): an earlier English <-> Go exchange between Iryna and Dmytro is completed.
+-- Dmytro has already reviewed Iryna; Iryna can still review Dmytro.
+INSERT INTO exchange_requests (id, requester_id, recipient_id,
+  requester_teaching_skill_id, recipient_learning_skill_id, recipient_teaching_skill_id, requester_learning_skill_id,
+  format, total_sessions, requester_sessions, recipient_sessions,
+  requester_duration_minutes, recipient_duration_minutes, message, status, created_at, responded_at)
+SELECT '70000000-0000-0000-0000-000000000004', iryna_teaches.user_id, dmytro_teaches.user_id,
+  iryna_teaches.id, dmytro_learns.id, dmytro_teaches.id, iryna_learns.id,
+  'ONLINE', 2, 1, 1, 60, 60,
+  'Привіт! Потренуємо англійську, а ти покажеш мені основи Go?',
+  'ACCEPTED', now() - interval '30 days', now() - interval '29 days'
+FROM user_teaching_skills iryna_teaches
+JOIN user_learning_skills dmytro_learns
+  ON dmytro_learns.user_id = '60000000-0000-0000-0000-000000000005' AND dmytro_learns.skill_id = '30000000-0000-0000-0000-000000000014'
+JOIN user_teaching_skills dmytro_teaches
+  ON dmytro_teaches.user_id = '60000000-0000-0000-0000-000000000005' AND dmytro_teaches.skill_id = '30000000-0000-0000-0000-000000000004'
+JOIN user_learning_skills iryna_learns
+  ON iryna_learns.user_id = '60000000-0000-0000-0000-000000000004' AND iryna_learns.skill_id = '30000000-0000-0000-0000-000000000004'
+WHERE iryna_teaches.user_id = '60000000-0000-0000-0000-000000000004' AND iryna_teaches.skill_id = '30000000-0000-0000-0000-000000000014'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO exchange_request_status_history (id, request_id, status, changed_by_user_id, created_at)
+SELECT h.id::uuid, r.id, h.status::exchange_request_status, h.user_id, h.created_at
+FROM exchange_requests r
+CROSS JOIN LATERAL (VALUES
+  ('71000000-0000-0000-0000-000000000006', 'PENDING', r.requester_id, r.created_at),
+  ('71000000-0000-0000-0000-000000000007', 'ACCEPTED', r.recipient_id, r.responded_at)
+) AS h (id, status, user_id, created_at)
+WHERE r.id = '70000000-0000-0000-0000-000000000004'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO exchanges (id, source_request_id, user_a_id, user_b_id, status, total_sessions, format,
+  started_at, completed_at, created_at, updated_at)
+SELECT '80000000-0000-0000-0000-000000000003', id, requester_id, recipient_id, 'COMPLETED', total_sessions, format,
+  responded_at, now() - interval '15 days', responded_at, now() - interval '15 days'
+FROM exchange_requests WHERE id = '70000000-0000-0000-0000-000000000004'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO exchange_skill_commitments (id, exchange_id, teacher_id, learner_id, teaching_skill_id,
+  learning_skill_id, planned_sessions, duration_minutes, skill_name_snapshot,
+  teaching_level_snapshot, learning_level_snapshot)
+SELECT x.commitment_id::uuid, e.id, t.user_id, l.user_id, t.id, l.id,
+  x.sessions, x.duration, s.name, t.level, l.current_level
+FROM exchanges e
+JOIN exchange_requests r ON r.id = e.source_request_id
+CROSS JOIN LATERAL (VALUES
+  ('80200000-0000-0000-0000-000000000005', r.requester_teaching_skill_id, r.recipient_learning_skill_id, r.requester_sessions, r.requester_duration_minutes),
+  ('80200000-0000-0000-0000-000000000006', r.recipient_teaching_skill_id, r.requester_learning_skill_id, r.recipient_sessions, r.recipient_duration_minutes)
+) AS x (commitment_id, teaching_id, learning_id, sessions, duration)
+JOIN user_teaching_skills t ON t.id = x.teaching_id
+JOIN user_learning_skills l ON l.id = x.learning_id
+JOIN skills s ON s.id = t.skill_id
+WHERE e.id = '80000000-0000-0000-0000-000000000003'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO exchange_status_history (id, exchange_id, status, changed_by_user_id, created_at)
+SELECT h.id::uuid, e.id, h.status::exchange_status, h.user_id, h.created_at
+FROM exchanges e
+CROSS JOIN LATERAL (VALUES
+  ('80100000-0000-0000-0000-000000000003', 'ACTIVE', e.user_b_id, e.created_at),
+  ('80100000-0000-0000-0000-000000000004', 'COMPLETED', e.user_a_id, e.completed_at)
+) AS h (id, status, user_id, created_at)
+WHERE e.id = '80000000-0000-0000-0000-000000000003'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO conversations (id, type, exchange_request_id, exchange_id, created_by_user_id, created_at, last_message_at)
+SELECT '72000000-0000-0000-0000-000000000004', 'EXCHANGE', r.id, e.id, r.requester_id, r.created_at, e.created_at
+FROM exchanges e
+JOIN exchange_requests r ON r.id = e.source_request_id
+WHERE e.id = '80000000-0000-0000-0000-000000000003'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO conversation_participants (conversation_id, user_id, joined_at)
+SELECT c.id, p.user_id, c.created_at
+FROM conversations c
+JOIN exchanges e ON e.id = c.exchange_id
+CROSS JOIN LATERAL (VALUES (e.user_a_id), (e.user_b_id)) AS p(user_id)
+WHERE c.id = '72000000-0000-0000-0000-000000000004'
+ON CONFLICT (conversation_id, user_id) DO NOTHING;
+
+INSERT INTO sessions (id, exchange_id, plan_order, title, teacher_id, learner_id,
+  status, scheduled_start, scheduled_end, format, meeting_url, completed_at, created_at, updated_at)
+SELECT s.session_id::uuid, e.id, s.plan_order, s.title, s.teacher_id::uuid, s.learner_id::uuid,
+  'COMPLETED', s.scheduled_start, s.scheduled_start + interval '1 hour', 'ONLINE', s.meeting_url,
+  s.scheduled_start + interval '2 hours', e.created_at, s.scheduled_start + interval '2 hours'
+FROM exchanges e
+CROSS JOIN LATERAL (VALUES
+  ('81000000-0000-0000-0000-000000000007', 1::smallint, 'Англійська — small talk і співбесіди',
+   '60000000-0000-0000-0000-000000000004', '60000000-0000-0000-0000-000000000005',
+   date_trunc('hour', now()) - interval '20 days', 'https://meet.example.test/skillswap-english-1'),
+  ('81000000-0000-0000-0000-000000000008', 2::smallint, 'Go — синтаксис і перша програма',
+   '60000000-0000-0000-0000-000000000005', '60000000-0000-0000-0000-000000000004',
+   date_trunc('hour', now()) - interval '18 days', 'https://meet.example.test/skillswap-go-intro')
+) AS s (session_id, plan_order, title, teacher_id, learner_id, scheduled_start, meeting_url)
+WHERE e.id = '80000000-0000-0000-0000-000000000003'
+  AND NOT EXISTS (SELECT 1 FROM sessions existing WHERE existing.exchange_id = e.id)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO session_confirmations (session_id, user_id, kind, confirmed_at)
+SELECT s.id, c.user_id, c.kind::confirmation_kind, s.scheduled_end
+FROM sessions s
+CROSS JOIN LATERAL (VALUES
+  (s.teacher_id, 'SCHEDULE'), (s.learner_id, 'SCHEDULE'),
+  (s.teacher_id, 'COMPLETION'), (s.learner_id, 'COMPLETION')
+) AS c (user_id, kind)
+WHERE s.id IN ('81000000-0000-0000-0000-000000000007', '81000000-0000-0000-0000-000000000008')
+ON CONFLICT (session_id, user_id, kind) DO NOTHING;
+
+INSERT INTO exchange_confirmations (exchange_id, user_id, confirmed_at)
+SELECT e.id, p.user_id, e.completed_at
+FROM exchanges e
+CROSS JOIN LATERAL (VALUES (e.user_a_id), (e.user_b_id)) AS p(user_id)
+WHERE e.id = '80000000-0000-0000-0000-000000000003' AND e.status = 'COMPLETED'
+ON CONFLICT (exchange_id, user_id) DO NOTHING;
+
+INSERT INTO exchange_reviews (id, exchange_id, author_id, recipient_id, rating, comment, created_at, updated_at)
+SELECT '90000000-0000-0000-0000-000000000001', e.id, e.user_b_id, e.user_a_id, 5,
+  'Ірина чудово пояснює: після двох занять я спокійно провів співбесіду англійською.',
+  e.completed_at + interval '1 hour', e.completed_at + interval '1 hour'
+FROM exchanges e
+WHERE e.id = '80000000-0000-0000-0000-000000000003' AND e.status = 'COMPLETED'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO notifications (id, recipient_id, actor_id, event_type, event_key, title, body,
+  exchange_id, review_id, created_at)
+SELECT '74000000-0000-0000-0000-000000000005', r.recipient_id, r.author_id,
+  'REVIEW_RECEIVED', 'review-received:' || r.id, 'Новий відгук',
+  'Дмитро Мельник: оцінка 5 з 5 за обмін «Англійська ↔ Go».',
+  r.exchange_id, r.id, r.created_at
+FROM exchange_reviews r
+WHERE r.id = '90000000-0000-0000-0000-000000000001'
+ON CONFLICT (recipient_id, event_key) DO NOTHING;
