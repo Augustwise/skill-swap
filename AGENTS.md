@@ -1,36 +1,54 @@
-# Repository Guidelines
+# Skill Swap agent notes
 
-## Project Structure & Module Organization
+Skill Swap is a student skill-exchange platform: a Next.js web client (`frontend/`), a Go HTTP API (`backend/`) and PostgreSQL. The UI is in Ukrainian. `README.md` (root), `backend/README.md` and `backend/AGENTS.md` hold the detailed setup, API walkthroughs and conventions; `backend/docs/openapi.yaml` is the API contract. `frontend/CLAUDE.md` imports `frontend/AGENTS.md`: this Next.js version (16) has breaking changes, so read the relevant guide in `frontend/node_modules/next/dist/docs/` before writing Next.js code.
 
-`frontend/` contains the Next.js app: routes and layout live in `app/`, reusable UI in `app/components/`, section styles in `app/styles/`, and static assets in `public/`. `backend/` contains the Go API entry point in `cmd/api/`, database tooling in `cmd/db/`, and application code in `internal/api/` and `internal/config/`. Database changes belong in `backend/migrations/`; demo data lives in `backend/seeds/`. Read `frontend/AGENTS.md` before editing frontend code because it contains version-specific Next.js guidance.
+## Commands
 
-## Build, Test, and Development Commands
+Backend (run from `backend/`; Go 1.26, PostgreSQL 15+, config only from `backend/.env`, see `backend/README.md` for the template):
 
-Run frontend commands from `frontend/` after `npm ci`:
+```bash
+go test ./...                          # unit tests; DB integration tests skip without TEST_DATABASE_URL
+go test ./internal/exchange -run TestName -v   # single test / package
+go vet ./... && go build ./...
+go run ./cmd/db check|status|up|seed   # connectivity, migration state, apply Goose migrations, demo data
+go run ./cmd/api                       # API on 127.0.0.1:8080
+```
 
-- `npm run dev` starts the app at `http://localhost:3000`.
-- `npm run build` creates a production build; `npm start` serves it.
-- `npm test` runs the `node:test` unit tests in `frontend/tests/`.
-- `npm run lint` checks ESLint rules; `npm run format:check` checks Prettier formatting.
+Integration tests (names ending `AgainstLocalPostgres` or `AgainstPostgres`, in `internal/api`, `internal/data`, `internal/exchange` and `internal/session`) need `TEST_DATABASE_URL` pointing at a separate, migrated and seeded **local** database. Some of them commit data (concurrency tests) and clean up after themselves. The `.env` `DATABASE_URL` may be a shared remote training DB: ask before running `seed` or `up` against it.
 
-Run backend commands from `backend/` with Go 1.26 and a configured PostgreSQL URL:
+Frontend (run from `frontend/`):
 
-- `go run ./cmd/api` starts the local API on `127.0.0.1:8080` by default.
-- `go run ./cmd/db check|status|up|seed` checks the connection, inspects or applies migrations, or loads demo data.
-- `go test ./...` runs Go tests.
+```bash
+npm ci
+npm run dev                  # http://localhost:3000 (must be localhost: API CORS origin)
+npm test                     # node --test tests/*.test.mjs
+node --test tests/exchange.test.mjs   # single test file
+npm run lint && npm run format:check  # `npm run format` fixes
+npm run build                # includes the TypeScript check
+npm run test:browser         # Playwright against `next start` on port 3100 (build first)
+```
 
-## Coding Style & Naming Conventions
+Whole stack from the repo root: `node scripts/dev.mjs [--migrate] [--seed] [--no-mail] [--no-api] [--no-web]` starts Mailpit (`backend/.local/mailpit`), builds and runs the API and starts Next.js, logging to `logs/`.
 
-Use TypeScript with strict type checking for frontend changes. Follow the existing two-space indentation and Prettier settings: 100-character lines, double quotes, semicolons, and trailing commas. Name React components and their files in PascalCase (for example, `Logo.tsx`); keep section CSS in `app/styles/`. Format Go files with `gofmt`, use tabs as it emits, and keep package and file names lowercase.
+## Architecture
 
-## Testing Guidelines
+**Request flow:** browser -> Next.js (`next.config.ts` rewrites `/api/v1/*` to `127.0.0.1:8080`, so the HttpOnly `skillswap_session` cookie stays same-origin) -> `internal/api` handlers -> `core.IApplication` / `auth.Service` -> domain services -> `internal/data` repositories -> PostgreSQL.
 
-Go tests use the standard `testing` package and `*_test.go` files beside the code they cover. Add focused tests for changed API or configuration behavior. The catalog integration test runs only when `TEST_DATABASE_URL` points to a prepared local PostgreSQL database; otherwise it skips. Frontend unit tests live in `frontend/tests/*.test.mjs` and compile the `app/components/*.ts` modules in memory; add tests there for changed client logic. For frontend changes run `npm test`, lint, formatting checks, and a production build.
+**Backend layering (strict):** handlers (`internal/api`: routes in `api.go` on `http.ServeMux`, `respond`/`problem` helpers, `middleware.go` for origin/CSRF) only parse requests, take the user from the session and call services; they never run SQL or send mail. Services (`auth`, `profile`, `discovery`, `exchange`, `session`, `communication`) are aggregated by `internal/core` and must not import `net/http`. They depend on small interfaces (`IProfileData`, `IExchangeData`, `ITransaction`, `IMailer`, ...) implemented by `internal/data` (pgx v5) and `internal/mailer`; `cmd/api/main.go` wires the concrete pieces. In-memory doubles live in `internal/data/datatest` and `internal/mailer/mailertest`.
 
-## Commit & Pull Request Guidelines
+**Cross-cutting backend rules:**
+- Multi-step operations use `ITransaction.WithinTx`; repository calls with that context join the same transaction, and emails are sent only after COMMIT.
+- Pair operations (messaging, scheduling, confirmations) lock both users in canonical UUID order before touching the row, to avoid deadlocks and make concurrent actions apply serially.
+- Exchange flow: request (PENDING) -> accept creates an ACTIVE exchange with copied skill commitments and `totalSessions` DRAFT lesson slots -> sessions are proposed/accepted/scheduled (overlap check on half-open intervals) -> both sides confirm each session -> both confirm exchange completion, or cancel with a reason. Notifications and chat conversations are created inside the same transactions (idempotent via `event_key`).
+- Writes require the session cookie, the `X-CSRF-Token` header and the frontend `Origin`. Errors are always `{ "error": { "code", "message" } }`, with `fields` for 422 `validation_failed`. Non-participants get 404, not 403.
+- Schema changes: add a new numbered Goose file in `migrations/` (never edit an applied one); keep `seeds/demo.sql` idempotent. Demo students sign in as `demo.<name>@students.example.test` with the local-only password `SkillSwapDemo2026`.
+- Tests use `internal/expect` (`Equal`, `Slice`, `Error`, `NoError`) with one value per line instead of long boolean conditions.
 
-Recent feature and refactor commits use scoped subjects such as `feat(backend): ...` and `refactor(styles): ...`; use that pattern for new commits. Keep each commit focused. In pull requests, explain the change, list the checks run, and note database or environment setup.
+**Frontend:** App Router. `app/<route>/page.tsx` are thin server entries; the work is in `app/components/`. Each backend area has a `*Api.ts` client module (DTO types, requests, validation mirroring server limits, error mapping) used by PascalCase page components; all requests go through `authRequest` in `AuthApi.ts` (CSRF token from `/auth/me`, 15 s timeout, typed `AuthError`). Private pages are wrapped in `AppGate` (session + verified email) and `AppShell` (navigation, notification bell). Business rules stay on the server; filters/tabs/page numbers live in the URL, and `?next=`/`?from=` return paths go through `safeAppPath`. Unit tests in `frontend/tests/*.test.mjs` run on `node:test` against the `.ts` modules via `tests/load-source.mjs`, which transpiles relative `.ts` imports in memory (no JSX, React or npm-package imports); styles are per-section CSS files in `app/styles/` (some sections are split into subfolders).
 
-## Configuration & Security
+## Working conventions
 
-Keep backend settings in `backend/.env` and set `DATABASE_URL`; use `backend/README.md` for setup values and do not commit credentials. Keep local API and frontend origins on loopback addresses. Remote database URLs require verified TLS settings (`sslmode=verify-full` and `sslrootcert`).
+- Commit subjects are scoped, e.g. `feat(backend): ...`, `feat(frontend): ...`; work is done on task branches and merged through reviewed PRs.
+- Keep code comments sparse and free of requirement IDs (FR-xx/LR-xx); put explanations in the README or PR description.
+- There are no CI workflows or root task runner; run the relevant checks locally before opening a PR.
+- Run `gofmt` on changed Go files and `prettier` (via `npm run format`) on frontend files.
