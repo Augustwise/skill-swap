@@ -1,0 +1,158 @@
+.exchange-directions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 10px;
+}
+
+.exchange-directions__swap {
+  display: grid;
+  place-items: center;
+}
+
+.exchange-direction {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #ffe0ef;
+  border-radius: 14px;
+  background: #fffafc;
+}
+
+.exchange-direction--learn {
+  border-color: #d9ecff;
+  background: #f8fbff;
+}
+
+.exchange-direction h4 {
+  color: #9aa3c0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.exchange-direction .dashboard-skill {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.exchange-direction__plan {
+  color: #4b5478;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.exchange-direction__levels {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+}
+
+.exchange-direction__levels div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.exchange-direction__levels dt {
+  color: var(--muted);
+}
+
+.exchange-direction__levels dd {
+  margin: 0;
+  color: #1b2350;
+  font-weight: 600;
+}
+
+.exchange-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.exchange-facts div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f7f8fc;
+}
+
+.exchange-facts dt {
+  color: #9aa3c0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.exchange-facts dd {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.exchange-facts--compact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.exchange-facts--compact div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.exchange-quote {
+  padding: 12px 14px;
+  border-left: 3px solid var(--purple);
+  border-radius: 12px;
+  background: #f7f8fc;
+}
+
+.exchange-decision {
+  justify-items: start;
+}
+
+.exchange-decision--pending {
+  border-color: #f6dfb5;
+}
+
+.exchange-decision--accepted {
+  border-color: #c7defc;
+}
+
+.exchange-decision--declined {
+  border-color: #f3c6c8;
+}
+
+.exchange-decision__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.exchange-decision__actions > .dashboard-button {
+  flex: 1 1 auto;
+}
+
+.exchange-decision__actions:empty {
+  display: none;
+}

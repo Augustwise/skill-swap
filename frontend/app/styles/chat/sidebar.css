@@ -1,0 +1,129 @@
+.chat-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 20px;
+  height: calc(100dvh - 134px);
+  min-height: 520px;
+}
+
+.chat-sidebar,
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-sidebar {
+  gap: 12px;
+  padding: 18px 12px 12px;
+}
+
+.chat-sidebar__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 8px;
+}
+
+.chat-sidebar > .dashboard-empty,
+.chat-sidebar > .discovery-alert {
+  border: 0;
+  background: #f7f8fc;
+}
+
+.chat-list {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.chat-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 12px;
+}
+
+a.chat-list-item:hover {
+  background: #f7f8fc;
+}
+
+a.chat-list-item[aria-current="page"] {
+  background: var(--purple-soft);
+}
+
+.chat-list-item__body {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.chat-list-item__top,
+.chat-list-item__bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-list-item__top strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-list-item__top time {
+  flex: none;
+  color: #9aa3c0;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.chat-list-item__skills {
+  overflow: hidden;
+  color: #9aa3c0;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-list-item__preview {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-list-item--unread .chat-list-item__preview {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.chat-list-item--unread .chat-list-item__top time {
+  color: var(--purple-dark);
+  font-weight: 600;
+}
+
+.chat-sidebar__more {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding-top: 4px;
+}

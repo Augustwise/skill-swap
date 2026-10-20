@@ -1,0 +1,43 @@
+.dashboard-message-page {
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+  place-items: center;
+  background: #f7f8fc;
+}
+
+.dashboard-message {
+  width: min(100%, 480px);
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: white;
+}
+
+.dashboard-message h1 {
+  margin-block: 24px 12px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+.dashboard-message p {
+  margin-bottom: 24px;
+  color: var(--muted);
+}
+
+.dashboard-skip {
+  position: fixed;
+  z-index: 10;
+  top: 8px;
+  left: 8px;
+  padding: 12px;
+  transform: translateY(-150%);
+  border-radius: 8px;
+  background: white;
+  color: var(--purple);
+}
+
+.dashboard-skip:focus {
+  transform: translateY(0);
+}

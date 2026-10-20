@@ -1,0 +1,156 @@
+.exchange-history {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.exchange-history__item {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 0 0 16px 24px;
+}
+
+.exchange-history__item::before {
+  position: absolute;
+  top: 5px;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: #e8930c;
+  box-shadow: 0 0 0 1px #f6dfb5;
+  content: "";
+}
+
+.exchange-history__item:not(:last-child)::after {
+  position: absolute;
+  top: 18px;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: #edf0f7;
+  content: "";
+}
+
+.exchange-history__item:last-child {
+  padding-bottom: 0;
+}
+
+.exchange-history__item--accepted::before {
+  background: #2e90fa;
+  box-shadow: 0 0 0 1px #c7defc;
+}
+
+.exchange-history__item--declined::before {
+  background: #e5484d;
+  box-shadow: 0 0 0 1px #f3c6c8;
+}
+
+.exchange-history__item--neutral::before {
+  background: #9aa3c0;
+  box-shadow: 0 0 0 1px #dfe4f3;
+}
+
+.exchange-history strong {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.exchange-history span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.exchange-started {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.exchange-started__icon {
+  display: grid;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 12px;
+  background: white;
+}
+
+.exchange-started h2 {
+  margin-bottom: 4px;
+}
+
+.exchange-progress {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: #e4e8f4;
+  color: var(--purple);
+}
+
+.exchange-progress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: #e4e8f4;
+}
+
+.exchange-progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--purple);
+}
+
+.exchange-progress::-moz-progress-bar {
+  border-radius: 999px;
+  background: var(--purple);
+}
+
+.exchange-progress__percent {
+  color: var(--purple-dark);
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.exchange-next {
+  display: grid;
+  gap: 6px;
+}
+
+.exchange-next strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.exchange-next p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.exchange-next a {
+  color: var(--purple-dark);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.profile-tip__link {
+  justify-self: start;
+  color: var(--purple-dark);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.dashboard-modal.exchange-proposal {
+  width: min(680px, calc(100% - 32px));
+}

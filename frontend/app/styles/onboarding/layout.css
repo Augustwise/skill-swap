@@ -1,0 +1,129 @@
+.onboarding-page {
+  min-height: 100vh;
+  background: #f7f8fc;
+  color: #0a1046;
+}
+
+.onboarding-header {
+  height: 72px;
+  padding: 0 40px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid #dfe4f3;
+  background: #fff;
+}
+
+.onboarding-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-right: auto;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+}
+
+.onboarding-header__step {
+  color: #697296;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.onboarding-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 700px) 332px;
+  align-items: start;
+  justify-content: center;
+  gap: 28px;
+  padding: 36px 40px 60px;
+}
+
+.onboarding-card {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+  padding: 30px 32px 26px;
+  border: 1px solid #dfe4f3;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow:
+    0 1px 2px rgba(10, 16, 70, 0.04),
+    0 2px 8px rgba(10, 16, 70, 0.06);
+}
+
+.onboarding-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.onboarding-fields:disabled .onboarding-button,
+.onboarding-fields:disabled button,
+.onboarding-skip.is-disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.onboarding-skip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  color: #4b5478;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.onboarding-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.onboarding-profile textarea {
+  width: 100%;
+  min-height: 108px;
+  padding: 12px 14px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  color: var(--foreground);
+  background: var(--background);
+  font:
+    400 14px/21px var(--font-geist-sans),
+    Arial,
+    sans-serif;
+}
+
+.onboarding-profile textarea::placeholder {
+  color: var(--muted);
+}
+
+.onboarding-profile textarea[aria-invalid="true"] {
+  border-color: #d93d64;
+}
+
+.onboarding-profile input[readonly] {
+  background: #f7f8fc;
+  color: var(--muted);
+}
+
+.onboarding-field-hint,
+.onboarding-optional {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.onboarding-catalog-error p {
+  margin: 0 0 12px;
+  color: #b42318;
+  font-size: 13px;
+}

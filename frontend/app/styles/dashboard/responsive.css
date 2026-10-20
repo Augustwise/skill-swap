@@ -1,0 +1,283 @@
+@media (max-width: 1300px) {
+  .dashboard-sidebar {
+    flex-basis: 218px;
+  }
+
+  .dashboard-nav,
+  .dashboard-sidebar__footer {
+    padding-inline: 12px;
+  }
+
+  .dashboard-nav-item {
+    padding-inline: 10px;
+  }
+
+  .dashboard-content,
+  .dashboard-topbar {
+    padding-inline: 24px;
+  }
+
+  .dashboard-columns {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  .dashboard-match-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-exchange {
+    flex-wrap: wrap;
+  }
+
+  .dashboard-exchange__progress {
+    flex-basis: 100%;
+    align-items: flex-start;
+    padding-left: 54px;
+  }
+
+  .dashboard-exchange__progress p {
+    min-height: auto;
+  }
+
+  .dashboard-user__identity {
+    max-width: 150px;
+  }
+}
+
+@media (max-width: 1050px) {
+  .dashboard-sidebar {
+    flex-basis: 76px;
+  }
+
+  .dashboard-sidebar__brand {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .dashboard-sidebar .dashboard-brand span,
+  .dashboard-nav-item > span {
+    display: none;
+  }
+
+  .dashboard-nav,
+  .dashboard-sidebar__footer {
+    padding-inline: 12px;
+  }
+
+  .dashboard-nav-item {
+    position: relative;
+    justify-content: center;
+  }
+
+  .dashboard-nav-item > .dashboard-nav-badge {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    display: grid;
+    min-width: 16px;
+    height: 16px;
+    padding-inline: 4px;
+    font-size: 10px;
+    line-height: 12px;
+  }
+
+  .dashboard-topbar {
+    gap: 12px;
+  }
+
+  .dashboard-search {
+    flex-basis: 250px;
+  }
+
+  .dashboard-user__identity,
+  .dashboard-user > .dashboard-icon {
+    display: none;
+  }
+
+  .dashboard-hero {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .dashboard-hero__action {
+    margin-left: 68px;
+  }
+
+  .dashboard-stats {
+    gap: 16px;
+  }
+}
+
+@media (max-width: 800px) {
+  .dashboard-topbar {
+    flex-wrap: wrap;
+  }
+
+  .dashboard-topbar__title {
+    flex-basis: calc(100% - 150px);
+  }
+
+  .dashboard-search {
+    order: 1;
+    flex-basis: 100%;
+  }
+
+  .dashboard-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-right {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 16px;
+  }
+
+  .dashboard-section-heading {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .dashboard-request__person {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 600px) {
+  .dashboard-shell {
+    flex-direction: column;
+  }
+
+  .dashboard-sidebar {
+    flex-basis: auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .dashboard-sidebar__brand {
+    height: 60px;
+    padding-left: 16px;
+  }
+
+  .dashboard-sidebar .dashboard-brand span {
+    display: inline;
+  }
+
+  .dashboard-nav {
+    display: none;
+  }
+
+  .dashboard-sidebar__footer {
+    flex-direction: row;
+    margin-top: 0;
+  }
+
+  .dashboard-sidebar__footer > button:first-child {
+    display: none;
+  }
+
+  .dashboard-notice {
+    position: absolute;
+    z-index: 1;
+    top: 60px;
+    right: 12px;
+    left: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: white;
+  }
+
+  .dashboard-content {
+    gap: 20px;
+    padding: 20px 16px;
+  }
+
+  .dashboard-topbar {
+    padding: 14px 16px;
+  }
+
+  .dashboard-topbar__title p {
+    font-size: 11px;
+  }
+
+  .account-menu {
+    padding-left: 8px;
+  }
+
+  .dashboard-hero {
+    gap: 12px;
+    padding: 20px;
+  }
+
+  .dashboard-hero__icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .dashboard-hero h2 {
+    font-size: 18px;
+    line-height: 25px;
+  }
+
+  .dashboard-hero p {
+    font-size: 13px;
+    line-height: 19px;
+  }
+
+  .dashboard-hero__action {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .dashboard-stat {
+    padding: 14px;
+  }
+
+  .dashboard-stats {
+    gap: 12px;
+  }
+
+  .dashboard-delta {
+    padding-inline: 6px;
+    font-size: 10px;
+  }
+
+  .dashboard-stat__value {
+    font-size: 26px;
+  }
+
+  .dashboard-right {
+    display: flex;
+    align-items: stretch;
+    gap: 20px;
+  }
+
+  .dashboard-match__person {
+    flex-wrap: wrap;
+  }
+
+  .dashboard-exchange__person {
+    flex-basis: calc(100% - 54px);
+  }
+
+  .dashboard-exchange__progress {
+    padding-left: 0;
+  }
+
+  .dashboard-rating {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 800px) {
+  .dashboard-topbar__title {
+    flex-basis: calc(100% - 210px);
+  }
+}

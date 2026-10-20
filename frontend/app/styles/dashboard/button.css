@@ -1,0 +1,46 @@
+.dashboard-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  color: #1b2350;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  box-shadow: 0 1px 2px rgb(10 16 70 / 6%);
+}
+
+.dashboard-button--primary {
+  border-color: var(--purple);
+  background: var(--purple);
+  color: white;
+  box-shadow: 0 6px 18px rgb(84 57 245 / 28%);
+}
+
+.dashboard-match__actions > .dashboard-button--primary {
+  flex: 1;
+}
+
+.dashboard-button--danger {
+  border-color: #f3c6c8;
+  color: #a82126;
+}
+
+.dashboard-button--danger:enabled:hover {
+  background: #fdecec;
+}
+
+.dashboard-button:disabled {
+  opacity: 0.6;
+  box-shadow: none;
+}
+
+.dashboard-button--icon {
+  flex: 0 0 36px;
+  padding: 0;
+}

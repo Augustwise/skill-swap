@@ -1,0 +1,156 @@
+.onboarding-selected {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #f7f8fc;
+}
+
+.onboarding-selected > p {
+  margin: 0;
+  color: #4b5478;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.onboarding-selected__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid #e7eaf4;
+  border-radius: 11px;
+  background: #fff;
+  cursor: grab;
+}
+
+.onboarding-selected__row--teaching {
+  cursor: default;
+}
+
+.onboarding-reorder {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.onboarding-reorder button {
+  width: 20px;
+  height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: #f7f8fc;
+  color: #4b5478;
+  cursor: pointer;
+}
+
+.onboarding-reorder button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.onboarding-selected__rank {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: #e4f2ff;
+  color: #2b7fe0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.onboarding-selected__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-level {
+  position: relative;
+  flex: none;
+  width: 184px;
+}
+
+.onboarding-level select {
+  width: 100%;
+  height: 32px;
+  padding: 0 25px 0 11px;
+  appearance: none;
+  border: 1px solid #dfe4f3;
+  border-radius: 9px;
+  background: #fff;
+  color: #4b5478;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.onboarding-level img {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  pointer-events: none;
+}
+
+.onboarding-remove {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.onboarding-notice {
+  margin: -10px 0 0;
+  color: #b42318;
+  font-size: 13px;
+}
+
+.onboarding-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.onboarding-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.onboarding-button--secondary {
+  border: 1px solid #dfe4f3;
+  background: #fff;
+  color: #1b2350;
+  box-shadow: 0 1px 1px rgba(10, 16, 70, 0.06);
+}
+
+.onboarding-button--primary {
+  border: 1px solid #5b3df5;
+  background: #5b3df5;
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(84, 57, 245, 0.28);
+}

@@ -1,0 +1,164 @@
+.exchange-toolbar {
+  display: grid;
+  gap: 14px;
+}
+
+.exchange-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  border-bottom: 1px solid var(--border);
+}
+
+.exchange-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: -1px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.exchange-tab[aria-current="page"] {
+  border-bottom-color: var(--purple);
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.exchange-tab:hover {
+  color: var(--foreground);
+}
+
+.exchange-tab__count {
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  padding-inline: 7px;
+  place-items: center;
+  border-radius: 999px;
+  background: #f1f3f9;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.exchange-tab[aria-current="page"] .exchange-tab__count {
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+}
+
+.exchange-intro {
+  max-width: 760px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.exchange-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exchange-filter {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: white;
+  color: #4b5478;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.exchange-filter:hover {
+  border-color: #c9bcff;
+}
+
+.exchange-filter[aria-current="true"] {
+  border-color: #c9bcff;
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+  font-weight: 600;
+}
+
+.exchange-notice {
+  border-color: #ddd4ff;
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+}
+
+.exchange-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
+}
+
+.exchange-card .exchange-person p,
+.exchange-person h2,
+.exchange-person h3 {
+  overflow-wrap: anywhere;
+}
+
+.exchange-person h2 {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.exchange-person__link:hover {
+  color: var(--purple-dark);
+  text-decoration: underline;
+}
+
+.exchange-card__kind {
+  color: #9aa3c0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.exchange-card__message {
+  display: -webkit-box;
+  overflow: hidden;
+  padding: 10px 12px;
+  border-left: 3px solid #ddd4ff;
+  border-radius: 10px;
+  background: #f7f8fc;
+  color: #4b5478;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.exchange-card__actions {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.exchange-card__actions > .dashboard-button {
+  flex: 1 1 auto;
+}
+
+.exchange-error {
+  flex-basis: 100%;
+  color: #b8274c;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.exchange-error a {
+  font-weight: 600;
+  text-decoration: underline;
+}
