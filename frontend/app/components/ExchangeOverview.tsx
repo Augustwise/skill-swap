@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { AppGate, type AppContext } from "./AppGate";
 import { pageShells } from "./AppNavigation";
 import { AppShell } from "./AppShell";
@@ -12,6 +13,17 @@ import { DiscoveryError } from "./DiscoveryError";
 import { countLabel, formatList } from "./DiscoveryFormat";
 import { ExchangeDirections, PartnerHeading, StatusBadge } from "./ExchangeCards";
 import { ExchangeLessons } from "./ExchangeLessons";
+import { ExchangeCompletion } from "./ExchangeCompletion";
+import {
+  cancelExchange,
+  completeExchange,
+  completionMessage,
+  exchangesHref,
+} from "./CompletionApi";
+import { ExchangeCancellation } from "./ExchangeCancellation";
+import { ExchangeHistory } from "./ExchangeHistory";
+import { CompletionFeedback } from "./CompletionFeedback";
+import { useCompletionMutation } from "./useCompletionMutation";
 import { exchangeSessions, sessionHref } from "./SessionApi";
 import { meetingLink } from "./SessionTime";
 import { exchangeHref, requestHref, requestPerspective, type Exchange } from "./ExchangeApi";
@@ -64,6 +76,13 @@ function ProgressCard({ exchange, viewerId }: { exchange: Exchange; viewerId: st
           </div>
         ))}
       </dl>
+      {progress.awaitingConfirmationSessions > 0 && (
+        <p className="completion-pending">
+          Очікують підтвердження проведення: {progress.awaitingConfirmationSessions}. Відкрий
+          заняття в плані, щоб підтвердити участь.
+        </p>
+      )}
+      {progress.planCompleted && <p className="profile-success">План виконано в обох напрямках.</p>}
     </section>
   );
 }
@@ -102,7 +121,9 @@ function NextStepsCard({ exchange }: { exchange: Exchange }) {
         </div>
       ) : (
         <p className="profile-hint">
-          Погоджених майбутніх занять немає. Обери заняття в плані та запропонуй час партнеру.
+          {exchange.status === "ACTIVE"
+            ? "Погоджених майбутніх занять немає. Перевір план і підтвердження проведених занять."
+            : "Нових занять у цьому обміні не заплановано. Історія занять доступна в плані."}
         </p>
       )}
     </section>
@@ -114,12 +135,15 @@ function ExchangeView({
   session,
   exchangeId,
   started,
-}: AppContext & { exchangeId: string; started: boolean }) {
-  const path = exchangeHref(exchangeId);
+  from,
+}: AppContext & { exchangeId: string; started: boolean; from?: string }) {
+  const path = exchangeHref(exchangeId, from);
   const result = useApiQuery(path, (signal) => exchangeSessions(exchangeId, signal));
   const data = result.state.status === "ready" ? result.state.data : null;
   const exchange = data?.exchange;
   const view = exchange ? requestPerspective(exchange, profile.id) : null;
+  const completion = useCompletionMutation(result.retry);
+  const [cancelling, setCancelling] = useState(false);
 
   return (
     <AppShell
@@ -130,9 +154,22 @@ function ExchangeView({
       subtitle={pageShells.exchange.subtitle}
       contentId="exchange-content"
     >
-      <Link className="discovery-back" href="/exchanges">
-        ← До активних обмінів
+      <Link
+        className="discovery-back"
+        href={
+          from ??
+          exchangesHref(
+            exchange?.status === "COMPLETED"
+              ? "COMPLETED"
+              : exchange?.status === "CANCELLED"
+                ? "CANCELLED"
+                : "ACTIVE",
+          )
+        }
+      >
+        ← До списку обмінів
       </Link>
+      <CompletionFeedback error={completion.error} notice={completion.notice} path={path} />
       {started && exchange?.status === "ACTIVE" && (
         <section className="account-card profile-tip exchange-started" role="status">
           <span className="exchange-started__icon" aria-hidden="true">
@@ -233,9 +270,35 @@ function ExchangeView({
               </section>
             )}
             <ExchangeLessons exchange={exchange} lessons={data.items} onRefresh={result.retry} />
+            <ExchangeHistory exchange={exchange} />
           </div>
           <aside className="profile-rail" aria-label="Прогрес і заняття">
             <ProgressCard exchange={exchange} viewerId={profile.id} />
+            <ExchangeCompletion
+              exchange={exchange}
+              pending={completion.pending}
+              onConfirm={() =>
+                void completion.run(
+                  () => completeExchange(exchange.id, session.csrfToken),
+                  (data) => completionMessage(data.exchange, "exchange"),
+                )
+              }
+            />
+            {exchange.canCancel && (
+              <section className="account-card">
+                <h2>Скасування обміну</h2>
+                <p className="profile-hint">
+                  Якщо продовжити навчання не виходить, поясни причину партнеру.
+                </p>
+                <button
+                  className="dashboard-button completion-danger"
+                  disabled={completion.pending}
+                  onClick={() => setCancelling(true)}
+                >
+                  Скасувати обмін
+                </button>
+              </section>
+            )}
             <ChatCard
               queryKey={`${path}/conversation`}
               load={(signal) => exchangeConversation(exchangeId, signal)}
@@ -245,6 +308,24 @@ function ExchangeView({
           </aside>
         </div>
       )}
+      {cancelling && exchange?.canCancel && (
+        <ExchangeCancellation
+          pending={completion.pending}
+          error={completion.error}
+          path={path}
+          onClose={() => setCancelling(false)}
+          onSubmit={(reason) =>
+            void completion
+              .run(
+                () => cancelExchange(exchange.id, reason, session.csrfToken),
+                "Обмін скасовано. Непроведені заняття скасовано, історію збережено.",
+              )
+              .then((saved) => {
+                if (saved) setCancelling(false);
+              })
+          }
+        />
+      )}
     </AppShell>
   );
 }
@@ -252,13 +333,17 @@ function ExchangeView({
 export function ExchangeOverview({
   exchangeId,
   started,
+  from,
 }: {
   exchangeId: string;
   started: boolean;
+  from?: string;
 }) {
   return (
-    <AppGate page="exchange" path={exchangeHref(exchangeId)}>
-      {(context) => <ExchangeView {...context} exchangeId={exchangeId} started={started} />}
+    <AppGate page="exchange" path={exchangeHref(exchangeId, from)}>
+      {(context) => (
+        <ExchangeView {...context} exchangeId={exchangeId} started={started} from={from} />
+      )}
     </AppGate>
   );
 }

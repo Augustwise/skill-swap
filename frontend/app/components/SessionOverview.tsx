@@ -9,6 +9,10 @@ import { loginHref } from "./AppRoutes";
 import { DiscoveryEmpty } from "./DiscoveryCards";
 import { DiscoveryError } from "./DiscoveryError";
 import { fullName } from "./DiscoveryFormat";
+import { completionMessage, confirmLesson } from "./CompletionApi";
+import { CompletionFeedback } from "./CompletionFeedback";
+import { SessionCompletion } from "./SessionCompletion";
+import { useCompletionMutation } from "./useCompletionMutation";
 import { exchangeDetails, exchangeHref } from "./ExchangeApi";
 import {
   decideCurrentSession,
@@ -42,6 +46,10 @@ function SessionView({
   const [notice, setNotice] = useState("");
   const busy = useRef(false);
   const countersChanged = useCountersChanged();
+  const completion = useCompletionMutation(() => {
+    result.retry();
+    exchange.retry();
+  });
 
   function changed(message: string) {
     setPlanning(false);
@@ -86,6 +94,7 @@ function SessionView({
       >
         ← {from?.startsWith("/schedule") ? "До розкладу" : from ? "Назад" : "До обміну"}
       </Link>
+      <CompletionFeedback error={completion.error} notice={completion.notice} path={path} />
       {notice && (
         <p className="profile-success" role="status">
           {notice}
@@ -126,6 +135,17 @@ function SessionView({
             Викладач: {fullName(lesson.teacher)} · Учень: {fullName(lesson.learner)}
           </p>
           {lesson.description && <p className="profile-biography">{lesson.description}</p>}
+          <SessionCompletion
+            lesson={lesson}
+            pending={pending || completion.pending}
+            onConfirm={() => {
+              if (pending) return;
+              void completion.run(
+                () => confirmLesson(lesson.id, session.csrfToken),
+                (data) => completionMessage(data.session, "lesson"),
+              );
+            }}
+          />
           {lesson.status === "DRAFT" && active && (
             <button
               className="dashboard-button dashboard-button--primary"
@@ -134,7 +154,7 @@ function SessionView({
               Запланувати заняття
             </button>
           )}
-          {lesson.canCancel && (
+          {lesson.canCancel && !completion.pending && (
             <div className="session-actions">
               <button
                 className="dashboard-button"
@@ -189,7 +209,11 @@ function SessionView({
               )}
             </div>
           )}
-          <button className="dashboard-button" disabled={pending} onClick={result.retry}>
+          <button
+            className="dashboard-button"
+            disabled={pending || completion.pending}
+            onClick={result.retry}
+          >
             Оновити дані
           </button>
         </section>

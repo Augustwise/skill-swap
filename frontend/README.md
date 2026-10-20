@@ -26,24 +26,24 @@ the API and Mailpit as described in the root `README.md`.
 
 ## Routes
 
-| Route                        | Sprint | Page                                                      |
-| ---------------------------- | ------ | --------------------------------------------------------- |
-| `/`, `/terms`                | —      | Landing page and data-handling terms                      |
-| `/register`, `/login`        | 2      | Registration, login and password recovery                 |
-| `/verify-email`              | 2      | Email verification and resend                             |
-| `/reset-password`            | 2      | New password from a one-time link                         |
-| `/onboarding`                | 3      | First profile, skill lists and lesson formats             |
-| `/profile`                   | 3      | Own profile, skills and formats                           |
-| `/main`                      | 3–5    | Dashboard: mutual matches, new requests, active exchanges |
-| `/search`                    | 4      | Student search with filters                               |
-| `/matches`                   | 4      | Mutual matches with explanations                          |
-| `/students/[studentId]`      | 4–5    | Candidate profile and the exchange proposal dialog        |
-| `/requests`                  | 5      | Incoming and sent exchange requests with decisions        |
-| `/requests/[requestId]`      | 5–6    | Request terms, decision, history and the request's chat   |
-| `/exchanges/[exchangeId]`    | 5–6    | Started exchange: agreed terms, progress and its chat     |
-| `/messages`                  | 6      | Conversations list; chats of requests and exchanges       |
-| `/messages/[conversationId]` | 6      | Private chat polled every 5 seconds                       |
-| `/notifications`             | 6      | All or unread notifications, mark one or all as read      |
+| Route                        | Sprint | Page                                                       |
+| ---------------------------- | ------ | ---------------------------------------------------------- |
+| `/`, `/terms`                | —      | Landing page and data-handling terms                       |
+| `/register`, `/login`        | 2      | Registration, login and password recovery                  |
+| `/verify-email`              | 2      | Email verification and resend                              |
+| `/reset-password`            | 2      | New password from a one-time link                          |
+| `/onboarding`                | 3      | First profile, skill lists and lesson formats              |
+| `/profile`                   | 3      | Own profile, skills and formats                            |
+| `/main`                      | 3–5    | Dashboard: mutual matches, new requests, active exchanges  |
+| `/search`                    | 4      | Student search with filters                                |
+| `/matches`                   | 4      | Mutual matches with explanations                           |
+| `/students/[studentId]`      | 4–5    | Candidate profile and the exchange proposal dialog         |
+| `/requests`                  | 5      | Incoming and sent exchange requests with decisions         |
+| `/requests/[requestId]`      | 5–6    | Request terms, decision, history and the request's chat    |
+| `/exchanges/[exchangeId]`    | 5–8    | Terms, lesson plan, progress, chat, completion and history |
+| `/messages`                  | 6      | Conversations list; chats of requests and exchanges        |
+| `/messages/[conversationId]` | 6      | Private chat polled every 5 seconds                        |
+| `/notifications`             | 6      | All or unread notifications, mark one or all as read       |
 
 Sprint notes: [`SPRINT2.md`](SPRINT2.md), [`SPRINT3.md`](SPRINT3.md),
 [`SPRINT4.md`](SPRINT4.md), [`SPRINT5.md`](SPRINT5.md), [`SPRINT6.md`](SPRINT6.md).
@@ -72,6 +72,11 @@ unverified users to `/verify-email`, and offers login or retry otherwise. Inside
 `AppSkeleton`: the real sidebar and page title with a shimmering outline of the page.
 
 ## Conventions
+
+Sprint 8 (FR-11) adds mutual lesson confirmation, final exchange completion, cancellation
+with a reason and archived exchanges. See [SPRINT8.md](SPRINT8.md) for the API, acceptance
+checks and the single PR targeting `main`. `/exchanges?status=COMPLETED` and `?status=CANCELLED` open
+the archive; `/sessions/[sessionId]` confirms a lesson after its agreed end time.
 
 - Requests go through `authRequest` in `AuthApi.ts`: same-origin credentials, no cache,
   a 15-second timeout and typed `AuthError` failures. Writes send the CSRF token from
