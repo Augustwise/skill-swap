@@ -7,7 +7,7 @@ import "../styles/discovery.css";
 import "../styles/exchange.css";
 import "../styles/session.css";
 
-export const metadata: Metadata = { title: "Активні обміни — SkillSwap" };
+export const metadata: Metadata = { title: "Мої обміни — SkillSwap" };
 
 export default function ExchangesPage() {
   return (

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ExchangeOverview } from "../../components/ExchangeOverview";
+import { safeAppPath } from "../../components/AppRoutes";
 import "../../styles/dashboard.css";
 import "../../styles/profile.css";
 import "../../styles/discovery.css";
@@ -17,6 +18,12 @@ export default async function ExchangePage({
   searchParams,
 }: PageProps<"/exchanges/[exchangeId]">) {
   const { exchangeId } = await params;
-  const { started } = await searchParams;
-  return <ExchangeOverview exchangeId={exchangeId} started={started === "1"} />;
+  const { started, from } = await searchParams;
+  return (
+    <ExchangeOverview
+      exchangeId={exchangeId}
+      started={started === "1"}
+      from={typeof from === "string" ? safeAppPath(from, "/exchanges") : undefined}
+    />
+  );
 }
