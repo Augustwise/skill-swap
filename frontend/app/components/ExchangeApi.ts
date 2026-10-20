@@ -1,5 +1,5 @@
 import { AuthError, authRequest, writeRequest } from "./AuthApi";
-import { isUuid } from "./AppRoutes";
+import { isUuid, safeAppPath } from "./AppRoutes";
 import {
   readPage,
   type LessonFormat,
@@ -156,8 +156,9 @@ export function requestHref(id: string) {
   return `/requests/${encodeURIComponent(id)}`;
 }
 
-export function exchangeHref(id: string) {
-  return `/exchanges/${encodeURIComponent(id)}`;
+export function exchangeHref(id: string, from?: string) {
+  const path = `/exchanges/${encodeURIComponent(id)}`;
+  return from ? `${path}?from=${encodeURIComponent(safeAppPath(from, "/exchanges"))}` : path;
 }
 
 // The skills, formats and partner as seen by one participant of a request or an exchange.

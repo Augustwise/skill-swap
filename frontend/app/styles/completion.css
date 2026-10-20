@@ -19,6 +19,16 @@
   line-height: 1.6;
 }
 
+.dashboard-button.completion-danger {
+  border-color: #e7a9b4;
+  color: #9f2940;
+  white-space: normal;
+}
+
+.dashboard-button.completion-danger:hover:not(:disabled) {
+  background: #fff1f3;
+}
+
 .completion-panel :is(h3, p),
 .completion-confirmations {
   margin: 0;
