@@ -9,6 +9,16 @@
   overflow-wrap: anywhere;
 }
 
+.completion-pending {
+  margin: 16px 0 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .completion-panel :is(h3, p),
 .completion-confirmations {
   margin: 0;
