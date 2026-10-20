@@ -32,13 +32,25 @@ export function ExchangeLessons({
               <div className="session-plan__body">
                 <h3>{lesson.title}</h3>
                 <SessionFacts lesson={lesson} />
+                {lesson.status === "SCHEDULED" &&
+                  (lesson.canConfirmCompletion ||
+                    lesson.completionConfirmedByMe ||
+                    lesson.completionConfirmedByPartner) && (
+                    <p className="profile-hint">
+                      {lesson.completionConfirmedByMe
+                        ? "Ти підтвердив проведення; очікуємо партнера."
+                        : "Потрібне твоє підтвердження проведення."}
+                    </p>
+                  )}
                 <Link
                   className="dashboard-button"
                   href={sessionHref(lesson.id, exchangeHref(exchange.id))}
                 >
                   {lesson.status === "DRAFT" && exchange.status === "ACTIVE"
                     ? "Узгодити дату"
-                    : "Деталі заняття"}{" "}
+                    : lesson.canConfirmCompletion
+                      ? "Підтвердити проведення"
+                      : "Деталі заняття"}{" "}
                   →
                 </Link>
               </div>
