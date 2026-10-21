@@ -23,6 +23,8 @@ type IApplication interface {
 	AddSkill(ctx context.Context, userID string, list data.SkillList, skillID, level string) (data.Profile, error)
 	UpdateSkillLevel(ctx context.Context, userID string, list data.SkillList, skillID, level string) (data.Profile, error)
 	RemoveSkill(ctx context.Context, userID string, list data.SkillList, skillID string) (data.Profile, error)
+	Privacy(ctx context.Context, userID string) (data.PrivacySettings, error)
+	UpdatePrivacy(ctx context.Context, userID string, patch profile.PrivacyPatch) (data.PrivacySettings, error)
 
 	MutualMatches(ctx context.Context, userID string, page int) (discovery.MatchPage, error)
 	SearchStudents(ctx context.Context, userID string, filter data.StudentFilter, page int) (discovery.StudentPage, error)
@@ -63,6 +65,23 @@ type IApplication interface {
 	CreateReview(ctx context.Context, userID, exchangeID string, in trust.ReviewInput) (trust.ReviewResult, error)
 	ExchangeReviews(ctx context.Context, userID, exchangeID string) (trust.ExchangeReviews, error)
 	UserReviews(ctx context.Context, viewerID, studentID string, page int) (trust.ReviewPage, error)
+
+	BlockStudent(ctx context.Context, userID, studentID string) (trust.BlockResult, error)
+	UnblockStudent(ctx context.Context, userID, studentID string) error
+	Blocks(ctx context.Context, userID string, page int) (trust.BlockPage, error)
+	CreateReport(ctx context.Context, userID string, in trust.ReportInput) (data.Report, error)
+	MyReports(ctx context.Context, userID string, page int) (trust.ReportPage, error)
+	DeleteAccount(ctx context.Context, userID string) error
+
+	Reports(ctx context.Context, status string, page int) (trust.ReportPage, error)
+	ReportDetails(ctx context.Context, reportID string) (trust.ReportDetails, error)
+	ResolveReport(ctx context.Context, moderatorID, reportID string, in trust.DecisionInput) (data.Report, error)
+	SuspendAccount(ctx context.Context, moderatorID, userID, reason string) (trust.AccountResult, error)
+	RestoreAccount(ctx context.Context, moderatorID, userID, reason string) (trust.AccountResult, error)
+	ModerationLog(ctx context.Context, userID string, page int) (trust.ActionPage, error)
+	CatalogSkills(ctx context.Context, query string, page int) (trust.CatalogPage, error)
+	CreateSkill(ctx context.Context, moderatorID string, patch trust.SkillPatch) (data.CatalogSkill, error)
+	UpdateSkill(ctx context.Context, moderatorID, skillID string, patch trust.SkillPatch) (data.CatalogSkill, error)
 }
 
 type Application struct {
@@ -122,6 +141,14 @@ func (a *Application) UpdateSkillLevel(ctx context.Context, userID string, list 
 
 func (a *Application) RemoveSkill(ctx context.Context, userID string, list data.SkillList, skillID string) (data.Profile, error) {
 	return a.profiles.RemoveSkill(ctx, userID, list, skillID)
+}
+
+func (a *Application) Privacy(ctx context.Context, userID string) (data.PrivacySettings, error) {
+	return a.profiles.Privacy(ctx, userID)
+}
+
+func (a *Application) UpdatePrivacy(ctx context.Context, userID string, patch profile.PrivacyPatch) (data.PrivacySettings, error) {
+	return a.profiles.UpdatePrivacy(ctx, userID, patch)
 }
 
 func (a *Application) MutualMatches(ctx context.Context, userID string, page int) (discovery.MatchPage, error) {
@@ -262,4 +289,64 @@ func (a *Application) ExchangeReviews(ctx context.Context, userID, exchangeID st
 
 func (a *Application) UserReviews(ctx context.Context, viewerID, studentID string, page int) (trust.ReviewPage, error) {
 	return a.trust.UserReviews(ctx, viewerID, studentID, page)
+}
+
+func (a *Application) BlockStudent(ctx context.Context, userID, studentID string) (trust.BlockResult, error) {
+	return a.trust.Block(ctx, userID, studentID)
+}
+
+func (a *Application) UnblockStudent(ctx context.Context, userID, studentID string) error {
+	return a.trust.Unblock(ctx, userID, studentID)
+}
+
+func (a *Application) Blocks(ctx context.Context, userID string, page int) (trust.BlockPage, error) {
+	return a.trust.Blocks(ctx, userID, page)
+}
+
+func (a *Application) CreateReport(ctx context.Context, userID string, in trust.ReportInput) (data.Report, error) {
+	return a.trust.CreateReport(ctx, userID, in)
+}
+
+func (a *Application) MyReports(ctx context.Context, userID string, page int) (trust.ReportPage, error) {
+	return a.trust.MyReports(ctx, userID, page)
+}
+
+func (a *Application) DeleteAccount(ctx context.Context, userID string) error {
+	return a.trust.DeleteAccount(ctx, userID)
+}
+
+func (a *Application) Reports(ctx context.Context, status string, page int) (trust.ReportPage, error) {
+	return a.trust.Reports(ctx, status, page)
+}
+
+func (a *Application) ReportDetails(ctx context.Context, reportID string) (trust.ReportDetails, error) {
+	return a.trust.ReportDetails(ctx, reportID)
+}
+
+func (a *Application) ResolveReport(ctx context.Context, moderatorID, reportID string, in trust.DecisionInput) (data.Report, error) {
+	return a.trust.ResolveReport(ctx, moderatorID, reportID, in)
+}
+
+func (a *Application) SuspendAccount(ctx context.Context, moderatorID, userID, reason string) (trust.AccountResult, error) {
+	return a.trust.SuspendAccount(ctx, moderatorID, userID, reason)
+}
+
+func (a *Application) RestoreAccount(ctx context.Context, moderatorID, userID, reason string) (trust.AccountResult, error) {
+	return a.trust.RestoreAccount(ctx, moderatorID, userID, reason)
+}
+
+func (a *Application) ModerationLog(ctx context.Context, userID string, page int) (trust.ActionPage, error) {
+	return a.trust.ModerationLog(ctx, userID, page)
+}
+
+func (a *Application) CatalogSkills(ctx context.Context, query string, page int) (trust.CatalogPage, error) {
+	return a.trust.CatalogSkills(ctx, query, page)
+}
+
+func (a *Application) CreateSkill(ctx context.Context, moderatorID string, patch trust.SkillPatch) (data.CatalogSkill, error) {
+	return a.trust.CreateSkill(ctx, moderatorID, patch)
+}
+
+func (a *Application) UpdateSkill(ctx context.Context, moderatorID, skillID string, patch trust.SkillPatch) (data.CatalogSkill, error) {
+	return a.trust.UpdateSkill(ctx, moderatorID, skillID, patch)
 }

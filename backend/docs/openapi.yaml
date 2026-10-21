@@ -3,7 +3,7 @@ info:
   title: Skill Swap API
   version: 1.0.0
   description: |
-    HTTP contract implemented by the Sprint 1-9 backend.
+    HTTP contract implemented by the Sprint 1-10 backend.
 
     Authentication (FR-01) uses an opaque server-side session stored in the HttpOnly
     `skillswap_session` cookie (SameSite=Lax, Path=/). Browsers should call the API through
@@ -62,6 +62,13 @@ info:
     partner gets a `REVIEW_RECEIVED` notification that opens the exchange. Profiles show
     `averageRating` rounded to one decimal place (null while there are no reviews) and
     `reviewCount`. `Exchange.canReview` tells the client when to show the review form.
+
+    Privacy and safety (Sprint 10, FR-14, FR-15): a student can hide the profile from search
+    and new requests (`/me/privacy`), change the password, delete the account after confirming
+    the password (the account is anonymized), block a student (shared active exchanges are
+    cancelled and pending requests closed) and report a student. Administrators
+    (`User.role = ADMIN`) decide reports, suspend and restore accounts, and edit the skill
+    catalog under `/admin`; every such action is logged with its author, time and reason.
 servers:
   - url: http://127.0.0.1:8080/api/v1
     description: Local development
@@ -77,6 +84,9 @@ tags:
   - name: Conversations
   - name: Notifications
   - name: Reviews
+  - name: Privacy
+  - name: Safety
+  - name: Administration
 paths:
   /openapi.yaml:
     get:
@@ -2726,6 +2736,645 @@ paths:
           $ref: "#/components/responses/ProfileForbidden"
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
+  /auth/change-password:
+    post:
+      tags: [Privacy]
+      operationId: changePassword
+      summary: Change the password and sign out every other session (FR-15)
+      description: |
+        Checks `currentPassword`; a wrong one gets 422 with `fields.currentPassword` and counts
+        towards the sign-in lockout (5 wrong attempts in 15 minutes lock it for 40 minutes, 429).
+        `newPassword` follows the registration rules and must differ from the current one. The
+        current session stays signed in; all other sessions are revoked.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "200":
+          description: The password was changed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [password_changed]
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRFOrOriginForbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/PasswordLocked"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/account:
+    delete:
+      tags: [Privacy]
+      operationId: deleteAccount
+      summary: Delete your account after confirming the password (FR-15)
+      description: |
+        In one transaction the account is anonymized and every interaction ends: sign-in stops
+        working, all sessions and one-time links are revoked, the name becomes
+        «Видалений користувач», the email, city, description, contacts, formats and skill lists
+        are cleared, and your own chat messages are replaced with «Повідомлення видалено».
+        Active exchanges are cancelled (the partner gets a `SESSION_UPDATED` notification),
+        your pending requests are withdrawn and incoming ones declined. Requests, exchanges,
+        reviews and chats stay for the partners without your personal data. The response
+        clears the session cookie. A wrong password gets 422 with `fields.password`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              additionalProperties: false
+              properties:
+                password:
+                  type: string
+                  format: password
+      responses:
+        "204":
+          description: The account was deleted and the session cookie cleared
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRFOrOriginForbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/PasswordLocked"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/privacy:
+    get:
+      tags: [Privacy]
+      operationId: getPrivacy
+      summary: Show who can find your profile and send you requests (FR-15)
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Privacy"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+    patch:
+      tags: [Privacy]
+      operationId: updatePrivacy
+      summary: Hide or show your profile and choose who may send requests (FR-15)
+      description: |
+        Send only the fields to change. A hidden profile (`isDiscoverable: false`) disappears
+        from search, mutual matches and `/students/{userId}`, and nobody can send it a new
+        request. Existing requests, exchanges and chats keep working.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrivacyUpdateRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Privacy"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /students/{userId}/block:
+    post:
+      tags: [Safety]
+      operationId: blockStudent
+      summary: Block a student (FR-14)
+      description: |
+        You can block a student you can see, one you share a request or an exchange with, or
+        one you already blocked. In one transaction the block is stored, your active exchanges
+        with the student are cancelled with the history kept (the student gets a
+        `SESSION_UPDATED` notification), and pending requests between you are closed: yours
+        are withdrawn, theirs declined. Afterwards neither of you finds the other in search,
+        new requests are impossible and chats have `canSend: false`. Blocking again changes
+        nothing and returns zero counts.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: The block and what it ended
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [block, cancelledExchanges, closedRequests]
+                properties:
+                  block:
+                    $ref: "#/components/schemas/Block"
+                  cancelledExchanges:
+                    type: integer
+                    minimum: 0
+                  closedRequests:
+                    type: integer
+                    minimum: 0
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          $ref: "#/components/responses/StudentNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+    delete:
+      tags: [Safety]
+      operationId: unblockStudent
+      summary: Remove your block (FR-14)
+      description: New requests and messages are possible again; cancelled exchanges stay cancelled.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "204":
+          description: The block is removed (also when there was none)
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          $ref: "#/components/responses/StudentNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/blocks:
+    get:
+      tags: [Safety]
+      operationId: listBlocks
+      summary: List the students you blocked, newest first (FR-14)
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: One page of blocks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockPage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /reports:
+    post:
+      tags: [Safety]
+      operationId: createReport
+      summary: Report a student to the administrators (FR-14)
+      description: |
+        The same students as for blocking can be reported, so a student you blocked, or who
+        blocked you after an exchange, can still be reported. One report per student stays
+        `OPEN` until an administrator decides it.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReportRequest"
+      responses:
+        "201":
+          description: The report was sent
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [report]
+                properties:
+                  report:
+                    $ref: "#/components/schemas/Report"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          $ref: "#/components/responses/StudentNotFound"
+        "409":
+          description: "`report_already_open`: you already have an open report about this student"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/reports:
+    get:
+      tags: [Safety]
+      operationId: listMyReports
+      summary: List the reports you sent and their status, newest first (FR-14)
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: One page of your reports
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportPage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /admin/reports:
+    get:
+      tags: [Administration]
+      operationId: listReports
+      summary: List reports for administrators, newest first (FR-14)
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - name: status
+          in: query
+          required: false
+          description: Only reports with this status; all reports when omitted.
+          schema:
+            $ref: "#/components/schemas/ReportStatus"
+      responses:
+        "200":
+          description: One page of reports
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminReportPage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AdminForbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /admin/reports/{reportId}:
+    get:
+      tags: [Administration]
+      operationId: getReport
+      summary: Show a report with the moderation history of the reported user (FR-14)
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ReportID"
+      responses:
+        "200":
+          description: The report and up to 20 latest actions about the reported user
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [report, history]
+                properties:
+                  report:
+                    $ref: "#/components/schemas/AdminReport"
+                  history:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ModerationAction"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AdminForbidden"
+        "404":
+          $ref: "#/components/responses/ReportNotFound"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /admin/reports/{reportId}/resolve:
+    post:
+      tags: [Administration]
+      operationId: resolveReport
+      summary: Decide an open report (FR-14)
+      description: |
+        `DISMISS` closes the report as `DISMISSED`; `RESOLVE` confirms the violation without
+        other changes; `SUSPEND` also suspends the reported account as
+        `/admin/users/{userId}/suspend` does. The decision is logged with the administrator,
+        time and reason and returned as `report.decision`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ReportID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveReportRequest"
+      responses:
+        "200":
+          description: The decided report
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [report]
+                properties:
+                  report:
+                    $ref: "#/components/schemas/AdminReport"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AdminForbidden"
+        "404":
+          description: "`report_not_found`, or `user_not_found` when SUSPEND targets a deleted account"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`report_already_resolved`, or `self_moderation` when SUSPEND targets your own account"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /admin/users/{userId}/suspend:
+    post:
+      tags: [Administration]
+      operationId: suspendAccount
+      summary: Suspend an account (FR-14)
+      description: |
+        Sign-in returns 403 `account_suspended`, all sessions are revoked, the user disappears
+        from search, active exchanges are cancelled for the partners (with a notification) and
+        pending requests are closed. The action is logged. Suspending a suspended account
+        changes nothing and returns `action: null`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        $ref: "#/components/requestBodies/Reason"
+      responses:
+        "200":
+          $ref: "#/components/responses/AccountChanged"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AdminForbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "409":
+          $ref: "#/components/responses/SelfModeration"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /admin/users/{userId}/restore:
+    post:
+      tags: [Administration]
+      operationId: restoreAccount
+      summary: Lift the suspension of an account (FR-14)
+      description: |
+        The user can sign in again; cancelled exchanges stay cancelled. The action is logged.
+        Restoring an active account changes nothing and returns `action: null`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        $ref: "#/components/requestBodies/Reason"
+      responses:
+        "200":
+          $ref: "#/components/responses/AccountChanged"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AdminForbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "409":
+          $ref: "#/components/responses/SelfModeration"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /admin/moderation-actions:
+    get:
+      tags: [Administration]
+      operationId: listModerationActions
+      summary: Read the administrator log, newest first (FR-14)
+      description: |
+        Every report decision, suspension, restore and catalog change with its author, time and
+        reason. Catalog entries have `skill` and no `subject`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - name: userId
+          in: query
+          required: false
+          description: Only actions about this account.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: One page of the log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModerationActionPage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AdminForbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /admin/skills:
+    get:
+      tags: [Administration]
+      operationId: listCatalogSkills
+      summary: List every catalog skill, including hidden ones (FR-14)
+      description: Returns 50 skills per page, ordered by category and name.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - name: q
+          in: query
+          required: false
+          description: Part of the name or slug, at most 150 characters.
+          schema:
+            type: string
+            maxLength: 150
+      responses:
+        "200":
+          description: One page of the catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogSkillPage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AdminForbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+    post:
+      tags: [Administration]
+      operationId: createCatalogSkill
+      summary: Add a skill to the shared catalog (FR-14)
+      description: "`categoryId`, `name` and `slug` are required; `isActive` defaults to true. The change is logged."
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogSkillRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/CatalogSkill"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AdminForbidden"
+        "409":
+          $ref: "#/components/responses/SkillAlreadyExists"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /admin/skills/{skillId}:
+    patch:
+      tags: [Administration]
+      operationId: updateCatalogSkill
+      summary: Rename, move, describe, hide or restore a catalog skill (FR-14)
+      description: |
+        Send only the fields to change. A hidden skill (`isActive: false`) disappears from
+        `/skills`, search and matches and cannot be added to lists; agreed exchanges keep their
+        skill names. The change is logged.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/SkillID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogSkillRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/CatalogSkill"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AdminForbidden"
+        "404":
+          $ref: "#/components/responses/SkillNotFound"
+        "409":
+          $ref: "#/components/responses/SkillAlreadyExists"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
 components:
   securitySchemes:
     sessionCookie:
@@ -2758,7 +3407,35 @@ components:
       schema:
         type: string
         format: uuid
+    UserID:
+      name: userId
+      in: path
+      required: true
+      description: User id (`User.id`, `Person.id`).
+      schema:
+        type: string
+        format: uuid
+    ReportID:
+      name: reportId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   requestBodies:
+    Reason:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [reason]
+            additionalProperties: false
+            properties:
+              reason:
+                type: string
+                minLength: 1
+                maxLength: 1000
     AddSkill:
       required: true
       content:
@@ -2977,6 +3654,86 @@ components:
             error:
               code: conversation_not_found
               message: Conversation was not found
+    AdminForbidden:
+      description: Not an administrator (`admin_required`), unverified email, invalid CSRF token, or foreign origin
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: admin_required
+              message: Only administrators can do this
+    PasswordLocked:
+      description: Too many wrong passwords; `Retry-After` gives the seconds to wait (`login_locked`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Privacy:
+      description: The privacy settings
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [privacy]
+            properties:
+              privacy:
+                $ref: "#/components/schemas/PrivacySettings"
+    StudentNotFound:
+      description: The student is unknown to you, deleted, or the ID is not a UUID (`student_not_found`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ReportNotFound:
+      description: No report has this ID (`report_not_found`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UserNotFound:
+      description: No account has this ID or it was deleted (`user_not_found`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    SelfModeration:
+      description: Administrators cannot suspend or restore their own account (`self_moderation`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    AccountChanged:
+      description: The account and the logged action, or `action` null when nothing changed
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [user, action]
+            properties:
+              user:
+                $ref: "#/components/schemas/ModeratedAccount"
+              action:
+                allOf:
+                  - $ref: "#/components/schemas/ModerationAction"
+                nullable: true
+    CatalogSkill:
+      description: The catalog skill
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [skill]
+            properties:
+              skill:
+                $ref: "#/components/schemas/CatalogSkill"
+    SkillAlreadyExists:
+      description: The category already has a skill with this name, or the slug is taken (`skill_already_exists`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
   schemas:
     Health:
       type: object
@@ -4159,7 +4916,7 @@ components:
         is always the other student relative to the signed-in viewer.
       required: [id, type, requestId, exchangeId, requestStatus, exchangeStatus, format,
         partner, requester, recipient, requesterTeaches, recipientTeaches, lastMessage,
-        lastMessageAt, unreadCount, canSend, createdAt]
+        lastMessageAt, unreadCount, canSend, blockedByMe, createdAt]
       properties:
         id:
           type: string
@@ -4208,6 +4965,9 @@ components:
         canSend:
           type: boolean
           description: False when either student blocked the other or an account is no longer active.
+        blockedByMe:
+          type: boolean
+          description: True when you blocked the partner; `DELETE /students/{userId}/block` unblocks.
         createdAt:
           type: string
           format: date-time
@@ -4395,3 +5155,318 @@ components:
           type: integer
           minimum: 0
           description: Total number of unread notifications for the signed-in user.
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      additionalProperties: false
+      properties:
+        currentPassword:
+          type: string
+          format: password
+        newPassword:
+          type: string
+          format: password
+          minLength: 12
+          description: At least 12 characters and at most 72 UTF-8 bytes.
+    RequestScope:
+      type: string
+      enum: [ANYONE, SAME_UNIVERSITY]
+    PrivacySettings:
+      type: object
+      required: [isDiscoverable, acceptsRequests, requestScope]
+      properties:
+        isDiscoverable:
+          type: boolean
+          description: False hides the profile from search, matches and new requests.
+        acceptsRequests:
+          type: boolean
+          description: False rejects new requests with `requests_closed`.
+        requestScope:
+          $ref: "#/components/schemas/RequestScope"
+    PrivacyUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        isDiscoverable:
+          type: boolean
+        acceptsRequests:
+          type: boolean
+        requestScope:
+          $ref: "#/components/schemas/RequestScope"
+    Block:
+      type: object
+      required: [user, createdAt]
+      properties:
+        user:
+          $ref: "#/components/schemas/Person"
+        createdAt:
+          type: string
+          format: date-time
+    BlockPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Block"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+    ReportStatus:
+      type: string
+      enum: [OPEN, RESOLVED, DISMISSED]
+    CreateReportRequest:
+      type: object
+      required: [reportedUserId, reason]
+      additionalProperties: false
+      properties:
+        reportedUserId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    Report:
+      type: object
+      description: A report as its author sees it; the decision itself stays with the administrators.
+      required: [id, reportedUser, reason, status, createdAt, resolvedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        reportedUser:
+          $ref: "#/components/schemas/Person"
+        reason:
+          type: string
+        status:
+          $ref: "#/components/schemas/ReportStatus"
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+    ReportPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Report"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+    ModerationActionType:
+      type: string
+      enum: [DISMISS_REPORT, RESOLVE_REPORT, SUSPEND_ACCOUNT, RESTORE_ACCOUNT, CREATE_SKILL, UPDATE_SKILL]
+    ModerationAction:
+      type: object
+      description: One entry of the administrator log.
+      required: [id, reportId, moderator, subject, skill, action, reason, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        reportId:
+          type: string
+          format: uuid
+          nullable: true
+        moderator:
+          $ref: "#/components/schemas/Person"
+        subject:
+          allOf:
+            - $ref: "#/components/schemas/Person"
+          nullable: true
+          description: The account the action is about; null for catalog changes.
+        skill:
+          type: object
+          nullable: true
+          description: The catalog skill the action is about; null for account actions.
+          required: [id, name]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+        action:
+          $ref: "#/components/schemas/ModerationActionType"
+        reason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ModerationActionPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModerationAction"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+    AccountStatus:
+      type: string
+      enum: [ACTIVE, SUSPENDED]
+    AdminReport:
+      type: object
+      required: [id, reporter, reportedUser, reason, status, createdAt, resolvedAt, decision]
+      properties:
+        id:
+          type: string
+          format: uuid
+        reporter:
+          $ref: "#/components/schemas/Person"
+        reportedUser:
+          type: object
+          required: [id, firstName, lastName, accountStatus]
+          properties:
+            id:
+              type: string
+              format: uuid
+            firstName:
+              type: string
+            lastName:
+              type: string
+            accountStatus:
+              $ref: "#/components/schemas/AccountStatus"
+        reason:
+          type: string
+        status:
+          $ref: "#/components/schemas/ReportStatus"
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        decision:
+          allOf:
+            - $ref: "#/components/schemas/ModerationAction"
+          nullable: true
+    AdminReportPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminReport"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+    ResolveReportRequest:
+      type: object
+      required: [decision, reason]
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum: [DISMISS, RESOLVE, SUSPEND]
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    ModeratedAccount:
+      type: object
+      required: [id, firstName, lastName, email, role, accountStatus]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [STUDENT, ADMIN]
+        accountStatus:
+          $ref: "#/components/schemas/AccountStatus"
+    CatalogSkill:
+      type: object
+      required: [id, categoryId, categoryName, name, slug, description, isActive]
+      properties:
+        id:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+        categoryName:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          description: Empty when there is no description.
+        isActive:
+          type: boolean
+    CatalogSkillRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        categoryId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        slug:
+          type: string
+          maxLength: 150
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+        description:
+          type: string
+          maxLength: 500
+        isActive:
+          type: boolean
+    CatalogSkillPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogSkill"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 50
+        total:
+          type: integer

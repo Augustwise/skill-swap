@@ -86,7 +86,7 @@ func postgresHandler(pool *pgxpool.Pool, mail mailer.IMailer) http.Handler {
 	comm := communication.NewService(store, store, store)
 	sessions := sessionsvc.NewService(store, store, store, comm)
 	app := core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store),
-		exchange.NewService(store, store, store, comm), comm, sessions, trust.NewService(store, store, store, comm))
+		exchange.NewService(store, store, store, comm), comm, sessions, trust.NewService(store, store, store, store, comm))
 	return New(app, access, store, testSettings, discardLogger())
 }
 
@@ -94,7 +94,7 @@ func memoryApp(store *datatest.Memory) *core.Application {
 	comm := communication.NewService(store, store, store)
 	sessions := sessionsvc.NewService(store, store, store, comm)
 	return core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store),
-		exchange.NewService(store, store, store, comm), comm, sessions, trust.NewService(store, store, store, comm))
+		exchange.NewService(store, store, store, comm), comm, sessions, trust.NewService(store, store, store, store, comm))
 }
 
 func request(t *testing.T, handler http.Handler, method, target string) *httptest.ResponseRecorder {
@@ -131,7 +131,11 @@ func TestOpenAPIContract(t *testing.T) {
 		"/sessions/{sessionId}/decline:", "/sessions/{sessionId}/cancel:", "/sessions/{sessionId}/confirm:", "/me/schedule:",
 		"/me/conversations:", "/conversations/{conversationId}:", "/conversations/{conversationId}/messages:",
 		"/conversations/{conversationId}/read:", "/me/notifications:", "/me/notifications/{notificationId}/read:",
-		"/me/notifications/read-all:", "/exchanges/{exchangeId}/reviews:", "/students/{userId}/reviews:", "/me/reviews:"} {
+		"/me/notifications/read-all:", "/exchanges/{exchangeId}/reviews:", "/students/{userId}/reviews:", "/me/reviews:",
+		"/auth/change-password:", "/me/account:", "/me/privacy:", "/students/{userId}/block:", "/me/blocks:", "/reports:",
+		"/me/reports:", "/admin/reports:", "/admin/reports/{reportId}:", "/admin/reports/{reportId}/resolve:",
+		"/admin/users/{userId}/suspend:", "/admin/users/{userId}/restore:", "/admin/moderation-actions:",
+		"/admin/skills:", "/admin/skills/{skillId}:"} {
 		if !strings.Contains(response.Body.String(), fragment) {
 			t.Fatalf("OpenAPI contract does not contain %q", fragment)
 		}

@@ -192,3 +192,62 @@ func TestPasswordResetRevokesSessionsInOneTransaction(t *testing.T) {
 		t.Fatalf("unknown email err = %v", err)
 	}
 }
+
+// Changing the password keeps the current session and signs out every other one.
+func TestChangePasswordRevokesOtherSessions(t *testing.T) {
+	s, _, _ := newTestService(t)
+	ctx := context.Background()
+	register(t, s, "a@students.example.test")
+	current, err := s.Login(ctx, LoginInput{Email: "a@students.example.test", Password: testPassword})
+	expect.NoError(t, "sign in on this device", err)
+	other, err := s.Login(ctx, LoginInput{Email: "a@students.example.test", Password: testPassword})
+	expect.NoError(t, "sign in on another device", err)
+	newPassword := "another long passphrase"
+
+	var invalid *ValidationError
+	err = s.ChangePassword(ctx, current.User, current.Token, "wrong password!!", newPassword)
+	if !errors.As(err, &invalid) {
+		t.Fatalf("err = %v, want ValidationError", err)
+	}
+	expect.Equal(t, "wrong current password", invalid.Fields["currentPassword"], "Password is incorrect")
+	err = s.ChangePassword(ctx, current.User, current.Token, testPassword, "short")
+	if !errors.As(err, &invalid) {
+		t.Fatalf("err = %v, want ValidationError", err)
+	}
+	expect.Equal(t, "short new password", invalid.Fields["newPassword"], "Password must contain at least 12 characters")
+	err = s.ChangePassword(ctx, current.User, current.Token, testPassword, testPassword)
+	if !errors.As(err, &invalid) {
+		t.Fatalf("err = %v, want ValidationError", err)
+	}
+	expect.Equal(t, "unchanged password", invalid.Fields["newPassword"], "New password must differ from the current one")
+
+	expect.NoError(t, "change the password", s.ChangePassword(ctx, current.User, current.Token, testPassword, newPassword))
+	_, err = s.Authenticate(ctx, current.Token)
+	expect.NoError(t, "current session", err)
+	_, err = s.Authenticate(ctx, other.Token)
+	expect.Error(t, "other session", err, ErrUnauthenticated)
+	_, err = s.Login(ctx, LoginInput{Email: "a@students.example.test", Password: testPassword})
+	expect.Error(t, "sign in with the old password", err, ErrInvalidCredentials)
+	_, err = s.Login(ctx, LoginInput{Email: "a@students.example.test", Password: newPassword})
+	expect.NoError(t, "sign in with the new password", err)
+}
+
+// Wrong passwords before a sensitive action count towards the sign-in lockout.
+func TestConfirmPasswordUsesTheLoginLockout(t *testing.T) {
+	s, _, _ := newTestService(t)
+	ctx := context.Background()
+	register(t, s, "a@students.example.test")
+	session, err := s.Login(ctx, LoginInput{Email: "a@students.example.test", Password: testPassword})
+	expect.NoError(t, "sign in", err)
+	expect.NoError(t, "confirm the right password", s.ConfirmPassword(ctx, session.User, testPassword))
+	for range 5 {
+		var invalid *ValidationError
+		if err := s.ConfirmPassword(ctx, session.User, "wrong password!!"); !errors.As(err, &invalid) {
+			t.Fatalf("err = %v, want ValidationError", err)
+		}
+	}
+	var locked *LockedError
+	if err := s.ConfirmPassword(ctx, session.User, testPassword); !errors.As(err, &locked) {
+		t.Fatalf("err = %v, want LockedError", err)
+	}
+}

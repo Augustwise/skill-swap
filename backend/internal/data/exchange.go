@@ -367,6 +367,7 @@ func (p *Postgres) LockRequest(ctx context.Context, requestID string) (RequestSt
 	return r, nil
 }
 
+// UpdateRequestStatus records a change made by the system when changedByID is empty.
 func (p *Postgres) UpdateRequestStatus(ctx context.Context, requestID, status, changedByID string) error {
 	tag, err := p.conn(ctx).Exec(ctx, `WITH updated AS (
 			UPDATE exchange_requests SET status = $2::exchange_request_status, responded_at = now()
@@ -374,7 +375,7 @@ func (p *Postgres) UpdateRequestStatus(ctx context.Context, requestID, status, c
 			RETURNING id, status, responded_at
 		)
 		INSERT INTO exchange_request_status_history (request_id, status, changed_by_user_id, created_at)
-		SELECT id, status, $3, responded_at FROM updated`, requestID, status, changedByID)
+		SELECT id, status, NULLIF($3, '')::uuid, responded_at FROM updated`, requestID, status, changedByID)
 	if err != nil {
 		return err
 	}
@@ -632,7 +633,7 @@ func (p *Postgres) CompleteExchange(ctx context.Context, exchangeID, completedBy
 }
 
 // CancelExchange keeps completed sessions and all history, and cancels every session that has
-// not taken place yet.
+// not taken place yet. An empty cancelledByID records a cancellation made by the system.
 func (p *Postgres) CancelExchange(ctx context.Context, exchangeID, cancelledByID, reason string) error {
 	tag, err := p.conn(ctx).Exec(ctx, `WITH cancelled AS (
 			UPDATE exchanges
@@ -641,7 +642,7 @@ func (p *Postgres) CancelExchange(ctx context.Context, exchangeID, cancelledByID
 			RETURNING id, cancelled_at
 		)
 		INSERT INTO exchange_status_history (exchange_id, status, changed_by_user_id, reason, created_at)
-		SELECT id, 'CANCELLED', $2, $3, cancelled_at FROM cancelled`, exchangeID, cancelledByID, reason)
+		SELECT id, 'CANCELLED', NULLIF($2, '')::uuid, $3, cancelled_at FROM cancelled`, exchangeID, cancelledByID, reason)
 	if err != nil {
 		return err
 	}
@@ -649,7 +650,7 @@ func (p *Postgres) CancelExchange(ctx context.Context, exchangeID, cancelledByID
 		return ErrNotFound
 	}
 	if _, err := p.conn(ctx).Exec(ctx, `UPDATE session_schedule_proposals sp
-		SET status = 'SUPERSEDED', responded_by_user_id = $2, responded_at = now()
+		SET status = 'SUPERSEDED', responded_by_user_id = NULLIF($2, '')::uuid, responded_at = now()
 		FROM sessions s
 		WHERE s.id = sp.session_id AND s.exchange_id = $1 AND sp.status = 'PENDING'`, exchangeID, cancelledByID); err != nil {
 		return err

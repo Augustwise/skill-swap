@@ -722,6 +722,120 @@ notifications have `reviewId`.
 | `review_already_exists` | 409 | you have already reviewed this exchange |
 | `validation_failed` | 422 | `rating` is not 1–5, or `comment` is too long or has control characters |
 
+## Privacy, blocks, reports and moderation (Sprint 10, FR-14, FR-15)
+
+`internal/trust` (TrustService in LR2) also holds personal blocks, reports, the
+administrator tools and account deletion; privacy settings belong to `internal/profile` and
+the password change to `internal/auth`. Migration `00010_moderation.sql` reuses
+`user_blocks`, `reports`, `moderation_actions`, `users.account_status`, `users.deleted_at` and
+`user_profile_settings` from `00001` and adds checks: a report has a reason of 1 to 1000
+characters and `resolved_at` exactly when it is decided, one report per reporter and
+reported user stays open (`idx_reports_open_pair`), the moderation log has a known action
+and a reason, and may point to a catalog skill instead of a user (`skill_id`).
+
+```bash
+go run ./cmd/db up
+go run ./cmd/db seed
+```
+
+The seed adds the test administrator `demo.admin@students.example.test` (role `ADMIN`, the
+same demo password), an open report from `demo.olha` about `demo.oleh` (whom she blocked) and
+a report from `demo.andrii` about `demo.marko` that the administrator dismissed. Sign in as
+the administrator: `/auth/me` returns `"role": "ADMIN"`, and the client can show the
+moderation pages.
+
+Student routes:
+
+| Method | Path | Session | Purpose |
+| ------ | ---- | ------- | ------- |
+| GET | `/api/v1/me/privacy` | cookie | `{ privacy: { isDiscoverable, acceptsRequests, requestScope } }` |
+| PATCH | `/api/v1/me/privacy` | cookie + CSRF | Change only the sent fields; returns the same shape |
+| POST | `/api/v1/auth/change-password` | cookie + CSRF | `{ currentPassword, newPassword }`; signs out the other sessions |
+| DELETE | `/api/v1/me/account` | cookie + CSRF | `{ password }`; anonymizes the account, 204 and clears the cookie |
+| POST | `/api/v1/students/{userId}/block` | cookie + CSRF | Block; returns `{ block, cancelledExchanges, closedRequests }` |
+| DELETE | `/api/v1/students/{userId}/block` | cookie + CSRF | Unblock (204) |
+| GET | `/api/v1/me/blocks?page=` | cookie | Students you blocked: `{ items: [{ user, createdAt }], page, pageSize, total }` |
+| POST | `/api/v1/reports` | cookie + CSRF | `{ reportedUserId, reason }`; returns 201 `{ report }` |
+| GET | `/api/v1/me/reports?page=` | cookie | Your reports with `status` and `resolvedAt` |
+
+Administrator routes (`withAdmin`: a verified session with `role = ADMIN`, otherwise 403
+`admin_required`):
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| GET | `/api/v1/admin/reports?status=&page=` | Reports, newest first, with `reportedUser.accountStatus` and `decision` |
+| GET | `/api/v1/admin/reports/{reportId}` | `{ report, history }`: up to 20 earlier actions about the reported user |
+| POST | `/api/v1/admin/reports/{reportId}/resolve` | `{ decision: DISMISS \| RESOLVE \| SUSPEND, reason }` |
+| POST | `/api/v1/admin/users/{userId}/suspend` | `{ reason }`; returns `{ user, action }` |
+| POST | `/api/v1/admin/users/{userId}/restore` | `{ reason }`; returns `{ user, action }` |
+| GET | `/api/v1/admin/moderation-actions?userId=&page=` | The log of all administrator actions, newest first |
+| GET | `/api/v1/admin/skills?q=&page=` | Every catalog skill with `isActive`, 50 per page |
+| POST | `/api/v1/admin/skills` | `{ categoryId, name, slug, description?, isActive? }`; returns 201 `{ skill }` |
+| PATCH | `/api/v1/admin/skills/{skillId}` | Change only the sent fields; `isActive: false` hides the skill |
+
+Server rules:
+
+- **Privacy (FR-15).** A hidden profile (`isDiscoverable: false`) is missing from search,
+  mutual matches and `/students/{userId}`, and nobody can send it a new request; current
+  requests, exchanges and chats keep working. `acceptsRequests` and `requestScope`
+  (`ANYONE`, `SAME_UNIVERSITY`) keep their Sprint 5 meaning. Email and meeting places were
+  already private: profiles never contain the email, and sessions are shown only to the two
+  participants.
+- **Password change.** A wrong `currentPassword` gets 422 with `fields.currentPassword`, and
+  wrong attempts count towards the sign-in lockout (429 `login_locked`). The current session
+  stays; every other session is revoked.
+- **Account deletion (FR-15).** After the password check, one transaction locks the user,
+  anonymizes the account and ends its interactions: the name becomes
+  «Видалений користувач», the email becomes `deleted-{id}@deleted.invalid`, the city,
+  description, contacts, formats, skill lists, verification, sign-in identity, blocks and
+  sessions are removed or revoked, the user's chat messages become «Повідомлення видалено»,
+  request messages and notification texts written by the user are cleared, active exchanges
+  are cancelled with the reason «Учасник видалив обліковий запис», own pending requests are
+  withdrawn and incoming ones declined. Requests, exchanges, reviews and chats stay for the
+  partners, now with the anonymous author.
+- **Blocking (FR-14).** You can block a student you can see, one you share a request or an
+  exchange with, or one you already blocked; anyone else, yourself excluded (422), gets 404
+  `student_not_found`. Both users are locked in UUID order, as in every other pair
+  operation, then the block is stored, shared active exchanges are cancelled with the
+  reason «Один з учасників заблокував іншого» (the partner gets a `SESSION_UPDATED`
+  notification) and pending requests between the pair are closed. After that neither user
+  finds the other, new requests are impossible and the chat has `canSend: false`; the
+  blocker sees `blockedByMe: true` on the conversation. Repeating the block changes nothing.
+  Unblocking does not restore cancelled exchanges.
+- **Reports (FR-14).** The same students as for blocking can be reported, so a partner can
+  report even after being blocked. `reason` is 1–1000 characters. A second report about
+  the same student while the first is `OPEN` gets 409 `report_already_open`. The author sees
+  only the status of the report, not the administrator's decision.
+- **Moderation (FR-14).** Every administrator action is stored in `moderation_actions` with
+  the administrator, time and reason, and is listed by `/admin/moderation-actions`.
+  `DISMISS` closes a report as `DISMISSED`, `RESOLVE` as `RESOLVED`, `SUSPEND` as `RESOLVED`
+  and suspends the reported account. A decided report gets 409 `report_already_resolved`.
+  Suspension sets `account_status = SUSPENDED`, revokes all sessions (sign-in returns 403
+  `account_suspended`) and ends the account's exchanges and requests as above, recorded as
+  system changes with the reason «Обліковий запис учасника заблоковано адміністратором».
+  Restoring lets the user sign in again. Suspending a suspended account or restoring an
+  active one returns `action: null` and logs nothing; an administrator cannot moderate their
+  own account (409 `self_moderation`).
+- **Catalog (FR-14).** Administrators add skills and rename, move, describe, hide or restore
+  them. `slug` uses lowercase Latin letters, digits and single hyphens; a duplicate name in
+  a category or a taken slug gets 409 `skill_already_exists`. A hidden skill disappears from
+  `/skills`, search and matches and cannot be added to lists; agreed exchanges keep their
+  skill names. Catalog changes are logged with the skill instead of a user.
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `admin_required` | 403 | an `/admin` route is called by a student |
+| `student_not_found` | 404 | the student is unknown to you, deleted, or the ID is not a UUID |
+| `user_not_found` | 404 | the account to suspend or restore does not exist or was deleted |
+| `report_not_found` | 404 | no report has this ID |
+| `skill_not_found` | 404 | no catalog skill has this ID |
+| `report_already_open` | 409 | you already have an open report about this student |
+| `report_already_resolved` | 409 | the report has already been decided |
+| `self_moderation` | 409 | an administrator tries to suspend or restore their own account |
+| `skill_already_exists` | 409 | the name is taken in the category, or the slug is taken |
+| `validation_failed` | 422 | a field is invalid, a password is wrong, or you target yourself (`fields.userId`) |
+| `login_locked` | 429 | too many wrong passwords; see `Retry-After` |
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for

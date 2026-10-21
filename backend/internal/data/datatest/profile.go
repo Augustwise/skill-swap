@@ -47,7 +47,7 @@ func (m *Memory) ProfileByUserID(_ context.Context, userID string) (data.Profile
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	a, ok := m.users[userID]
-	if !ok {
+	if !ok || a.deleted {
 		return data.Profile{}, data.ErrNotFound
 	}
 	profile := data.Profile{
@@ -150,5 +150,28 @@ func (m *Memory) RemoveUserSkill(_ context.Context, list data.SkillList, userID,
 		return data.ErrNotFound
 	}
 	delete(a.skills[list], skillID)
+	return nil
+}
+
+func (m *Memory) PrivacySettings(_ context.Context, userID string) (data.PrivacySettings, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if a, ok := m.users[userID]; !ok || a.deleted {
+		return data.PrivacySettings{}, data.ErrNotFound
+	}
+	s := m.settings[userID]
+	scope := data.ScopeAnyone
+	if s.sameUniversityOnly {
+		scope = data.ScopeSameUniversity
+	}
+	return data.PrivacySettings{Discoverable: !s.hidden, AcceptsRequests: !s.closed, RequestScope: scope}, nil
+}
+
+func (m *Memory) UpdatePrivacySettings(_ context.Context, userID string, s data.PrivacySettings) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.settings[userID] = requestSettings{
+		hidden: !s.Discoverable, closed: !s.AcceptsRequests, sameUniversityOnly: s.RequestScope == data.ScopeSameUniversity,
+	}
 	return nil
 }

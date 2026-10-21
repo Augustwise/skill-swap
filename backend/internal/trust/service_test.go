@@ -43,7 +43,7 @@ func newFixture(t *testing.T) *fixture {
 	store := datatest.NewMemory()
 	comm := communication.NewService(store, store, store)
 	f := &fixture{
-		service:   NewService(store, store, store, comm),
+		service:   NewService(store, store, store, store, comm),
 		exchanges: exchange.NewService(store, store, store, comm),
 		comm:      comm,
 		store:     store,

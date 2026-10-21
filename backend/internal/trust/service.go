@@ -1,4 +1,5 @@
-// Package trust holds reviews and ratings (FR-12).
+// Package trust holds reviews and ratings (FR-12), personal blocks, reports, the administrator
+// tools with their log (FR-14) and account deletion (FR-15).
 package trust
 
 import (
@@ -7,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"skillswap/backend/internal/communication"
 	"skillswap/backend/internal/data"
 	"skillswap/backend/internal/profile"
 	"skillswap/backend/internal/validate"
@@ -32,17 +34,20 @@ var (
 
 type ICommunication interface {
 	RecordReviewReceived(ctx context.Context, review data.Review, exchange data.Exchange) error
+	RecordSessionUpdated(ctx context.Context, event communication.SessionUpdateEvent) error
 }
 
 type Service struct {
-	exchanges data.IExchangeData
-	reviews   data.IReviewData
-	tx        data.ITransaction
-	comm      ICommunication
+	exchanges  data.IExchangeData
+	reviews    data.IReviewData
+	moderation data.IModerationData
+	tx         data.ITransaction
+	comm       ICommunication
 }
 
-func NewService(exchanges data.IExchangeData, reviews data.IReviewData, tx data.ITransaction, comm ICommunication) *Service {
-	return &Service{exchanges: exchanges, reviews: reviews, tx: tx, comm: comm}
+func NewService(exchanges data.IExchangeData, reviews data.IReviewData, moderation data.IModerationData,
+	tx data.ITransaction, comm ICommunication) *Service {
+	return &Service{exchanges: exchanges, reviews: reviews, moderation: moderation, tx: tx, comm: comm}
 }
 
 type ReviewInput struct {

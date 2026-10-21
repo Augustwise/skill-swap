@@ -331,6 +331,61 @@ func (s *Service) ResetPassword(ctx context.Context, token, password string) err
 	return err
 }
 
+// ChangePassword replaces the password after checking the current one and signs the user out
+// of every other session (FR-15).
+func (s *Service) ChangePassword(ctx context.Context, user data.User, sessionToken, currentPassword, newPassword string) error {
+	if message := validatePassword(newPassword); message != "" {
+		return &ValidationError{Fields: map[string]string{"newPassword": message}}
+	}
+	if err := s.checkPassword(ctx, user, currentPassword, "currentPassword"); err != nil {
+		return err
+	}
+	if newPassword == currentPassword {
+		return &ValidationError{Fields: map[string]string{"newPassword": "New password must differ from the current one"}}
+	}
+	passwordHash, err := hashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.data.SetPassword(ctx, user.ID, passwordHash); err != nil {
+			return err
+		}
+		if err := s.data.RevokeOtherSessions(ctx, user.ID, hashToken(sessionToken)); err != nil {
+			return err
+		}
+		return s.data.ClearFailedLogins(ctx, user.Email)
+	})
+}
+
+// ConfirmPassword checks the password of the signed-in user before deleting the account.
+func (s *Service) ConfirmPassword(ctx context.Context, user data.User, password string) error {
+	return s.checkPassword(ctx, user, password, "password")
+}
+
+// checkPassword reports a wrong password as a field error. Wrong attempts count towards the
+// same lockout as failed sign-ins (NFR-08).
+func (s *Service) checkPassword(ctx context.Context, user data.User, password, field string) error {
+	lockedUntil, err := s.data.LoginLockedUntil(ctx, user.Email)
+	if err != nil {
+		return err
+	}
+	if !lockedUntil.IsZero() {
+		return &LockedError{Until: lockedUntil}
+	}
+	_, passwordHash, err := s.data.UserByEmail(ctx, user.Email)
+	if err != nil && !errors.Is(err, data.ErrNotFound) {
+		return err
+	}
+	if !passwordMatches(passwordHash, password) {
+		if err := s.data.RecordFailedLogin(ctx, user.Email, loginThrottle); err != nil {
+			return err
+		}
+		return &ValidationError{Fields: map[string]string{field: "Password is incorrect"}}
+	}
+	return nil
+}
+
 func (s *Service) replaceToken(ctx context.Context, userID, purpose string, ttl time.Duration) (string, error) {
 	token, err := newToken()
 	if err != nil {
