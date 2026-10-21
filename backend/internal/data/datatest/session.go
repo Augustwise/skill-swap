@@ -81,9 +81,7 @@ func (m *Memory) hydrateSession(s *data.Session) data.Session {
 		out.Learner = m.party(l)
 	}
 	ua, ub := m.users[out.Requester.UserID], m.users[out.Recipient.UserID]
-	out.CanInteract = ua != nil && ub != nil &&
-		ua.user.Status == "ACTIVE" && ub.user.Status == "ACTIVE" &&
-		!m.blocked(out.Requester.UserID, out.Recipient.UserID)
+	out.CanInteract = ua.active() && ub.active() && !m.blocked(out.Requester.UserID, out.Recipient.UserID)
 
 	out.ConfirmedUserIDs = append([]string{}, m.sessionConfirmations[s.ID]...)
 	out.CompletionConfirmedUserIDs = append([]string{}, m.completionConfirmations[s.ID]...)

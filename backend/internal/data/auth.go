@@ -59,6 +59,7 @@ type IAuthData interface {
 	RecordLogin(ctx context.Context, userID string) error
 	RevokeSession(ctx context.Context, tokenHash string) error
 	RevokeUserSessions(ctx context.Context, userID string) error
+	RevokeOtherSessions(ctx context.Context, userID, keepTokenHash string) error
 	CreateToken(ctx context.Context, userID, purpose string, token StoredToken) error
 	InvalidateTokens(ctx context.Context, userID, purpose string) error
 	UseToken(ctx context.Context, tokenHash, purpose string) (string, error)
@@ -177,6 +178,13 @@ func (p *Postgres) RevokeSession(ctx context.Context, tokenHash string) error {
 func (p *Postgres) RevokeUserSessions(ctx context.Context, userID string) error {
 	_, err := p.conn(ctx).Exec(ctx, `UPDATE user_sessions SET revoked_at = now()
 		WHERE user_id = $1 AND revoked_at IS NULL`, userID)
+	return err
+}
+
+// RevokeOtherSessions signs the user out everywhere except the session with keepTokenHash.
+func (p *Postgres) RevokeOtherSessions(ctx context.Context, userID, keepTokenHash string) error {
+	_, err := p.conn(ctx).Exec(ctx, `UPDATE user_sessions SET revoked_at = now()
+		WHERE user_id = $1 AND session_token_hash <> $2 AND revoked_at IS NULL`, userID, keepTokenHash)
 	return err
 }
 

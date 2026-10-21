@@ -12,7 +12,9 @@ import (
 
 var _ data.IExchangeData = (*Memory)(nil)
 
+// requestSettings keep the zero value for the defaults: visible and open to anyone.
 type requestSettings struct {
+	hidden             bool
 	closed             bool
 	sameUniversityOnly bool
 }
@@ -21,7 +23,9 @@ type requestSettings struct {
 func (m *Memory) SetRequestSettings(userID string, acceptsRequests, sameUniversityOnly bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.settings[userID] = requestSettings{closed: !acceptsRequests, sameUniversityOnly: sameUniversityOnly}
+	s := m.settings[userID]
+	s.closed, s.sameUniversityOnly = !acceptsRequests, sameUniversityOnly
+	m.settings[userID] = s
 }
 
 // SetRequestStatus changes the status of a stored request, e.g. to free its skill pair.
@@ -180,8 +184,7 @@ func (m *Memory) RequestIsCurrent(_ context.Context, requestID string) (bool, er
 		return false, nil
 	}
 	requester, recipient := m.users[r.Requester.UserID], m.users[r.Recipient.UserID]
-	if requester == nil || recipient == nil || requester.user.Status != "ACTIVE" || recipient.user.Status != "ACTIVE" ||
-		m.blocked(r.Requester.UserID, r.Recipient.UserID) {
+	if !requester.active() || !recipient.active() || m.blocked(r.Requester.UserID, r.Recipient.UserID) {
 		return false, nil
 	}
 	_, ok1 := requester.skills[data.TeachingList][r.RequesterTeaches.SkillID]
@@ -275,9 +278,7 @@ func (m *Memory) hydrateExchange(e *data.Exchange) data.Exchange {
 		out.Recipient = m.party(b)
 	}
 	ua, ub := m.users[out.Requester.UserID], m.users[out.Recipient.UserID]
-	out.CanInteract = ua != nil && ub != nil &&
-		ua.user.Status == "ACTIVE" && ub.user.Status == "ACTIVE" &&
-		!m.blocked(out.Requester.UserID, out.Recipient.UserID)
+	out.CanInteract = ua.active() && ub.active() && !m.blocked(out.Requester.UserID, out.Recipient.UserID)
 	out.ConfirmedUserIDs = append([]string{}, m.exchangeConfirmations[out.ID]...)
 	out.ReviewAuthorIDs = []string{}
 	for _, r := range m.exchangeReviews(out.ID) {

@@ -50,6 +50,14 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	mux.HandleFunc("/api/v1/auth/resend-verification", a.postOnly(a.withUser(a.resendVerification)))
 	mux.HandleFunc("/api/v1/auth/forgot-password", a.postOnly(a.forgotPassword))
 	mux.HandleFunc("/api/v1/auth/reset-password", a.postOnly(a.resetPassword))
+	mux.HandleFunc("/api/v1/auth/change-password", a.postOnly(a.withUser(a.changePassword)))
+	mux.HandleFunc("/api/v1/me/account", a.methods(map[string]http.HandlerFunc{
+		http.MethodDelete: a.withUser(a.deleteAccount),
+	}))
+	mux.HandleFunc("/api/v1/me/privacy", a.methods(map[string]http.HandlerFunc{
+		http.MethodGet:   a.withVerifiedUser(a.getPrivacy),
+		http.MethodPatch: a.withVerifiedUser(a.updatePrivacy),
+	}))
 	mux.HandleFunc("/api/v1/me/profile", a.methods(map[string]http.HandlerFunc{
 		http.MethodGet:   a.withVerifiedUser(a.getProfile),
 		http.MethodPatch: a.withVerifiedUser(a.updateProfile),
@@ -72,6 +80,13 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	mux.HandleFunc("/api/v1/students", getOnly(a.withVerifiedUser(a.searchStudents)))
 	mux.HandleFunc("/api/v1/students/{userId}", getOnly(a.withVerifiedUser(a.studentProfile)))
 	mux.HandleFunc("/api/v1/students/{userId}/reviews", getOnly(a.withVerifiedUser(a.studentReviews)))
+	mux.HandleFunc("/api/v1/students/{userId}/block", a.methods(map[string]http.HandlerFunc{
+		http.MethodPost:   a.withVerifiedUser(a.blockStudent),
+		http.MethodDelete: a.withVerifiedUser(a.unblockStudent),
+	}))
+	mux.HandleFunc("/api/v1/me/blocks", getOnly(a.withVerifiedUser(a.listBlocks)))
+	mux.HandleFunc("/api/v1/reports", a.postOnly(a.withVerifiedUser(a.createReport)))
+	mux.HandleFunc("/api/v1/me/reports", getOnly(a.withVerifiedUser(a.myReports)))
 	mux.HandleFunc("/api/v1/exchange-requests", a.postOnly(a.withVerifiedUser(a.createRequest)))
 	mux.HandleFunc("/api/v1/exchange-requests/{requestId}", getOnly(a.withVerifiedUser(a.requestDetails)))
 	mux.HandleFunc("/api/v1/exchange-requests/{requestId}/decline", a.postOnly(a.withVerifiedUser(a.answerRequest(a.app.DeclineRequest))))
@@ -110,6 +125,19 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	mux.HandleFunc("/api/v1/me/notifications", getOnly(a.withVerifiedUser(a.listNotifications)))
 	mux.HandleFunc("/api/v1/me/notifications/{notificationId}/read", a.postOnly(a.withVerifiedUser(a.markNotificationRead)))
 	mux.HandleFunc("/api/v1/me/notifications/read-all", a.postOnly(a.withVerifiedUser(a.markAllNotificationsRead)))
+	mux.HandleFunc("/api/v1/admin/reports", getOnly(a.withAdmin(a.adminReports)))
+	mux.HandleFunc("/api/v1/admin/reports/{reportId}", getOnly(a.withAdmin(a.adminReportDetails)))
+	mux.HandleFunc("/api/v1/admin/reports/{reportId}/resolve", a.postOnly(a.withAdmin(a.resolveReport)))
+	mux.HandleFunc("/api/v1/admin/users/{userId}/suspend", a.postOnly(a.withAdmin(a.moderateAccount(a.app.SuspendAccount))))
+	mux.HandleFunc("/api/v1/admin/users/{userId}/restore", a.postOnly(a.withAdmin(a.moderateAccount(a.app.RestoreAccount))))
+	mux.HandleFunc("/api/v1/admin/moderation-actions", getOnly(a.withAdmin(a.moderationLog)))
+	mux.HandleFunc("/api/v1/admin/skills", a.methods(map[string]http.HandlerFunc{
+		http.MethodGet:  a.withAdmin(a.adminSkills),
+		http.MethodPost: a.withAdmin(a.createSkill),
+	}))
+	mux.HandleFunc("/api/v1/admin/skills/{skillId}", a.methods(map[string]http.HandlerFunc{
+		http.MethodPatch: a.withAdmin(a.updateSkill),
+	}))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		problem(w, http.StatusNotFound, "not_found", "Resource was not found")
 	})

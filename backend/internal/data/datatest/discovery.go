@@ -87,7 +87,7 @@ func (m *Memory) SearchStudents(_ context.Context, viewerID string, filter data.
 }
 
 func (m *Memory) visible(viewerID, id string, c *account) bool {
-	return id != viewerID && c != nil && c.user.EmailVerified && c.user.Status == "ACTIVE" && !m.blocked(viewerID, id)
+	return id != viewerID && c.active() && c.user.EmailVerified && !m.settings[id].hidden && !m.blocked(viewerID, id)
 }
 
 func (m *Memory) matchWith(viewer *account, id string, c *account) (data.Match, bool) {

@@ -33,7 +33,7 @@ type Memory struct {
 	tokens               map[string]*token
 	throttles            map[string]*throttle
 	settings             map[string]requestSettings
-	blocks               map[[2]string]bool
+	blocks               map[[2]string]time.Time // [blockerID, blockedID] -> blocked at
 	requests             map[string]*data.ExchangeRequest
 	history              map[string][]data.RequestStatusChange
 	exchanges            map[string]*data.Exchange
@@ -49,11 +49,14 @@ type Memory struct {
 	exchangeConfirmations   map[string][]string
 	exchangeHistory         map[string][]data.ExchangeStatusChange
 	reviews                 map[string]*data.Review
+	reports                 map[string]*storedReport
+	moderationActions       []storedAction
 }
 
 type catalogSkill struct {
-	skill  data.Skill
-	active bool
+	skill       data.Skill
+	description string
+	active      bool
 }
 
 type account struct {
@@ -61,6 +64,12 @@ type account struct {
 	passwordHash string
 	profile      data.ProfileUpdate
 	skills       map[data.SkillList]map[string]string // skill ID -> level
+	deleted      bool
+}
+
+// active reports whether the account exists, is not deleted and is not suspended.
+func (a *account) active() bool {
+	return a != nil && !a.deleted && a.user.Status == data.AccountActive
 }
 
 type session struct {
@@ -106,7 +115,7 @@ func NewMemory() *Memory {
 		tokens:               map[string]*token{},
 		throttles:            map[string]*throttle{},
 		settings:             map[string]requestSettings{},
-		blocks:               map[[2]string]bool{},
+		blocks:               map[[2]string]time.Time{},
 		requests:             map[string]*data.ExchangeRequest{},
 		history:              map[string][]data.RequestStatusChange{},
 		exchanges:            map[string]*data.Exchange{},
@@ -122,6 +131,7 @@ func NewMemory() *Memory {
 		exchangeConfirmations:   map[string][]string{},
 		exchangeHistory:         map[string][]data.ExchangeStatusChange{},
 		reviews:                 map[string]*data.Review{},
+		reports:                 map[string]*storedReport{},
 	}
 }
 
@@ -148,7 +158,7 @@ func (m *Memory) LockedUntil(email string) time.Time {
 
 func (m *Memory) byEmail(email string) *account {
 	for _, a := range m.users {
-		if a.user.Email == email {
+		if a.user.Email == email && !a.deleted {
 			return a
 		}
 	}
@@ -219,7 +229,7 @@ func (m *Memory) UserByID(_ context.Context, userID string) (data.User, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	a, ok := m.users[userID]
-	if !ok {
+	if !ok || a.deleted {
 		return data.User{}, data.ErrNotFound
 	}
 	return a.user, nil
@@ -242,11 +252,10 @@ func (m *Memory) UserBySession(_ context.Context, tokenHash string) (data.User, 
 	if !ok || s.revoked || !s.expiresAt.After(time.Now()) {
 		return data.User{}, data.ErrNotFound
 	}
-	a, ok := m.users[s.userID]
-	if !ok || a.user.Status != "ACTIVE" {
-		return data.User{}, data.ErrNotFound
+	if a := m.users[s.userID]; a.active() {
+		return a.user, nil
 	}
-	return a.user, nil
+	return data.User{}, data.ErrNotFound
 }
 
 func (m *Memory) CreateSession(_ context.Context, userID string, stored data.StoredToken, _ string, _ netip.Addr) error {
@@ -274,6 +283,17 @@ func (m *Memory) RevokeUserSessions(_ context.Context, userID string) error {
 	defer m.mu.Unlock()
 	for _, s := range m.sessions {
 		if s.userID == userID {
+			s.revoked = true
+		}
+	}
+	return nil
+}
+
+func (m *Memory) RevokeOtherSessions(_ context.Context, userID, keepTokenHash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for hash, s := range m.sessions {
+		if s.userID == userID && hash != keepTokenHash {
 			s.revoked = true
 		}
 	}

@@ -38,6 +38,7 @@ type conversationResponse struct {
 	LastMessageAt    *time.Time              `json:"lastMessageAt"`
 	UnreadCount      int                     `json:"unreadCount"`
 	CanSend          bool                    `json:"canSend"`
+	BlockedByMe      bool                    `json:"blockedByMe"`
 	CreatedAt        time.Time               `json:"createdAt"`
 }
 
@@ -60,6 +61,7 @@ func toConversation(c data.Conversation, viewerID string) conversationResponse {
 		LastMessageAt:    c.LastMessageAt,
 		UnreadCount:      c.UnreadCount,
 		CanSend:          c.CanSend,
+		BlockedByMe:      c.BlockedByMe,
 		CreatedAt:        c.CreatedAt,
 	}
 	if c.RequestID != "" {

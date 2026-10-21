@@ -288,3 +288,27 @@ func TestFacultiesRejectMalformedUniversityID(t *testing.T) {
 	expect.NoError(t, "faculties of the demo university", err)
 	expect.Equal(t, "faculties", len(faculties), 1)
 }
+
+// Privacy settings start visible and open to anyone; a patch changes only the fields it sends.
+func TestUpdatePrivacy(t *testing.T) {
+	s, userID := newTestService(t)
+	ctx := context.Background()
+	settings, err := s.Privacy(ctx, userID)
+	expect.NoError(t, "load the defaults", err)
+	expect.Equal(t, "visible by default", settings.Discoverable, true)
+	expect.Equal(t, "open by default", settings.AcceptsRequests, true)
+	expect.Equal(t, "scope by default", settings.RequestScope, data.ScopeAnyone)
+
+	settings, err = s.UpdatePrivacy(ctx, userID, PrivacyPatch{Discoverable: ptr(false)})
+	expect.NoError(t, "hide the profile", err)
+	expect.Equal(t, "hidden", settings.Discoverable, false)
+	expect.Equal(t, "still open to requests", settings.AcceptsRequests, true)
+
+	settings, err = s.UpdatePrivacy(ctx, userID, PrivacyPatch{RequestScope: ptr(data.ScopeSameUniversity)})
+	expect.NoError(t, "limit requests to the university", err)
+	expect.Equal(t, "scope", settings.RequestScope, data.ScopeSameUniversity)
+	expect.Equal(t, "still hidden", settings.Discoverable, false)
+
+	_, err = s.UpdatePrivacy(ctx, userID, PrivacyPatch{RequestScope: ptr("FRIENDS")})
+	expect.Equal(t, "unknown scope", fieldErrors(t, err)["requestScope"], "Request scope must be ANYONE or SAME_UNIVERSITY")
+}

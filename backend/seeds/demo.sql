@@ -630,3 +630,41 @@ SELECT '74000000-0000-0000-0000-000000000005', r.recipient_id, r.author_id,
 FROM exchange_reviews r
 WHERE r.id = '90000000-0000-0000-0000-000000000001'
 ON CONFLICT (recipient_id, event_key) DO NOTHING;
+
+-- Sprint 10 (FR-14, FR-15): the test administrator signs in as demo.admin with the same demo
+-- password. The account is not a student, so it is hidden from search and requests.
+INSERT INTO users (id, university_id, email, first_name, last_name, role, bio, terms_accepted_at)
+VALUES ('60000000-0000-0000-0000-000000000012', '10000000-0000-0000-0000-000000000001',
+  'demo.admin@students.example.test', 'Адміністратор', 'SkillSwap', 'ADMIN',
+  'Тестовий модератор локального стенду.', now())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth_identities (user_id, provider, provider_subject, password_hash, password_changed_at)
+VALUES ('60000000-0000-0000-0000-000000000012', 'LOCAL', '60000000-0000-0000-0000-000000000012',
+  '$2a$12$jP.A1C2mRlD84H6bscBd0uD4vSUL7nckKTSQAkn3qWrriVWcmr8h6', now())
+ON CONFLICT DO NOTHING;
+
+INSERT INTO user_verifications (user_id, type, identifier, status, verified_at)
+SELECT id, 'UNIVERSITY_EMAIL', email, 'VERIFIED', now()
+FROM users WHERE id = '60000000-0000-0000-0000-000000000012'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO user_profile_settings (user_id, is_discoverable, accepts_requests)
+VALUES ('60000000-0000-0000-0000-000000000012', false, false)
+ON CONFLICT (user_id) DO NOTHING;
+
+-- Olha has an open report about Oleh, whom she blocked; Andrii's report about Marko was dismissed.
+INSERT INTO reports (id, reporter_id, reported_user_id, reason, status, created_at, resolved_at)
+VALUES
+  ('a0000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000010',
+   'Надсилає рекламу платних курсів замість обміну навичками.', 'OPEN', now() - interval '1 day', NULL),
+  ('a0000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000003',
+   'Не прийшов на домовлену зустріч.', 'DISMISSED', now() - interval '5 days', now() - interval '4 days')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO moderation_actions (id, report_id, moderator_id, subject_user_id, action, reason, created_at)
+SELECT 'b0000000-0000-0000-0000-000000000001', r.id, '60000000-0000-0000-0000-000000000012', r.reported_user_id,
+  'DISMISS_REPORT', 'Зустріч перенесли за згодою обох сторін, порушення немає.', r.resolved_at
+FROM reports r
+WHERE r.id = 'a0000000-0000-0000-0000-000000000002' AND r.status = 'DISMISSED'
+ON CONFLICT DO NOTHING;

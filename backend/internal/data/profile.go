@@ -10,6 +10,9 @@ import (
 const (
 	FormatOnline  = "ONLINE"
 	FormatOffline = "OFFLINE"
+
+	ScopeAnyone         = "ANYONE"
+	ScopeSameUniversity = "SAME_UNIVERSITY"
 )
 
 type SkillList string
@@ -59,6 +62,13 @@ type ProfileUpdate struct {
 	Formats      []string
 }
 
+// PrivacySettings decide who finds the profile and who may send new requests (FR-15).
+type PrivacySettings struct {
+	Discoverable    bool
+	AcceptsRequests bool
+	RequestScope    string
+}
+
 type IProfileData interface {
 	ProfileByUserID(ctx context.Context, userID string) (Profile, error)
 	UpdateProfile(ctx context.Context, userID string, update ProfileUpdate) error
@@ -67,6 +77,8 @@ type IProfileData interface {
 	AddUserSkill(ctx context.Context, list SkillList, userID, skillID, level string) error
 	UpdateUserSkillLevel(ctx context.Context, list SkillList, userID, skillID, level string) error
 	RemoveUserSkill(ctx context.Context, list SkillList, userID, skillID string) error
+	PrivacySettings(ctx context.Context, userID string) (PrivacySettings, error)
+	UpdatePrivacySettings(ctx context.Context, userID string, settings PrivacySettings) error
 }
 
 var _ IProfileData = (*Postgres)(nil)
@@ -201,4 +213,24 @@ func (p *Postgres) RemoveUserSkill(ctx context.Context, list SkillList, userID, 
 		return ErrNotFound
 	}
 	return nil
+}
+
+// PrivacySettings returns the defaults (visible, open to anyone) until the user changes them.
+func (p *Postgres) PrivacySettings(ctx context.Context, userID string) (PrivacySettings, error) {
+	var s PrivacySettings
+	err := p.conn(ctx).QueryRow(ctx, `SELECT COALESCE(ps.is_discoverable, true), COALESCE(ps.accepts_requests, true),
+			COALESCE(ps.request_scope::text, 'ANYONE')
+		FROM users u
+		LEFT JOIN user_profile_settings ps ON ps.user_id = u.id
+		WHERE u.id = $1 AND u.deleted_at IS NULL`, userID).Scan(&s.Discoverable, &s.AcceptsRequests, &s.RequestScope)
+	return s, notFound(err)
+}
+
+func (p *Postgres) UpdatePrivacySettings(ctx context.Context, userID string, s PrivacySettings) error {
+	_, err := p.conn(ctx).Exec(ctx, `INSERT INTO user_profile_settings (user_id, is_discoverable, accepts_requests, request_scope)
+		VALUES ($1, $2, $3, $4::request_scope)
+		ON CONFLICT (user_id) DO UPDATE SET is_discoverable = EXCLUDED.is_discoverable,
+			accepts_requests = EXCLUDED.accepts_requests, request_scope = EXCLUDED.request_scope, updated_at = now()`,
+		userID, s.Discoverable, s.AcceptsRequests, s.RequestScope)
+	return err
 }

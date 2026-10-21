@@ -18,8 +18,9 @@ const (
 )
 
 var (
-	levels  = []string{"BEGINNER", "INTERMEDIATE", "ADVANCED"}
-	formats = []string{data.FormatOnline, data.FormatOffline}
+	levels        = []string{"BEGINNER", "INTERMEDIATE", "ADVANCED"}
+	formats       = []string{data.FormatOnline, data.FormatOffline}
+	requestScopes = []string{data.ScopeAnyone, data.ScopeSameUniversity}
 )
 
 var (
@@ -291,4 +292,48 @@ func validLevel(level string) error {
 		return &ValidationError{Fields: map[string]string{"level": "Level must be BEGINNER, INTERMEDIATE or ADVANCED"}}
 	}
 	return nil
+}
+
+// Privacy returns who can find the profile and send new requests (FR-15).
+func (s *Service) Privacy(ctx context.Context, userID string) (data.PrivacySettings, error) {
+	return s.profiles.PrivacySettings(ctx, userID)
+}
+
+// PrivacyPatch holds the settings to change; nil keeps the current value.
+type PrivacyPatch struct {
+	Discoverable    *bool
+	AcceptsRequests *bool
+	RequestScope    *string
+}
+
+// UpdatePrivacy hides the profile from search and new requests or shows it again. Existing
+// requests, exchanges and chats keep working.
+func (s *Service) UpdatePrivacy(ctx context.Context, userID string, patch PrivacyPatch) (data.PrivacySettings, error) {
+	if patch.RequestScope != nil && !slices.Contains(requestScopes, *patch.RequestScope) {
+		return data.PrivacySettings{}, &ValidationError{Fields: map[string]string{
+			"requestScope": "Request scope must be ANYONE or SAME_UNIVERSITY",
+		}}
+	}
+	var updated data.PrivacySettings
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		settings, err := s.profiles.PrivacySettings(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if patch.Discoverable != nil {
+			settings.Discoverable = *patch.Discoverable
+		}
+		if patch.AcceptsRequests != nil {
+			settings.AcceptsRequests = *patch.AcceptsRequests
+		}
+		if patch.RequestScope != nil {
+			settings.RequestScope = *patch.RequestScope
+		}
+		if err := s.profiles.UpdatePrivacySettings(ctx, userID, settings); err != nil {
+			return err
+		}
+		updated, err = s.profiles.PrivacySettings(ctx, userID)
+		return err
+	})
+	return updated, err
 }

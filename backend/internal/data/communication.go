@@ -48,7 +48,9 @@ type Conversation struct {
 	LastMessageAt    *time.Time
 	UnreadCount      int
 	CanSend          bool
-	CreatedAt        time.Time
+	// BlockedByMe is true when the viewer has blocked the partner.
+	BlockedByMe bool
+	CreatedAt   time.Time
 }
 
 type Message struct {
@@ -237,13 +239,16 @@ const conversationCanSend = `(rq.deleted_at IS NULL AND rq.account_status = 'ACT
 		WHERE (b.blocker_id = rq.id AND b.blocked_id = rc.id)
 			OR (b.blocker_id = rc.id AND b.blocked_id = rq.id)))`
 
+const conversationBlockedByMe = `EXISTS (SELECT 1 FROM user_blocks b
+	WHERE b.blocker_id = $1 AND b.blocked_id IN (rq.id, rc.id))`
+
 var conversationColumns = `c.id, c.type::text, COALESCE(c.exchange_request_id::text, ''),
 	COALESCE(c.exchange_id::text, ''), COALESCE(r.status::text, ''), COALESCE(e.status::text, ''),
 	COALESCE(e.format::text, r.format::text, 'ONLINE'),
 	` + requestParty("rq") + `, ` + requestParty("rc") + `,
 	` + conversationRequesterTerms + `, ` + conversationRecipientTerms + `,
 	` + conversationLastMessage + `, c.last_message_at,
-	` + conversationUnreadCount + `, ` + conversationCanSend + `, c.created_at`
+	` + conversationUnreadCount + `, ` + conversationCanSend + `, ` + conversationBlockedByMe + `, c.created_at`
 
 const conversationFrom = `
 	FROM conversations c
@@ -258,7 +263,7 @@ var conversationSelect = `SELECT ` + conversationColumns + conversationFrom
 func (c *Conversation) scanTargets(extra ...any) []any {
 	return append([]any{&c.ID, &c.Type, &c.RequestID, &c.ExchangeID, &c.RequestStatus, &c.ExchangeStatus,
 		&c.Format, &c.Requester, &c.Recipient, &c.RequesterTeaches, &c.RecipientTeaches,
-		&c.LastMessage, &c.LastMessageAt, &c.UnreadCount, &c.CanSend, &c.CreatedAt}, extra...)
+		&c.LastMessage, &c.LastMessageAt, &c.UnreadCount, &c.CanSend, &c.BlockedByMe, &c.CreatedAt}, extra...)
 }
 
 func (p *Postgres) ConversationByID(ctx context.Context, userID, conversationID string) (Conversation, error) {

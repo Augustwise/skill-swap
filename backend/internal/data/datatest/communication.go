@@ -26,7 +26,7 @@ type storedConversation struct {
 func (m *Memory) SetBlocked(blockerID, blockedID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.blocks[[2]string{blockerID, blockedID}] = true
+	m.blocks[[2]string{blockerID, blockedID}] = time.Now().UTC()
 }
 
 // SetAccountStatus changes the status of a user account, e.g. to SUSPENDED.
@@ -39,7 +39,9 @@ func (m *Memory) SetAccountStatus(userID, status string) {
 }
 
 func (m *Memory) blocked(userA, userB string) bool {
-	return m.blocks[[2]string{userA, userB}] || m.blocks[[2]string{userB, userA}]
+	_, ab := m.blocks[[2]string{userA, userB}]
+	_, ba := m.blocks[[2]string{userB, userA}]
+	return ab || ba
 }
 
 func (m *Memory) EnsureRequestConversation(_ context.Context, requestID string) (string, error) {
@@ -154,9 +156,12 @@ func (m *Memory) buildConversation(userID string, c *storedConversation) (data.C
 		out.Recipient = m.party(b)
 	}
 	requester, recipient := m.users[out.Requester.UserID], m.users[out.Recipient.UserID]
-	out.CanSend = requester != nil && recipient != nil &&
-		requester.user.Status == "ACTIVE" && recipient.user.Status == "ACTIVE" &&
-		!m.blocked(out.Requester.UserID, out.Recipient.UserID)
+	out.CanSend = requester.active() && recipient.active() && !m.blocked(out.Requester.UserID, out.Recipient.UserID)
+	partnerID := out.Recipient.UserID
+	if userID == partnerID {
+		partnerID = out.Requester.UserID
+	}
+	_, out.BlockedByMe = m.blocks[[2]string{userID, partnerID}]
 
 	msgs := m.messages[c.id]
 	if len(msgs) > 0 {

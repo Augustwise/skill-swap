@@ -29,6 +29,7 @@ skill-swap/
 │   ├── internal/exchange/       # Exchange requests, decisions, completion, and cancellation
 │   ├── internal/session/        # Lesson planning, time agreement, confirmations, and schedule
 │   ├── internal/communication/  # Private text chat and in-app notifications
+│   ├── internal/trust/          # Reviews, blocks, reports, moderation, and account deletion
 │   ├── internal/data/           # Repository interfaces and PostgreSQL adapter
 │   ├── internal/mailer/         # IMailer contract and SMTP adapter
 │   ├── internal/config/         # Configuration loading and validation
