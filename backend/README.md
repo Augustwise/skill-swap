@@ -836,6 +836,114 @@ Server rules:
 | `validation_failed` | 422 | a field is invalid, a password is wrong, or you target yourself (`fields.userId`) |
 | `login_locked` | 429 | too many wrong passwords; see `Retry-After` |
 
+## MVP integration, load test and backups (Sprint 11, NFR-01–NFR-05)
+
+Sprint 11 adds no new routes: the frontend keeps using the contract above. It adds checks
+of the whole MVP and the tools for the non-functional requirements.
+
+Common API behaviour:
+
+- **Unexpected failures (NFR-03).** A panic in a handler is logged with its stack and
+  answered with 500 `internal_error` in the usual `{ "error": { "code", "message" } }`
+  shape; the API keeps serving other requests. A transaction that was open at that moment
+  is rolled back, so the client can show a generic error and repeat the action.
+- **No caching.** Every response has `Cache-Control: no-store`, so the browser does not keep
+  private pages such as chats or profiles in its cache.
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `internal_error` | 500 | the server failed unexpectedly; see the API log |
+
+### End-to-end scenario (FR-01–FR-15)
+
+`internal/api/mvp_test.go` runs one scenario through the HTTP API, the way the browser
+does: two students register and verify their email (an unverified third one cannot send
+requests), fill in their profiles, find each other by skill and among mutual matches,
+agree one lesson in each direction (a repeated acceptance gives the same exchange), chat
+(a stranger gets 404), receive notifications, schedule both lessons, confirm them after
+they end (one confirmation does not count), complete the exchange and review each other.
+Then one of them reports and blocks a third student, the administrator suspends that
+student, a profile is hidden and an account is deleted, leaving «Видалений користувач»
+and «Повідомлення видалено» in the partner's history.
+
+```bash
+go test ./internal/api -run TestMVPScenario -v
+```
+
+`TestMVPScenario` uses the in-memory store and always runs.
+`TestMVPScenarioAgainstLocalPostgres` runs the same steps on `TEST_DATABASE_URL` and then
+deletes every row it created.
+
+### Load test (NFR-01)
+
+`seeds/load.sql` adds 1000 verified students `load.0001` … `load.1000@students.example.test`
+(demo password) with two taught and two wanted skills, about 280 mutual matches each.
+`cmd/loadtest` signs in 50 of them and repeats a mix of searches and mutual-match pages
+for 10 minutes with a 1 second pause, then prints p50, p95 and the maximum per request
+group. It passes when p95 is at most 2 s and fewer than 1% of the requests fail; otherwise
+it exits with code 1.
+
+Use a separate local database for this test, not `TEST_DATABASE_URL` and not the shared
+training database: the extra students push the demo students off the first result pages
+that the demo-data tests check.
+
+```bash
+export DATABASE_URL='postgres://postgres:postgres@localhost:5432/skillswap_load?sslmode=disable'
+go run ./cmd/db up
+go run ./cmd/db seed
+go run ./cmd/db seed-load
+go run ./cmd/api                       # in another terminal, with the same DATABASE_URL
+go run ./cmd/loadtest                  # 50 users, 10 minutes
+go run ./cmd/loadtest -users 50 -duration 1m   # a short check
+```
+
+Other flags: `-base` (API URL, default `http://127.0.0.1:8080/api/v1`), `-pause`,
+`-timeout`, `-password`. A short run on a development laptop (50 users, 30 s) gave p95 of
+about 40 ms with no errors.
+
+### Backup and restore (NFR-04)
+
+```bash
+go run ./cmd/db backup                 # pg_dump into .local/backups, keep the newest 7
+go run ./cmd/db counts                 # row count of every table
+RESTORE_DATABASE_URL='postgres://postgres:postgres@localhost:5432/skillswap_restore?sslmode=disable' \
+  go run ./cmd/db restore .local/backups/skillswap-20261130-180000.dump
+```
+
+- `backup` runs `pg_dump --format=custom` for `DATABASE_URL` and saves
+  `skillswap-YYYYMMDD-HHMMSS.dump` in `BACKUP_DIR` (default `backend/.local/backups`, ignored
+  by Git and outside the PostgreSQL data directory). After a successful dump it deletes
+  the older `skillswap-*.dump` files, keeping 7. Make a backup before `go run ./cmd/db up`
+  and at the end of each working day with data.
+- `restore` runs `pg_restore --clean --if-exists --single-transaction` into
+  `RESTORE_DATABASE_URL`, which must be a local database other than `DATABASE_URL`, prints
+  the time it took and compares the row count of every table with `DATABASE_URL`.
+  Create the empty target database first (`createdb skillswap_restore`). To finish the
+  check, run the tests or the scenario against the restored database:
+  `TEST_DATABASE_URL=$RESTORE_DATABASE_URL go test ./...`.
+- `pg_dump` and `pg_restore` come with PostgreSQL. If they are not in `PATH`, set `PG_BIN`,
+  for example `PG_BIN='C:/Program Files/PostgreSQL/18/bin'`. The database password is passed
+  to them through `PGPASSWORD`, not on the command line.
+
+| Variable | Default | Used by |
+| --- | --- | --- |
+| `BACKUP_DIR` | `.local/backups` | `backup` |
+| `RESTORE_DATABASE_URL` | — (required) | `restore` |
+| `PG_BIN` | — (`PATH` is used) | `backup`, `restore` |
+
+### Restart check (NFR-03, NFR-05)
+
+1. Start the API and the frontend, sign in as two demo students and go through part of the
+   scenario (send a request, accept it, send messages).
+2. Stop the API (Ctrl+C: it finishes running requests within 10 s) and restart PostgreSQL.
+3. Start the API again: `/api/v1/ready` returns `ready`, and the requests, exchanges and
+   messages are still there; continue the scenario.
+
+Atomicity and repeated actions (NFR-05) are covered by the concurrency tests in
+`internal/exchange` and `internal/session` (`AgainstPostgres`): two simultaneous
+acceptances or confirmations produce one exchange, one completed lesson and one
+notification.
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for
@@ -911,3 +1019,8 @@ go test ./internal/api -run AgainstLocalPostgres -v
 go test ./internal/session -run AgainstPostgres -v
 go test ./internal/data -run AgainstPostgres -v
 ```
+
+`TestMVPScenarioAgainstLocalPostgres` (part of the first command) runs the whole MVP
+scenario on this database and removes its rows afterwards. Do not run
+`go run ./cmd/db seed-load` on the test database: the demo-data tests expect only the demo
+students on the first result pages.

@@ -13,10 +13,13 @@ go test ./...                          # unit tests; DB integration tests skip w
 go test ./internal/exchange -run TestName -v   # single test / package
 go vet ./... && go build ./...
 go run ./cmd/db check|status|up|seed   # connectivity, migration state, apply Goose migrations, demo data
+go run ./cmd/db backup|counts          # pg_dump to .local/backups (keeps 7), row counts per table
+go run ./cmd/db restore FILE           # into a separate local RESTORE_DATABASE_URL, then compares counts
+go run ./cmd/db seed-load && go run ./cmd/loadtest   # 1000 students + search/matches load test (separate DB)
 go run ./cmd/api                       # API on 127.0.0.1:8080
 ```
 
-Integration tests (`-run AgainstLocalPostgres` in `internal/api`, `-run AgainstPostgres` in `internal/session`) need `TEST_DATABASE_URL` pointing at a separate, migrated and seeded **local** database. Some of them commit data (concurrency tests) and clean up after themselves. The `.env` `DATABASE_URL` may be a shared remote training DB: ask before running `seed` or `up` against it.
+Integration tests (`-run AgainstLocalPostgres` in `internal/api`, `-run AgainstPostgres` in `internal/session`) need `TEST_DATABASE_URL` pointing at a separate, migrated and seeded **local** database (without `seed-load`). `internal/api/mvp_test.go` runs the whole FR-01–FR-15 scenario in memory and, with that variable, against PostgreSQL. Some of them commit data (concurrency tests) and clean up after themselves. The `.env` `DATABASE_URL` may be a shared remote training DB: ask before running `seed` or `up` against it.
 
 Frontend (run from `frontend/`):
 

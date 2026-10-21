@@ -1,9 +1,11 @@
 package api
 
 import (
+	"fmt"
 	"log/slog"
 	"maps"
 	"net/http"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -14,6 +16,7 @@ func (a *API) withMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		w.Header().Add("Vary", "Origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", "no-store")
 		if origin := r.Header.Get("Origin"); origin != "" {
 			if origin != a.settings.FrontendOrigin {
 				problem(w, http.StatusForbidden, "origin_forbidden", "Origin is not allowed")
@@ -31,9 +34,28 @@ func (a *API) withMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		wrapped := &statusWriter{ResponseWriter: w}
+		defer func() {
+			a.logger.Log(r.Context(), slog.LevelInfo, "http request", "method", r.Method, "path", r.URL.Path, "status", wrapped.status, "duration_ms", time.Since(start).Milliseconds())
+		}()
+		defer a.recoverPanic(wrapped, r)
 		next.ServeHTTP(wrapped, r)
-		a.logger.Log(r.Context(), slog.LevelInfo, "http request", "method", r.Method, "path", r.URL.Path, "status", wrapped.status, "duration_ms", time.Since(start).Milliseconds())
 	})
+}
+
+// recoverPanic turns a panic in a handler into a 500 problem response, so one faulty
+// request does not drop the connection without an answer.
+func (a *API) recoverPanic(w *statusWriter, r *http.Request) {
+	value := recover()
+	if value == nil {
+		return
+	}
+	if value == http.ErrAbortHandler {
+		panic(value)
+	}
+	a.logger.Error("request handler panicked", "method", r.Method, "path", r.URL.Path, "panic", fmt.Sprint(value), "stack", string(debug.Stack()))
+	if w.status == 0 {
+		problem(w, http.StatusInternalServerError, "internal_error", "Internal server error")
+	}
 }
 
 func (a *API) methods(handlers map[string]http.HandlerFunc) http.HandlerFunc {

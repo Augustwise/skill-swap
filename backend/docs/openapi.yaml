@@ -3,7 +3,7 @@ info:
   title: Skill Swap API
   version: 1.0.0
   description: |
-    HTTP contract implemented by the Sprint 1-10 backend.
+    HTTP contract implemented by the Sprint 1-11 backend.
 
     Authentication (FR-01) uses an opaque server-side session stored in the HttpOnly
     `skillswap_session` cookie (SameSite=Lax, Path=/). Browsers should call the API through
@@ -69,6 +69,12 @@ info:
     cancelled and pending requests closed) and report a student. Administrators
     (`User.role = ADMIN`) decide reports, suspend and restore accounts, and edit the skill
     catalog under `/admin`; every such action is logged with its author, time and reason.
+
+    Common behaviour of every route (Sprint 11): responses carry `Cache-Control: no-store`
+    because they contain private data, and an unexpected server failure is answered with
+    500 `internal_error` in the usual error shape instead of a dropped connection. A
+    transaction that was open at that moment is rolled back, so the client can show a
+    generic error and repeat the action.
 servers:
   - url: http://127.0.0.1:8080/api/v1
     description: Local development
