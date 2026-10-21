@@ -27,6 +27,7 @@ import (
 	"skillswap/backend/internal/mailer/mailertest"
 	"skillswap/backend/internal/profile"
 	sessionsvc "skillswap/backend/internal/session"
+	"skillswap/backend/internal/trust"
 )
 
 var errDatabaseUnavailable = errors.New("database unavailable")
@@ -85,7 +86,7 @@ func postgresHandler(pool *pgxpool.Pool, mail mailer.IMailer) http.Handler {
 	comm := communication.NewService(store, store, store)
 	sessions := sessionsvc.NewService(store, store, store, comm)
 	app := core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store),
-		exchange.NewService(store, store, store, comm), comm, sessions)
+		exchange.NewService(store, store, store, comm), comm, sessions, trust.NewService(store, store, store, comm))
 	return New(app, access, store, testSettings, discardLogger())
 }
 
@@ -93,7 +94,7 @@ func memoryApp(store *datatest.Memory) *core.Application {
 	comm := communication.NewService(store, store, store)
 	sessions := sessionsvc.NewService(store, store, store, comm)
 	return core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store),
-		exchange.NewService(store, store, store, comm), comm, sessions)
+		exchange.NewService(store, store, store, comm), comm, sessions, trust.NewService(store, store, store, comm))
 }
 
 func request(t *testing.T, handler http.Handler, method, target string) *httptest.ResponseRecorder {
@@ -130,7 +131,7 @@ func TestOpenAPIContract(t *testing.T) {
 		"/sessions/{sessionId}/decline:", "/sessions/{sessionId}/cancel:", "/sessions/{sessionId}/confirm:", "/me/schedule:",
 		"/me/conversations:", "/conversations/{conversationId}:", "/conversations/{conversationId}/messages:",
 		"/conversations/{conversationId}/read:", "/me/notifications:", "/me/notifications/{notificationId}/read:",
-		"/me/notifications/read-all:"} {
+		"/me/notifications/read-all:", "/exchanges/{exchangeId}/reviews:", "/students/{userId}/reviews:", "/me/reviews:"} {
 		if !strings.Contains(response.Body.String(), fragment) {
 			t.Fatalf("OpenAPI contract does not contain %q", fragment)
 		}

@@ -149,6 +149,24 @@ func (s *Service) RecordSessionUpdated(ctx context.Context, event SessionUpdateE
 	})
 }
 
+// RecordReviewReceived notifies the reviewed partner in the caller's transaction (FR-12, FR-13).
+func (s *Service) RecordReviewReceived(ctx context.Context, review data.Review, exchange data.Exchange) error {
+	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		_, err := s.comm.CreateNotification(ctx, data.NewNotification{
+			RecipientID: review.RecipientID,
+			ActorID:     review.AuthorID,
+			EventType:   data.EventReviewReceived,
+			EventKey:    "review-received:" + review.ID,
+			Title:       "Новий відгук",
+			Body: fmt.Sprintf("%s: оцінка %d з 5 за обмін «%s ↔ %s».", fullName(review.AuthorFirstName, review.AuthorLastName),
+				review.Rating, exchange.RequesterTeaches.Name, exchange.RecipientTeaches.Name),
+			ExchangeID: exchange.ID,
+			ReviewID:   review.ID,
+		})
+		return err
+	})
+}
+
 type ConversationPage struct {
 	Items []data.Conversation
 	Page  int

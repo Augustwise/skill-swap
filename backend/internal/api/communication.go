@@ -140,6 +140,7 @@ type notificationResponse struct {
 	ConversationID *string            `json:"conversationId"`
 	MessageID      *string            `json:"messageId"`
 	SessionID      *string            `json:"sessionId"`
+	ReviewID       *string            `json:"reviewId"`
 	IsRead         bool               `json:"isRead"`
 	ReadAt         *time.Time         `json:"readAt"`
 	CreatedAt      time.Time          `json:"createdAt"`
@@ -175,6 +176,9 @@ func toNotification(n data.Notification) notificationResponse {
 	if n.SessionID != "" {
 		response.SessionID = &n.SessionID
 	}
+	if n.ReviewID != "" {
+		response.ReviewID = &n.ReviewID
+	}
 	target := notificationTarget{
 		RequestID:      response.RequestID,
 		ExchangeID:     response.ExchangeID,
@@ -198,6 +202,8 @@ func toNotification(n data.Notification) notificationResponse {
 		} else {
 			target.Kind, target.ID = "EXCHANGE", n.ExchangeID
 		}
+	case data.EventReviewReceived:
+		target.Kind, target.ID = "EXCHANGE", n.ExchangeID
 	default:
 		target.Kind, target.ID = n.EventType, n.ID
 	}

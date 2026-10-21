@@ -23,6 +23,7 @@ import (
 	"skillswap/backend/internal/mailer"
 	"skillswap/backend/internal/profile"
 	"skillswap/backend/internal/session"
+	"skillswap/backend/internal/trust"
 )
 
 func main() {
@@ -53,7 +54,7 @@ func run(logger *slog.Logger) error {
 	comm := communication.NewService(store, store, store)
 	sessions := session.NewService(store, store, store, comm)
 	app := core.NewApplication(profile.NewService(store, store, store), discovery.NewService(store, store),
-		exchange.NewService(store, store, store, comm), comm, sessions)
+		exchange.NewService(store, store, store, comm), comm, sessions, trust.NewService(store, store, store, comm))
 	server := &http.Server{
 		Addr:              cfg.APIAddr,
 		Handler:           api.New(app, access, store, api.Settings{FrontendOrigin: cfg.FrontendURL}, logger),

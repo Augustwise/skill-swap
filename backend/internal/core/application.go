@@ -9,6 +9,7 @@ import (
 	"skillswap/backend/internal/exchange"
 	"skillswap/backend/internal/profile"
 	"skillswap/backend/internal/session"
+	"skillswap/backend/internal/trust"
 )
 
 type IApplication interface {
@@ -58,6 +59,10 @@ type IApplication interface {
 	Notifications(ctx context.Context, userID string, unreadOnly bool, page int) (communication.NotificationPage, error)
 	MarkNotificationRead(ctx context.Context, userID, notificationID string) (communication.NotificationReadResult, error)
 	MarkAllNotificationsRead(ctx context.Context, userID string) (communication.NotificationsReadAllResult, error)
+
+	CreateReview(ctx context.Context, userID, exchangeID string, in trust.ReviewInput) (trust.ReviewResult, error)
+	ExchangeReviews(ctx context.Context, userID, exchangeID string) (trust.ExchangeReviews, error)
+	UserReviews(ctx context.Context, viewerID, studentID string, page int) (trust.ReviewPage, error)
 }
 
 type Application struct {
@@ -66,21 +71,20 @@ type Application struct {
 	exchanges     *exchange.Service
 	sessions      *session.Service
 	communication *communication.Service
+	trust         *trust.Service
 }
 
 var _ IApplication = (*Application)(nil)
 
-func NewApplication(profiles *profile.Service, discovery *discovery.Service, exchanges *exchange.Service, comm *communication.Service, sessions ...*session.Service) *Application {
-	var s *session.Service
-	if len(sessions) > 0 {
-		s = sessions[0]
-	}
+func NewApplication(profiles *profile.Service, discovery *discovery.Service, exchanges *exchange.Service,
+	comm *communication.Service, sessions *session.Service, trust *trust.Service) *Application {
 	return &Application{
 		profiles:      profiles,
 		discovery:     discovery,
 		exchanges:     exchanges,
-		sessions:      s,
+		sessions:      sessions,
 		communication: comm,
+		trust:         trust,
 	}
 }
 
@@ -246,4 +250,16 @@ func (a *Application) MarkNotificationRead(ctx context.Context, userID, notifica
 
 func (a *Application) MarkAllNotificationsRead(ctx context.Context, userID string) (communication.NotificationsReadAllResult, error) {
 	return a.communication.MarkAllNotificationsRead(ctx, userID)
+}
+
+func (a *Application) CreateReview(ctx context.Context, userID, exchangeID string, in trust.ReviewInput) (trust.ReviewResult, error) {
+	return a.trust.CreateReview(ctx, userID, exchangeID, in)
+}
+
+func (a *Application) ExchangeReviews(ctx context.Context, userID, exchangeID string) (trust.ExchangeReviews, error) {
+	return a.trust.ExchangeReviews(ctx, userID, exchangeID)
+}
+
+func (a *Application) UserReviews(ctx context.Context, viewerID, studentID string, page int) (trust.ReviewPage, error) {
+	return a.trust.UserReviews(ctx, viewerID, studentID, page)
 }

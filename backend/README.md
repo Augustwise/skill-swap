@@ -100,7 +100,7 @@ for 40 minutes (NFR-08; `login_throttles`, migration `00002_auth.sql`).
 | ----------------- | ------- |
 | HTTP handlers: routes, DTOs, errors | `internal/api` |
 | Access and authentication | `internal/auth` |
-| Domain core and `IApplication` | `internal/core` (`internal/profile`, `internal/discovery`, `internal/exchange`, `internal/session`, `internal/communication`) |
+| Domain core and `IApplication` | `internal/core` (`internal/profile`, `internal/discovery`, `internal/exchange`, `internal/session`, `internal/communication`, `internal/trust`) |
 | Shared input checks (names, text length, UUID) | `internal/validate` |
 | Data access: `IData` / `ITransaction`, pgx v5, pgxpool | `internal/data` |
 | Mail adapter `IMailer` | `internal/mailer` |
@@ -665,6 +665,63 @@ New response fields: sessions have `completionConfirmedByMe`,
 `internal/session` commit their data, because concurrent confirmations need separate
 transactions; they create their own students and delete them afterwards.
 
+## Reviews and ratings (Sprint 9, FR-12)
+
+`internal/trust` (TrustService in LR2) stores reviews in `exchange_reviews` from `00001`,
+which already has `UNIQUE (exchange_id, author_id)`, a rating from 1 to 5 and
+`author_id <> recipient_id`. Migration `00009_reviews.sql` adds one more check: a stored
+comment is not blank and has at most 1000 characters. The rating is computed from
+`exchange_reviews` on every read, so it is always up to date.
+
+```bash
+go run ./cmd/db up
+go run ./cmd/db seed
+```
+
+The seed adds a completed exchange (`80000000-0000-0000-0000-000000000003`) between
+`demo.iryna` and `demo.dmytro` (English ↔ Go, both lessons held and confirmed). Dmytro has
+already rated Iryna 5 and Iryna has an unread `REVIEW_RECEIVED` notification. Sign in as
+Iryna, open the exchange and leave a review for Dmytro: his profile then shows the rating.
+
+| Method | Path | Session | Purpose |
+| ------ | ---- | ------- | ------- |
+| POST | `/api/v1/exchanges/{exchangeId}/reviews` | cookie + CSRF | Rate the partner with `{ "rating", "comment" }`; returns 201 `{ review, exchange }` |
+| GET | `/api/v1/exchanges/{exchangeId}/reviews` | cookie | `{ myReview, partnerReview, canReview }`; each review is null until it is written |
+| GET | `/api/v1/me/reviews?page=` | cookie | Reviews you received: `{ items, page, pageSize, total, averageRating, reviewCount }` |
+| GET | `/api/v1/students/{userId}/reviews?page=` | cookie | The same for a visible student |
+
+Server rules (FR-12, NFR-05, NFR-08):
+
+- Only a participant of a `COMPLETED` exchange can write a review; the recipient is always
+  the partner, so a review of oneself is impossible. Someone else's exchange, an unknown ID
+  or a value that is not a UUID gets 404 `exchange_not_found`; an active or cancelled
+  exchange gets 409 `exchange_not_completed`.
+- `rating` is a whole number from 1 to 5; `comment` is optional plain text of up to 1000
+  characters (trimmed; blank text is stored as no text). Other values get 422
+  `validation_failed`; a fractional rating such as `4.5` is not valid JSON for the field and
+  gets 400 `invalid_json`.
+- Each participant reviews an exchange once. A second review, also from a parallel request
+  stopped by the unique index, gets 409 `review_already_exists`; the first review is kept.
+- The review and the partner's `REVIEW_RECEIVED` notification (`review-received:{reviewId}`)
+  are stored in one transaction. The notification has `reviewId` and its `target` opens the
+  exchange.
+- `averageRating` is rounded to one decimal place (4.67 → 4.7) and is null while there are
+  no reviews, so the client shows «Ще немає відгуків»; `reviewCount` counts all reviews.
+  `GET /students/{userId}` keeps returning the 20 newest reviews; the list routes page
+  through all of them, newest first.
+
+New response fields: exchanges have `reviewedByMe`, `reviewedByPartner` and `canReview`
+(true for a completed exchange the viewer has not reviewed); reviews have `exchangeId`;
+notifications have `reviewId`.
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `exchange_not_found` | 404 | no exchange has this ID, or you do not take part in it |
+| `student_not_found` | 404 | the student is hidden, blocked, unverified or does not exist |
+| `exchange_not_completed` | 409 | the exchange is active or cancelled |
+| `review_already_exists` | 409 | you have already reviewed this exchange |
+| `validation_failed` | 422 | `rating` is not 1–5, or `comment` is too long or has control characters |
+
 ## Run Mailpit on Windows without Docker
 
 Mailpit is distributed as a single portable executable. These commands are for
@@ -738,4 +795,5 @@ go run ./cmd/db up
 go run ./cmd/db seed
 go test ./internal/api -run AgainstLocalPostgres -v
 go test ./internal/session -run AgainstPostgres -v
+go test ./internal/data -run AgainstPostgres -v
 ```

@@ -144,7 +144,8 @@ func (m *Memory) StudentProfile(ctx context.Context, viewerID, studentID string)
 	if viewer == nil || !m.visible(viewerID, studentID, student) {
 		return data.StudentProfile{}, data.ErrNotFound
 	}
-	result := data.StudentProfile{Profile: profile, Reviews: []data.Review{}}
+	result := data.StudentProfile{Profile: profile}
+	result.Reviews, result.AverageRating, result.ReviewCount = m.receivedReviews(studentID, 20, 0)
 	if match, ok := m.matchWith(viewer, studentID, student); ok {
 		result.Match = &match
 	}

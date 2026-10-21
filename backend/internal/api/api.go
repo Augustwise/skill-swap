@@ -71,6 +71,7 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	mux.HandleFunc("/api/v1/me/matches", getOnly(a.withVerifiedUser(a.mutualMatches)))
 	mux.HandleFunc("/api/v1/students", getOnly(a.withVerifiedUser(a.searchStudents)))
 	mux.HandleFunc("/api/v1/students/{userId}", getOnly(a.withVerifiedUser(a.studentProfile)))
+	mux.HandleFunc("/api/v1/students/{userId}/reviews", getOnly(a.withVerifiedUser(a.studentReviews)))
 	mux.HandleFunc("/api/v1/exchange-requests", a.postOnly(a.withVerifiedUser(a.createRequest)))
 	mux.HandleFunc("/api/v1/exchange-requests/{requestId}", getOnly(a.withVerifiedUser(a.requestDetails)))
 	mux.HandleFunc("/api/v1/exchange-requests/{requestId}/decline", a.postOnly(a.withVerifiedUser(a.answerRequest(a.app.DeclineRequest))))
@@ -81,6 +82,10 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	mux.HandleFunc("/api/v1/exchanges/{exchangeId}/conversation", getOnly(a.withVerifiedUser(a.exchangeConversation)))
 	mux.HandleFunc("/api/v1/exchanges/{exchangeId}/complete", a.postOnly(a.withVerifiedUser(a.completeExchange)))
 	mux.HandleFunc("/api/v1/exchanges/{exchangeId}/cancel", a.postOnly(a.withVerifiedUser(a.cancelExchange)))
+	mux.HandleFunc("/api/v1/exchanges/{exchangeId}/reviews", a.methods(map[string]http.HandlerFunc{
+		http.MethodGet:  a.withVerifiedUser(a.exchangeReviews),
+		http.MethodPost: a.withVerifiedUser(a.createReview),
+	}))
 	mux.HandleFunc("/api/v1/exchanges/{exchangeId}/sessions", a.methods(map[string]http.HandlerFunc{
 		http.MethodGet:  a.withVerifiedUser(a.listExchangeSessions),
 		http.MethodPost: a.withVerifiedUser(a.proposeExchangeSession),
@@ -94,6 +99,7 @@ func New(app core.IApplication, access *auth.Service, health readiness, settings
 	mux.HandleFunc("/api/v1/me/exchange-requests", getOnly(a.withVerifiedUser(a.listRequests)))
 	mux.HandleFunc("/api/v1/me/exchanges", getOnly(a.withVerifiedUser(a.listExchanges)))
 	mux.HandleFunc("/api/v1/me/schedule", getOnly(a.withVerifiedUser(a.listSchedule)))
+	mux.HandleFunc("/api/v1/me/reviews", getOnly(a.withVerifiedUser(a.myReviews)))
 	mux.HandleFunc("/api/v1/me/conversations", getOnly(a.withVerifiedUser(a.listConversations)))
 	mux.HandleFunc("/api/v1/conversations/{conversationId}", getOnly(a.withVerifiedUser(a.conversationDetails)))
 	mux.HandleFunc("/api/v1/conversations/{conversationId}/messages", a.methods(map[string]http.HandlerFunc{

@@ -3,7 +3,7 @@ info:
   title: Skill Swap API
   version: 1.0.0
   description: |
-    HTTP contract implemented by the Sprint 1-7 backend.
+    HTTP contract implemented by the Sprint 1-9 backend.
 
     Authentication (FR-01) uses an opaque server-side session stored in the HttpOnly
     `skillswap_session` cookie (SameSite=Lax, Path=/). Browsers should call the API through
@@ -48,6 +48,20 @@ info:
     Half-open intervals `[startsAt, endsAt)` are checked against all `SCHEDULED` sessions
     of both participants across all exchanges under canonical UUID user locks. Cancelled
     sessions do not increase progress and automatically add a replacement `DRAFT` slot.
+
+    Lesson confirmations and the exchange lifecycle (Sprint 8, FR-11): after a lesson ends,
+    each participant confirms it with `POST /sessions/{sessionId}/confirm`; it counts toward
+    progress only after both confirmations. Once the plan is done in both directions, both
+    participants confirm the end with `POST /exchanges/{exchangeId}/complete`. Either of them
+    can cancel an active exchange with a reason; the history is kept.
+
+    Reviews and ratings (Sprint 9, FR-12): each participant of a `COMPLETED` exchange can
+    rate the partner once from 1 to 5 with an optional text of up to 1000 characters
+    (`POST /exchanges/{exchangeId}/reviews`). Reviews of active or cancelled exchanges, of
+    someone else's exchange, or a second review of the same exchange are rejected. The
+    partner gets a `REVIEW_RECEIVED` notification that opens the exchange. Profiles show
+    `averageRating` rounded to one decimal place (null while there are no reviews) and
+    `reviewCount`. `Exchange.canReview` tells the client when to show the review form.
 servers:
   - url: http://127.0.0.1:8080/api/v1
     description: Local development
@@ -62,6 +76,7 @@ tags:
   - name: Sessions
   - name: Conversations
   - name: Notifications
+  - name: Reviews
 paths:
   /openapi.yaml:
     get:
@@ -986,6 +1001,72 @@ paths:
                   message: Student was not found
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
+  /students/{userId}/reviews:
+    get:
+      tags: [Reviews]
+      operationId: listStudentReviews
+      summary: List the reviews a student received, with the average rating (FR-12)
+      description: |
+        Returns 20 reviews per page, newest first. The same visibility rules as
+        `/students/{userId}` apply, except that your own ID is allowed (the same as
+        `/me/reviews`). `averageRating` is rounded to one decimal place and is null while there
+        are no reviews; `total` and `reviewCount` are the number of all received reviews.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: One page of reviews and the rating summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewPage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: No visible student has this ID, or it is not a UUID (`student_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /me/reviews:
+    get:
+      tags: [Reviews]
+      operationId: listMyReviews
+      summary: List the reviews you received, with your average rating (FR-12)
+      description: Returns 20 reviews per page, newest first, and the rating over all of them.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: One page of reviews and the rating summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewPage"
+        "400":
+          $ref: "#/components/responses/InvalidPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
   /exchange-requests:
     post:
       tags: [Exchange requests]
@@ -1601,6 +1682,122 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "422":
           $ref: "#/components/responses/ValidationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+  /exchanges/{exchangeId}/reviews:
+    get:
+      tags: [Reviews]
+      operationId: getExchangeReviews
+      summary: Show both participants' reviews of an exchange (FR-12)
+      description: |
+        `myReview` is the signed-in user's review of the partner and `partnerReview` the
+        partner's review of the user; each is null until it is written. `canReview` is true
+        for a completed exchange the user has not reviewed yet.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: exchangeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The reviews of the exchange
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExchangeReviews"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: Exchange was not found or you do not take part in it (`exchange_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+    post:
+      tags: [Reviews]
+      operationId: createReview
+      summary: Rate the partner of a completed exchange once (FR-12)
+      description: |
+        Only a participant of a `COMPLETED` exchange can review it, and only once; the
+        recipient is always the partner. In one transaction the review is stored and the
+        partner gets a `REVIEW_RECEIVED` notification. `comment` is optional plain text; blank
+        text is stored as no text. The response also returns the updated exchange
+        (`reviewedByMe` is true and `canReview` is false).
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: exchangeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReviewRequest"
+      responses:
+        "201":
+          description: The review and the updated exchange
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [review, exchange]
+                properties:
+                  review:
+                    $ref: "#/components/schemas/Review"
+                  exchange:
+                    $ref: "#/components/schemas/Exchange"
+        "400":
+          $ref: "#/components/responses/InvalidJSON"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ProfileForbidden"
+        "404":
+          description: Exchange was not found or you do not take part in it (`exchange_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: |
+            `exchange_not_completed`: the exchange is active or cancelled;
+            `review_already_exists`: you have already reviewed this exchange
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: review_already_exists
+                  message: You have already reviewed this exchange
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`rating` is not from 1 to 5, or `comment` is longer than 1000 characters"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: validation_failed
+                  message: Some fields are invalid
+                  fields:
+                    rating: Rating must be a whole number from 1 to 5
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
   /exchanges/{exchangeId}/sessions:
@@ -3190,9 +3387,12 @@ components:
           description: Number of students on all pages.
     Review:
       type: object
-      required: [id, author, rating, comment, createdAt]
+      required: [id, exchangeId, author, rating, comment, createdAt]
       properties:
         id:
+          type: string
+          format: uuid
+        exchangeId:
           type: string
           format: uuid
         author:
@@ -3258,6 +3458,8 @@ components:
         averageRating:
           type: number
           nullable: true
+          description: Average rating rounded to one decimal place; null while there are no reviews.
+          example: 4.7
         reviewCount:
           type: integer
         reviews:
@@ -3281,6 +3483,59 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/LessonFormat"
+    CreateReviewRequest:
+      type: object
+      required: [rating]
+      additionalProperties: false
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          maxLength: 1000
+          description: Optional plain text; leading and trailing spaces are removed.
+      example:
+        rating: 5
+        comment: Дуже зрозуміло пояснює Photoshop
+    ExchangeReviews:
+      type: object
+      required: [myReview, partnerReview, canReview]
+      properties:
+        myReview:
+          allOf:
+            - $ref: "#/components/schemas/Review"
+          nullable: true
+        partnerReview:
+          allOf:
+            - $ref: "#/components/schemas/Review"
+          nullable: true
+        canReview:
+          type: boolean
+    ReviewPage:
+      type: object
+      required: [items, page, pageSize, total, averageRating, reviewCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Review"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+        averageRating:
+          type: number
+          nullable: true
+          description: Average of all received ratings rounded to one decimal place; null without reviews.
+          example: 4.5
+        reviewCount:
+          type: integer
     CreateExchangeRequest:
       type: object
       additionalProperties: false
@@ -3487,11 +3742,13 @@ components:
         `requesterTeaches` and `recipientTeaches` hold the skill name and levels copied on
         acceptance, not the current profile values. `partner` is the other student relative
         to the signed-in viewer. `canConfirmCompletion` is true for an active exchange with
-        the whole plan done that the viewer has not confirmed yet.
+        the whole plan done that the viewer has not confirmed yet. `canReview` is true for a
+        completed exchange the viewer has not reviewed yet (FR-12).
       required: [id, requestId, status, format, totalSessions, partner, requester, recipient,
         requesterTeaches, recipientTeaches, progress, nextSession, completionConfirmedByMe,
-        completionConfirmedByPartner, canConfirmCompletion, canCancel, startedAt, completedAt,
-        cancelledAt, cancellationReason, createdAt, updatedAt]
+        completionConfirmedByPartner, canConfirmCompletion, canCancel, reviewedByMe,
+        reviewedByPartner, canReview, startedAt, completedAt, cancelledAt, cancellationReason,
+        createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -3530,6 +3787,12 @@ components:
         canConfirmCompletion:
           type: boolean
         canCancel:
+          type: boolean
+        reviewedByMe:
+          type: boolean
+        reviewedByPartner:
+          type: boolean
+        canReview:
           type: boolean
         startedAt:
           type: string
@@ -4028,7 +4291,7 @@ components:
           description: Recommended polling interval in seconds for an open chat (FR-08).
     NotificationEventType:
       type: string
-      enum: [EXCHANGE_REQUEST, REQUEST_RESPONSE, CHAT_MESSAGE, SESSION_UPDATED]
+      enum: [EXCHANGE_REQUEST, REQUEST_RESPONSE, CHAT_MESSAGE, SESSION_UPDATED, REVIEW_RECEIVED]
     NotificationTarget:
       type: object
       description: Identifies the object to open when the user clicks the notification (FR-13).
@@ -4059,7 +4322,7 @@ components:
     Notification:
       type: object
       required: [id, eventType, title, body, actor, target, requestId, exchangeId,
-        conversationId, messageId, sessionId, isRead, readAt, createdAt]
+        conversationId, messageId, sessionId, reviewId, isRead, readAt, createdAt]
       properties:
         id:
           type: string
@@ -4097,6 +4360,11 @@ components:
           type: string
           format: uuid
           nullable: true
+        reviewId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Set for `REVIEW_RECEIVED`; the target of such a notification is the exchange.
         isRead:
           type: boolean
         readAt:
