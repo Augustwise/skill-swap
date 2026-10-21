@@ -108,6 +108,7 @@ func TestHealthAndOrigin(t *testing.T) {
 	handler := testHandler(&fakeApp{})
 	response := request(t, handler, http.MethodGet, "/api/v1/health")
 	expectStatus(t, response, http.StatusOK)
+	expect.Equal(t, "Cache-Control", response.Header().Get("Cache-Control"), "no-store")
 
 	foreignRequest := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	foreignRequest.Header.Set("Origin", "https://example.org")
@@ -236,6 +237,15 @@ func TestRoutingErrorsUseProblemJSON(t *testing.T) {
 	response = request(t, handler, http.MethodPost, "/api/v1/skills")
 	assertProblem(t, response, http.StatusMethodNotAllowed, "method_not_allowed")
 	expect.Equal(t, "Allow", response.Header().Get("Allow"), http.MethodGet)
+}
+
+// A panic in a handler is answered with problem JSON, and the next request still works.
+func TestPanicReturnsInternalError(t *testing.T) {
+	handler := testHandler(&fakeApp{})
+	// fakeApp does not implement Faculties, so the call panics on the nil IApplication.
+	response := request(t, handler, http.MethodGet, "/api/v1/universities/"+datatest.DemoUniversityID+"/faculties")
+	assertProblem(t, response, http.StatusInternalServerError, "internal_error")
+	expectStatus(t, request(t, handler, http.MethodGet, "/api/v1/health"), http.StatusOK)
 }
 
 func TestCORSPreflight(t *testing.T) {

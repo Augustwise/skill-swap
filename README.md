@@ -19,7 +19,8 @@ skill-swap/
 │   └── package.json         # Scripts and frontend dependencies
 ├── backend/
 │   ├── cmd/api/                 # API entry point and dependency wiring
-│   ├── cmd/db/                  # Connection checks, migrations, and demo seeding
+│   ├── cmd/db/                  # Connection checks, migrations, seeding, backup, and restore
+│   ├── cmd/loadtest/            # Search and mutual-match load test
 │   ├── cmd/mailtest/            # Local SMTP smoke test
 │   ├── internal/api/            # HTTP routes, DTOs, middleware, and errors
 │   ├── internal/auth/           # Registration, sessions, and verification
@@ -36,7 +37,7 @@ skill-swap/
 │   ├── internal/validate/       # Shared input validation
 │   ├── internal/expect/         # Readable test assertions
 │   ├── migrations/              # Versioned Goose SQL migrations
-│   ├── seeds/                   # Repeatable demo data
+│   ├── seeds/                   # Repeatable demo data and load-test students
 │   └── docs/                    # OpenAPI specification
 ├── scripts/dev.mjs          # Local process runner
 ├── .gitignore               # Local configuration and generated-file exclusions
@@ -159,8 +160,10 @@ go run ./cmd/db up
 go run ./cmd/db seed
 ```
 
-Back up an existing database before applying schema changes. The seed is intended for
-development, not production data.
+Back up an existing database before applying schema changes with `go run ./cmd/db backup`
+(it keeps the newest 7 copies in `backend/.local/backups`; `restore` loads one into a separate
+local database). The seed is intended for development, not production data. The load test,
+backups and the end-to-end scenario test are described in the backend README.
 
 ## Run the application
 
