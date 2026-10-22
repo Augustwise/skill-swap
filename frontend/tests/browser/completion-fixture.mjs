@@ -64,6 +64,9 @@ export async function completionFixture(page) {
     completionConfirmedByMe: false,
     completionConfirmedByPartner: false,
     nextSession: null,
+    canReview: false,
+    reviewedByMe: false,
+    reviewedByPartner: false,
     progress: {
       completedSessions: 0,
       totalSessions: 2,
@@ -157,6 +160,8 @@ export async function completionFixture(page) {
     if (path === `exchanges/${exchangeId}/sessions`)
       return send({ exchange, items: [lesson, other] });
     if (path === `exchanges/${exchangeId}`) return send({ exchange, history: state.history });
+    if (path === `exchanges/${exchangeId}/reviews`)
+      return send({ myReview: null, partnerReview: null, canReview: exchange.canReview });
     if (path === "me/exchanges")
       return send({
         items: url.searchParams.get("status") === exchange.status ? [exchange] : [],

@@ -172,7 +172,7 @@ test("archive tabs retain pagination and return to the same list", async ({ page
     "href",
     "/exchanges?status=COMPLETED&page=3",
   );
-  await page.getByRole("link", { name: "Умови та план занять →" }).click();
+  await page.getByRole("link", { name: "Переглянути відгуки →" }).click();
   const back = page.getByRole("link", { name: "← До списку обмінів" });
   await expect(back).toHaveAttribute("href", "/exchanges?status=COMPLETED&page=2");
   await back.click();

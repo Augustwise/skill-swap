@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { CandidateProfile } from "../../components/CandidateProfile";
+import { readPage } from "../../components/DiscoveryApi";
 import "../../styles/dashboard.css";
 import "../../styles/profile.css";
 import "../../styles/discovery.css";
@@ -15,6 +16,12 @@ export default async function StudentPage({
   searchParams,
 }: PageProps<"/students/[studentId]">) {
   const { studentId } = await params;
-  const { from } = await searchParams;
-  return <CandidateProfile studentId={studentId} from={typeof from === "string" ? from : ""} />;
+  const { from, reviewsPage } = await searchParams;
+  return (
+    <CandidateProfile
+      studentId={studentId}
+      from={typeof from === "string" ? from : ""}
+      reviewsPage={readPage(typeof reviewsPage === "string" ? reviewsPage : null)}
+    />
+  );
 }

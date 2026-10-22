@@ -22,6 +22,7 @@ import {
 } from "./CompletionApi";
 import { ExchangeCancellation } from "./ExchangeCancellation";
 import { ExchangeHistory } from "./ExchangeHistory";
+import { ExchangeReviews } from "./ExchangeReviews";
 import { CompletionFeedback } from "./CompletionFeedback";
 import { useCompletionMutation } from "./useCompletionMutation";
 import { exchangeSessions, sessionHref } from "./SessionApi";
@@ -271,6 +272,14 @@ function ExchangeView({
             )}
             <ExchangeLessons exchange={exchange} lessons={data.items} onRefresh={result.retry} />
             <ExchangeHistory exchange={exchange} />
+            {exchange.status === "COMPLETED" && (
+              <ExchangeReviews
+                exchange={exchange}
+                csrfToken={session.csrfToken}
+                path={path}
+                onRefresh={result.retry}
+              />
+            )}
           </div>
           <aside className="profile-rail" aria-label="Прогрес і заняття">
             <ProgressCard exchange={exchange} viewerId={profile.id} />

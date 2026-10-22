@@ -50,7 +50,7 @@ directory is not required. Detailed setup and API documentation are in
 [`backend/README.md`](backend/README.md) and
 [`backend/docs/openapi.yaml`](backend/docs/openapi.yaml). The web client, its routes and
 conventions are described in [`frontend/README.md`](frontend/README.md); sprint notes are
-in `frontend/SPRINT2.md`–`SPRINT6.md`.
+in `frontend/SPRINT2.md`–`SPRINT9.md`.
 
 ## Architecture and main components
 

@@ -3,6 +3,7 @@ import { DashboardAvatar } from "./DashboardCards";
 import { DashboardIcon as Icon } from "./DashboardIcon";
 import type { Profile } from "./OnboardingApi";
 import { skillLevels } from "./ProfileApi";
+import { ProfileReputation } from "./ReceivedReviews";
 
 export function ProfileSummary({ profile }: { profile: Profile }) {
   const checks = [
@@ -21,6 +22,7 @@ export function ProfileSummary({ profile }: { profile: Profile }) {
   const percent = checks.filter(([, complete]) => complete).length * 20;
   return (
     <aside className="profile-rail" aria-label="Попередній перегляд профілю">
+      <ProfileReputation />
       <section className="account-card">
         <h2>Так тебе бачать студенти</h2>
         <div className="profile-preview">

@@ -19,6 +19,7 @@ const icons: Record<NotificationEvent, DashboardIconName> = {
   REQUEST_RESPONSE: "handshake",
   CHAT_MESSAGE: "nav-chat",
   SESSION_UPDATED: "calendar",
+  REVIEW_RECEIVED: "star",
 };
 
 export function useNotificationActions(csrfToken: string, onChanged: () => void) {

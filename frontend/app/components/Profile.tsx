@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AppMessage } from "./AppMessage";
 import { ProfileShell } from "./ProfileShell";
 import { AppSkeleton } from "./Skeleton";
@@ -8,9 +9,16 @@ import { ProfileSummary } from "./ProfileSummary";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileSkills } from "./ProfileSkills";
 import { useProfile } from "./useProfile";
+import { ReceivedReviews } from "./ReceivedReviews";
+import { reviewsHref } from "./ReviewApi";
 
-export function Profile() {
-  const [section, setSection] = useState("about");
+export function Profile({
+  section = "about",
+  reviewsPage = 1,
+}: {
+  section?: "about" | "skills" | "reviews";
+  reviewsPage?: number;
+}) {
   const [dirty, setDirty] = useState(false);
   const { profile, session, status, retry, setProfile } = useProfile();
   if (status === "loading" || (status === "ready" && (!profile || !session))) {
@@ -21,7 +29,10 @@ export function Profile() {
       <AppMessage
         status={status === "login" ? "login" : "error"}
         subject="профіль"
-        path="/profile"
+        path={reviewsHref(
+          section === "about" ? "/profile" : `/profile?tab=${section}`,
+          reviewsPage,
+        )}
         onRetry={retry}
       />
     );
@@ -34,27 +45,37 @@ export function Profile() {
       hasUnsavedChanges={dirty}
     >
       <nav className="profile-tabs" aria-label="Розділи профілю">
-        <button
-          type="button"
+        <Link
+          href="/profile?tab=skills"
           aria-current={section === "skills" ? "page" : undefined}
-          onClick={() => setSection("skills")}
           aria-controls="profile-skills"
         >
           Мої навички · {profile.teachingSkills.length + profile.learningSkills.length}
-        </button>
-        <button
-          type="button"
+        </Link>
+        <Link
+          href="/profile"
           aria-current={section === "about" ? "page" : undefined}
-          onClick={() => setSection("about")}
           aria-controls="profile-about"
         >
           Про мене
-        </button>
+        </Link>
+        <Link
+          href="/profile?tab=reviews"
+          aria-current={section === "reviews" ? "page" : undefined}
+          aria-controls="profile-reviews"
+        >
+          Відгуки про мене
+        </Link>
       </nav>
       <div className="profile-columns">
         <div className="profile-sections">
           <div id="profile-skills" hidden={section !== "skills"}>
             <ProfileSkills profile={profile} csrfToken={session.csrfToken} onSaved={setProfile} />
+          </div>
+          <div id="profile-reviews" hidden={section !== "reviews"}>
+            {section === "reviews" && (
+              <ReceivedReviews studentId={null} page={reviewsPage} path="/profile?tab=reviews" />
+            )}
           </div>
           <div id="profile-about" className="profile-sections" hidden={section !== "about"}>
             <ProfileEditor

@@ -18,22 +18,15 @@ import {
   type StudentProfile,
   type UserSkill,
 } from "./DiscoveryApi";
-import {
-  avatarColor,
-  countLabel,
-  formatDate,
-  formatList,
-  formatRating,
-  fullName,
-  initials,
-  reviewForms,
-  studyDetails,
-} from "./DiscoveryFormat";
+import { avatarColor, formatList, fullName, initials, studyDetails } from "./DiscoveryFormat";
 import { skillLevels } from "./ProfileApi";
 import { proposalOptions, requestsHref } from "./ExchangeApi";
 import { ExchangeProposal } from "./ExchangeProposal";
 import { SkeletonDetail } from "./Skeleton";
 import { useApiQuery } from "./useApiQuery";
+import { ReceivedReviews } from "./ReceivedReviews";
+import { ReviewRating } from "./ReviewCards";
+import { reviewsHref } from "./ReviewApi";
 
 const backLinks: Record<string, { label: string; section?: AppSection }> = {
   "/search": { label: "До результатів пошуку", section: "search" },
@@ -169,49 +162,18 @@ function MatchExplanation({
   );
 }
 
-function Reviews({ student }: { student: StudentProfile }) {
-  return (
-    <section className="account-card" aria-labelledby="candidate-reviews-title">
-      <div className="dashboard-section-heading">
-        <h2 id="candidate-reviews-title">Відгуки</h2>
-        {student.averageRating !== null && (
-          <p className="dashboard-rating">
-            <Icon name="star" />
-            <strong>{formatRating(student.averageRating)}</strong>
-            <span>· {countLabel(student.reviewCount, reviewForms)}</span>
-          </p>
-        )}
-      </div>
-      {student.reviews.length === 0 ? (
-        <p className="profile-hint">Ще немає відгуків</p>
-      ) : (
-        <ul className="candidate-reviews">
-          {student.reviews.map((review) => (
-            <li key={review.id}>
-              <div className="candidate-review__head">
-                <strong>{fullName(review.author)}</strong>
-                <span>Оцінка {review.rating} з 5</span>
-                <time dateTime={review.createdAt}>{formatDate(review.createdAt)}</time>
-              </div>
-              {review.comment && <p className="profile-biography">{review.comment}</p>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
 function CandidateView({
   profile,
   session,
   studentId,
   from,
-}: AppContext & { studentId: string; from: string }) {
+  reviewsPage,
+}: AppContext & { studentId: string; from: string; reviewsPage: number }) {
   const [modal, setModal] = useState(false);
   const back = safeAppPath(from, "/search");
   const backLink = backLinkFor(back);
-  const path = studentHref(studentId, from || undefined);
+  const basePath = studentHref(studentId, from || undefined);
+  const path = reviewsHref(basePath, reviewsPage);
   const result = useApiQuery(`students/${studentId}`, (signal) =>
     studentProfile(studentId, signal),
   );
@@ -274,17 +236,10 @@ function CandidateView({
                 </div>
                 {student.mutual && <MutualBadge />}
               </div>
-              <p className="dashboard-rating">
-                {student.averageRating === null ? (
-                  "Ще немає відгуків"
-                ) : (
-                  <>
-                    <Icon name="star" />
-                    <strong>{formatRating(student.averageRating)}</strong>
-                    <span>· {countLabel(student.reviewCount, reviewForms)}</span>
-                  </>
-                )}
-              </p>
+              <ReviewRating
+                averageRating={student.averageRating}
+                reviewCount={student.reviewCount}
+              />
             </section>
             <section className="account-card" aria-labelledby="candidate-bio-title">
               <h2 id="candidate-bio-title">Про себе</h2>
@@ -310,7 +265,7 @@ function CandidateView({
                 empty="Навичок для вивчення поки немає."
               />
             </section>
-            <Reviews student={student} />
+            <ReceivedReviews studentId={studentId} page={reviewsPage} path={basePath} />
           </div>
           <aside className="profile-rail" aria-label="Сумісність і обмін">
             <MatchExplanation student={student} overview={overview} />
@@ -366,14 +321,24 @@ function CandidateView({
   );
 }
 
-export function CandidateProfile({ studentId, from }: { studentId: string; from: string }) {
+export function CandidateProfile({
+  studentId,
+  from,
+  reviewsPage = 1,
+}: {
+  studentId: string;
+  from: string;
+  reviewsPage?: number;
+}) {
   return (
     <AppGate
       page="student"
       section={backLinkFor(safeAppPath(from, "/search")).section}
-      path={studentHref(studentId, from || undefined)}
+      path={reviewsHref(studentHref(studentId, from || undefined), reviewsPage)}
     >
-      {(context) => <CandidateView {...context} studentId={studentId} from={from} />}
+      {(context) => (
+        <CandidateView {...context} studentId={studentId} from={from} reviewsPage={reviewsPage} />
+      )}
     </AppGate>
   );
 }
