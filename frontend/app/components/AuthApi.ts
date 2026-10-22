@@ -1,5 +1,5 @@
 export type AuthSession = {
-  user: { email: string; emailVerified: boolean };
+  user: { email: string; emailVerified: boolean; role?: "STUDENT" | "ADMIN" };
   csrfToken: string;
 };
 

@@ -8,7 +8,13 @@ import { AuthError, authRequest, requestError, type AuthSession } from "./AuthAp
 import { emailError, focusInvalid, loginDestination, normalizeEmail } from "./AuthValidation";
 type Mode = "login" | "recovery" | "recoverySent";
 
-export function LoginForm({ initialMode = "login" }: { initialMode?: "login" | "recovery" }) {
+export function LoginForm({
+  initialMode = "login",
+  accountDeleted = false,
+}: {
+  initialMode?: "login" | "recovery";
+  accountDeleted?: boolean;
+}) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [email, setEmail] = useState("");
@@ -201,6 +207,11 @@ export function LoginForm({ initialMode = "login" }: { initialMode?: "login" | "
         </h1>
         <p>Увійди, щоб побачити свої нові збіги</p>
       </div>
+      {accountDeleted && (
+        <p className="login-form__notice" role="status">
+          Акаунт видалено, профіль знеособлено. Усі сесії завершено.
+        </p>
+      )}
       <label className="register-field">
         <span>Університетська пошта</span>
         <input

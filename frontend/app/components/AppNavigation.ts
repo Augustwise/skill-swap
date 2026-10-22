@@ -1,7 +1,16 @@
 import type { DashboardIconName } from "./DashboardIcon";
 
 export type AppSection =
-  "main" | "search" | "matches" | "requests" | "exchanges" | "messages" | "schedule" | "profile";
+  | "main"
+  | "search"
+  | "matches"
+  | "requests"
+  | "exchanges"
+  | "messages"
+  | "schedule"
+  | "profile"
+  | "settings"
+  | "admin";
 export type SkeletonLayout =
   | "dashboard"
   | "search"
@@ -119,6 +128,20 @@ export const pageShells = {
     subtitle: "Дані, які бачать студенти у твоєму профілі",
     subject: "профіль",
     layout: "profile",
+  },
+  settings: {
+    section: "settings",
+    title: "Налаштування",
+    subtitle: "Твоя приватність, безпека та контроль взаємодії",
+    subject: "налаштування",
+    layout: "detail",
+  },
+  admin: {
+    section: "admin",
+    title: "Модерація",
+    subtitle: "Безпечна спільнота та актуальний каталог навичок",
+    subject: "модерацію",
+    layout: "detail",
   },
 } as const satisfies Record<
   string,

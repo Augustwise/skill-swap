@@ -171,7 +171,7 @@ test("return paths stay inside the known app pages", () => {
     "/\\evil.example",
     "javascript:alert(1)",
     "/students/not-a-uuid",
-    "/admin",
+    "/admin/unknown",
     null,
   ])
     assert.equal(routes.safeAppPath(unsafe, "/main"), "/main", String(unsafe));

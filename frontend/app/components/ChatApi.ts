@@ -33,6 +33,7 @@ export type Conversation = {
   lastMessageAt: string | null;
   unreadCount: number;
   canSend: boolean;
+  blockedByMe: boolean;
   createdAt: string;
 };
 export type ChatMessage = {

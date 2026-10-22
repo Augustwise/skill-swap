@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AppGate, type AppContext } from "./AppGate";
 import { pageShells } from "./AppNavigation";
@@ -27,6 +28,7 @@ import { useApiQuery } from "./useApiQuery";
 import { ReceivedReviews } from "./ReceivedReviews";
 import { ReviewRating } from "./ReviewCards";
 import { reviewsHref } from "./ReviewApi";
+import { StudentSafety } from "./StudentSafety";
 
 const backLinks: Record<string, { label: string; section?: AppSection }> = {
   "/search": { label: "До результатів пошуку", section: "search" },
@@ -170,6 +172,7 @@ function CandidateView({
   reviewsPage,
 }: AppContext & { studentId: string; from: string; reviewsPage: number }) {
   const [modal, setModal] = useState(false);
+  const router = useRouter();
   const back = safeAppPath(from, "/search");
   const backLink = backLinkFor(back);
   const basePath = studentHref(studentId, from || undefined);
@@ -239,6 +242,12 @@ function CandidateView({
               <ReviewRating
                 averageRating={student.averageRating}
                 reviewCount={student.reviewCount}
+              />
+              <StudentSafety
+                student={student}
+                csrfToken={session.csrfToken}
+                path={path}
+                onChanged={() => router.replace("/settings?tab=blocks")}
               />
             </section>
             <section className="account-card" aria-labelledby="candidate-bio-title">

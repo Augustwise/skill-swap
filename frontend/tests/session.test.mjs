@@ -208,7 +208,12 @@ test("lesson links retain schedule filters and pagination through login and retu
 });
 
 test("lesson return paths cannot redirect to external or unknown pages", () => {
-  for (const from of ["https://evil.example", "//evil.example", "/\\evil.example", "/admin"]) {
+  for (const from of [
+    "https://evil.example",
+    "//evil.example",
+    "/\\evil.example",
+    "/admin/unknown",
+  ]) {
     const href = api.sessionHref(id, from);
     assert.equal(new URL(href, "http://localhost").searchParams.get("from"), "/schedule");
   }

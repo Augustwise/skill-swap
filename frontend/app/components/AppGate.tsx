@@ -7,6 +7,7 @@ import { AppMessage } from "./AppMessage";
 import { AppSkeleton } from "./Skeleton";
 import type { Profile } from "./OnboardingApi";
 import { useProfile } from "./useProfile";
+import { SessionRole } from "./SessionRole";
 
 export type AppContext = { profile: Profile; session: AuthSession };
 
@@ -36,5 +37,9 @@ export function AppGate({
       />
     );
   }
-  return children({ profile, session });
+  return (
+    <SessionRole.Provider value={session.user.role ?? "STUDENT"}>
+      {children({ profile, session })}
+    </SessionRole.Provider>
+  );
 }

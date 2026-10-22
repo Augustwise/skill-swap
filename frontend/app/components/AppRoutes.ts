@@ -10,6 +10,8 @@ const pages = new Set([
   "/schedule",
   "/messages",
   "/notifications",
+  "/settings",
+  "/admin",
 ]);
 const entityPage = /^\/(?:students|requests|exchanges|messages|sessions)\/([^/]+)$/;
 
@@ -30,7 +32,9 @@ export function safeAppPath(value: string | null | undefined, fallback: string) 
   }
   if (url.origin !== "http://skillswap.local") return fallback;
   const entity = entityPage.exec(url.pathname);
-  if (!pages.has(url.pathname) && !(entity && isUuid(entity[1]))) return fallback;
+  const report = /^\/admin\/reports\/([^/]+)$/.exec(url.pathname);
+  if (!pages.has(url.pathname) && !(entity && isUuid(entity[1])) && !(report && isUuid(report[1])))
+    return fallback;
   return `${url.pathname}${url.search}`;
 }
 

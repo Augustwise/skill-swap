@@ -51,9 +51,39 @@ export function AppDialog({
   return (
     <dialog
       ref={dialogRef}
+      tabIndex={-1}
       className={`dashboard-modal ${className}`.trim()}
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
+      onKeyDown={(event) => {
+        if (event.key !== "Tab") return;
+        const dialog = event.currentTarget;
+        const focusable = Array.from(
+          dialog.querySelectorAll<HTMLElement>(
+            "a[href], button, input, select, textarea, [tabindex]",
+          ),
+        ).filter(
+          (element) =>
+            !element.matches(":disabled") &&
+            element.tabIndex >= 0 &&
+            element.getClientRects().length > 0,
+        );
+        const first = focusable[0];
+        const last = focusable.at(-1);
+        if (!first) {
+          event.preventDefault();
+          dialog.focus();
+        } else if (
+          event.shiftKey &&
+          (document.activeElement === first || document.activeElement === dialog)
+        ) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }}
       onCancel={(event) => {
         if (!canClose) event.preventDefault();
       }}

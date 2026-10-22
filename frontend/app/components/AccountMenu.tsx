@@ -16,6 +16,7 @@ const links = [
   { href: "/exchanges", icon: "nav-swap", label: "Активні обміни" },
   { href: "/schedule", icon: "calendar", label: "Розклад" },
   { href: "/messages", icon: "nav-chat", label: "Повідомлення" },
+  { href: "/settings", icon: "settings", label: "Налаштування" },
 ] as const;
 
 const badgeLabels: Record<string, string> = {
@@ -28,11 +29,13 @@ export function AccountMenu({
   pending,
   badges = {},
   onLogout,
+  isAdmin = false,
 }: {
   profile: Profile;
   pending: boolean;
   badges?: Record<string, number>;
   onLogout: () => void;
+  isAdmin?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
@@ -118,6 +121,12 @@ export function AccountMenu({
             </Link>
           );
         })}
+        {isAdmin && (
+          <Link href="/admin?status=OPEN" onClick={() => setOpen(false)}>
+            <Icon name="inbox" />
+            <span className="account-menu__label">Модерація</span>
+          </Link>
+        )}
         <hr className="account-menu__divider" />
         <button
           className="account-menu__logout"
