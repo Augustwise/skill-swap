@@ -10,14 +10,17 @@ export const metadata: Metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string | string[] }>;
+  searchParams: Promise<{ mode?: string | string[]; deleted?: string | string[] }>;
 }) {
-  const { mode } = await searchParams;
+  const { mode, deleted } = await searchParams;
   return (
     <main className="register-page login-page">
       <AuthBrandPanel />
       <section className="register-main" aria-labelledby="login-title">
-        <LoginForm initialMode={mode === "recovery" ? "recovery" : "login"} />
+        <LoginForm
+          initialMode={mode === "recovery" ? "recovery" : "login"}
+          accountDeleted={deleted === "1"}
+        />
       </section>
     </main>
   );

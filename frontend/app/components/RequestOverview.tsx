@@ -31,6 +31,7 @@ import {
 import { RequestActions } from "./RequestActions";
 import { SkeletonDetail } from "./Skeleton";
 import { useApiQuery } from "./useApiQuery";
+import { StudentSafety } from "./StudentSafety";
 
 function DecisionCard({
   details,
@@ -204,6 +205,12 @@ function RequestView({
                   badge={<StatusBadge status={details.request.status} />}
                 />
               </div>
+              <StudentSafety
+                student={view.partner}
+                csrfToken={session.csrfToken}
+                path={path}
+                onChanged={changed}
+              />
             </section>
             <section className="account-card" aria-labelledby="request-terms-title">
               <h2 id="request-terms-title">Умови обміну</h2>

@@ -1,8 +1,5 @@
 export type Reference = { id: string; name: string };
-export type AuthSession = {
-  user: { email: string; emailVerified: boolean };
-  csrfToken: string;
-};
+export type { AuthSession } from "./AuthApi";
 export type Skill = Reference & { categoryId: string };
 export type SkillLevel = "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
 export type SelectedSkill = Skill & { level: SkillLevel };

@@ -18,6 +18,7 @@ import { SkillTag, StatusBadge } from "./ExchangeCards";
 import { Skeleton } from "./Skeleton";
 import { useApiQuery } from "./useApiQuery";
 import { useChat } from "./useChat";
+import { StudentSafety } from "./StudentSafety";
 
 export function ChatSkeleton() {
   return (
@@ -65,6 +66,7 @@ export function ChatPanel({
   const path = messagesHref(conversationId);
   const countersChanged = useCountersChanged();
   const [blocked, setBlocked] = useState(false);
+  const [safetyNotice, setSafetyNotice] = useState("");
   const details = useApiQuery(path, (signal) => conversationDetails(conversationId, signal));
   const chat = useChat({
     conversationId,
@@ -96,6 +98,11 @@ export function ChatPanel({
   if (failed) {
     return (
       <section className="account-card chat-panel chat-panel--state" aria-label="Чат">
+        {safetyNotice && (
+          <p className="profile-success" role="status">
+            {safetyNotice}
+          </p>
+        )}
         <Link className="discovery-back chat-panel__back" href="/messages">
           ← До розмов
         </Link>
@@ -112,6 +119,11 @@ export function ChatPanel({
   if (!conversation || chat.status === "loading") {
     return (
       <section className="account-card chat-panel" aria-busy="true" aria-label="Чат">
+        {safetyNotice && (
+          <p className="profile-success" role="status">
+            {safetyNotice}
+          </p>
+        )}
         <p className="sr-only" role="status">
           Завантажуємо розмову…
         </p>
@@ -149,6 +161,18 @@ export function ChatPanel({
           </div>
         </div>
         <div className="chat-panel__context">
+          <StudentSafety
+            student={conversation.partner}
+            csrfToken={csrfToken}
+            path={path}
+            blockedByMe={conversation.blockedByMe}
+            onChanged={(notice) => {
+              setSafetyNotice(notice);
+              setBlocked(false);
+              details.retry();
+              onActivity();
+            }}
+          />
           {conversation.exchangeId && conversation.exchangeStatus === "ACTIVE" && (
             <Link
               className="dashboard-button dashboard-button--primary"
@@ -164,6 +188,11 @@ export function ChatPanel({
           </Link>
         </div>
       </header>
+      {safetyNotice && (
+        <p className="safety-notice" role="status">
+          {safetyNotice}
+        </p>
+      )}
       {!chat.online && (
         <p className="chat-connection" role="status">
           Немає з’єднання із сервером. Пробуємо знову кожні кілька секунд — нові повідомлення

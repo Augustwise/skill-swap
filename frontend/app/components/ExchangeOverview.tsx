@@ -31,6 +31,7 @@ import { exchangeHref, requestHref, requestPerspective, type Exchange } from "./
 import { formatDateTime, sessionForms, totalTime } from "./ExchangeFormat";
 import { SkeletonDetail } from "./Skeleton";
 import { useApiQuery } from "./useApiQuery";
+import { StudentSafety } from "./StudentSafety";
 
 function ProgressCard({ exchange, viewerId }: { exchange: Exchange; viewerId: string }) {
   const { progress } = exchange;
@@ -145,6 +146,7 @@ function ExchangeView({
   const view = exchange ? requestPerspective(exchange, profile.id) : null;
   const completion = useCompletionMutation(result.retry);
   const [cancelling, setCancelling] = useState(false);
+  const [safetyNotice, setSafetyNotice] = useState("");
 
   return (
     <AppShell
@@ -155,6 +157,11 @@ function ExchangeView({
       subtitle={pageShells.exchange.subtitle}
       contentId="exchange-content"
     >
+      {safetyNotice && (
+        <p className="account-card profile-success" role="status">
+          {safetyNotice}
+        </p>
+      )}
       <Link
         className="discovery-back"
         href={
@@ -231,6 +238,15 @@ function ExchangeView({
                   badge={<StatusBadge status={exchange.status} kind="exchange" />}
                 />
               </div>
+              <StudentSafety
+                student={exchange.partner}
+                csrfToken={session.csrfToken}
+                path={path}
+                onChanged={(notice) => {
+                  setSafetyNotice(notice);
+                  result.retry();
+                }}
+              />
             </section>
             <section className="account-card" aria-labelledby="exchange-terms-title">
               <h2 id="exchange-terms-title">Погоджені умови</h2>

@@ -97,6 +97,16 @@
   background: #f8f7ff;
 }
 
+.login-form__notice {
+  padding: 14px 16px;
+  border: 1px solid #c8e8d6;
+  border-radius: 12px;
+  background: #effaf5;
+  color: #235545;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
 @media (max-width: 430px) {
   .login-form__options {
     gap: 8px;

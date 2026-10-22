@@ -11,6 +11,7 @@ import { ProfileSkills } from "./ProfileSkills";
 import { useProfile } from "./useProfile";
 import { ReceivedReviews } from "./ReceivedReviews";
 import { reviewsHref } from "./ReviewApi";
+import { SessionRole } from "./SessionRole";
 
 export function Profile({
   section = "about",
@@ -38,61 +39,63 @@ export function Profile({
     );
   }
   return (
-    <ProfileShell
-      key={profile.id}
-      profile={profile}
-      csrfToken={session.csrfToken}
-      hasUnsavedChanges={dirty}
-    >
-      <nav className="profile-tabs" aria-label="Розділи профілю">
-        <Link
-          href="/profile?tab=skills"
-          aria-current={section === "skills" ? "page" : undefined}
-          aria-controls="profile-skills"
-        >
-          Мої навички · {profile.teachingSkills.length + profile.learningSkills.length}
-        </Link>
-        <Link
-          href="/profile"
-          aria-current={section === "about" ? "page" : undefined}
-          aria-controls="profile-about"
-        >
-          Про мене
-        </Link>
-        <Link
-          href="/profile?tab=reviews"
-          aria-current={section === "reviews" ? "page" : undefined}
-          aria-controls="profile-reviews"
-        >
-          Відгуки про мене
-        </Link>
-      </nav>
-      <div className="profile-columns">
-        <div className="profile-sections">
-          <div id="profile-skills" hidden={section !== "skills"}>
-            <ProfileSkills profile={profile} csrfToken={session.csrfToken} onSaved={setProfile} />
+    <SessionRole.Provider value={session.user.role ?? "STUDENT"}>
+      <ProfileShell
+        key={profile.id}
+        profile={profile}
+        csrfToken={session.csrfToken}
+        hasUnsavedChanges={dirty}
+      >
+        <nav className="profile-tabs" aria-label="Розділи профілю">
+          <Link
+            href="/profile?tab=skills"
+            aria-current={section === "skills" ? "page" : undefined}
+            aria-controls="profile-skills"
+          >
+            Мої навички · {profile.teachingSkills.length + profile.learningSkills.length}
+          </Link>
+          <Link
+            href="/profile"
+            aria-current={section === "about" ? "page" : undefined}
+            aria-controls="profile-about"
+          >
+            Про мене
+          </Link>
+          <Link
+            href="/profile?tab=reviews"
+            aria-current={section === "reviews" ? "page" : undefined}
+            aria-controls="profile-reviews"
+          >
+            Відгуки про мене
+          </Link>
+        </nav>
+        <div className="profile-columns">
+          <div className="profile-sections">
+            <div id="profile-skills" hidden={section !== "skills"}>
+              <ProfileSkills profile={profile} csrfToken={session.csrfToken} onSaved={setProfile} />
+            </div>
+            <div id="profile-reviews" hidden={section !== "reviews"}>
+              {section === "reviews" && (
+                <ReceivedReviews studentId={null} page={reviewsPage} path="/profile?tab=reviews" />
+              )}
+            </div>
+            <div id="profile-about" className="profile-sections" hidden={section !== "about"}>
+              <ProfileEditor
+                profile={profile}
+                csrfToken={session.csrfToken}
+                onSaved={setProfile}
+                onDirtyChange={setDirty}
+              />
+              <section className="account-card">
+                <h2>Пошта університету</h2>
+                <p className="profile-email">{session.user.email}</p>
+                <span className="profile-verified">✓ Підтверджено</span>
+              </section>
+            </div>
           </div>
-          <div id="profile-reviews" hidden={section !== "reviews"}>
-            {section === "reviews" && (
-              <ReceivedReviews studentId={null} page={reviewsPage} path="/profile?tab=reviews" />
-            )}
-          </div>
-          <div id="profile-about" className="profile-sections" hidden={section !== "about"}>
-            <ProfileEditor
-              profile={profile}
-              csrfToken={session.csrfToken}
-              onSaved={setProfile}
-              onDirtyChange={setDirty}
-            />
-            <section className="account-card">
-              <h2>Пошта університету</h2>
-              <p className="profile-email">{session.user.email}</p>
-              <span className="profile-verified">✓ Підтверджено</span>
-            </section>
-          </div>
+          <ProfileSummary profile={profile} />
         </div>
-        <ProfileSummary profile={profile} />
-      </div>
-    </ProfileShell>
+      </ProfileShell>
+    </SessionRole.Provider>
   );
 }

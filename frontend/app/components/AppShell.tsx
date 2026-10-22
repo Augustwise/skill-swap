@@ -16,6 +16,7 @@ import { NotificationBell } from "./NotificationBell";
 import { unreadNotificationCount } from "./NotificationApi";
 import type { Profile } from "./OnboardingApi";
 import { usePolling } from "./usePolling";
+import { useIsAdmin } from "./SessionRole";
 
 export type { AppSection };
 
@@ -63,6 +64,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   const router = useRouter();
+  const isAdmin = useIsAdmin();
   const [modal, setModal] = useState("");
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState(false);
@@ -186,6 +188,26 @@ export function AppShell({
         </nav>
         <div className="dashboard-sidebar__footer">
           <Link
+            className={`dashboard-nav-item ${section === "settings" ? "dashboard-nav-item--active" : ""}`}
+            href="/settings"
+            aria-label="Налаштування"
+            aria-current={section === "settings" ? "page" : undefined}
+          >
+            <Icon name="settings" />
+            <span>Налаштування</span>
+          </Link>
+          {isAdmin && (
+            <Link
+              className={`dashboard-nav-item ${section === "admin" ? "dashboard-nav-item--active" : ""}`}
+              href="/admin?status=OPEN"
+              aria-label="Модерація"
+              aria-current={section === "admin" ? "page" : undefined}
+            >
+              <Icon name="inbox" />
+              <span>Модерація</span>
+            </Link>
+          )}
+          <Link
             className={`dashboard-nav-item ${section === "profile" ? "dashboard-nav-item--active" : ""}`}
             href="/profile"
             aria-current={section === "profile" ? "page" : undefined}
@@ -242,6 +264,7 @@ export function AppShell({
           />
           <AccountMenu
             profile={profile}
+            isAdmin={isAdmin}
             pending={pending}
             badges={{ "/requests": counters.requests, "/messages": counters.messages }}
             onLogout={() => void logout()}
