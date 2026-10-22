@@ -59,7 +59,11 @@ function ExchangesView({ profile, session }: AppContext) {
                 <li className="account-card" key={exchange.id}>
                   <ExchangeRow exchange={exchange} viewerId={profile.id} />
                   <Link className="dashboard-button" href={exchangeHref(exchange.id, path)}>
-                    Умови та план занять →
+                    {exchange.status === "COMPLETED"
+                      ? exchange.canReview
+                        ? "Залишити відгук →"
+                        : "Переглянути відгуки →"
+                      : "Умови та план занять →"}
                   </Link>
                 </li>
               ))}

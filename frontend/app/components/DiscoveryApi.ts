@@ -22,6 +22,7 @@ export type ResultPage<T> = { items: T[]; page: number; pageSize: number; total:
 export type MatchPage = ResultPage<MutualMatch> & { eligibleForMatching: boolean };
 export type Review = {
   id: string;
+  exchangeId: string;
   author: Person;
   rating: number;
   comment: string;

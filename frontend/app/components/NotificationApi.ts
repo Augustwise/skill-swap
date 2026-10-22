@@ -6,7 +6,7 @@ import { exchangeHref, requestHref } from "./ExchangeApi";
 import { sessionHref } from "./SessionApi";
 
 export type NotificationEvent =
-  "EXCHANGE_REQUEST" | "REQUEST_RESPONSE" | "CHAT_MESSAGE" | "SESSION_UPDATED";
+  "EXCHANGE_REQUEST" | "REQUEST_RESPONSE" | "CHAT_MESSAGE" | "SESSION_UPDATED" | "REVIEW_RECEIVED";
 export type NotificationTarget = {
   kind: string;
   id: string;
@@ -28,6 +28,7 @@ export type AppNotification = {
   messageId: string | null;
   sessionId: string | null;
   isRead: boolean;
+  reviewId: string | null;
   readAt: string | null;
   createdAt: string;
 };

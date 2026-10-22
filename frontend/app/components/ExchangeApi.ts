@@ -83,6 +83,9 @@ export type Exchange = {
   completionConfirmedByPartner: boolean;
   canConfirmCompletion: boolean;
   canCancel: boolean;
+  reviewedByMe: boolean;
+  reviewedByPartner: boolean;
+  canReview: boolean;
   startedAt: string | null;
   completedAt: string | null;
   cancelledAt: string | null;
