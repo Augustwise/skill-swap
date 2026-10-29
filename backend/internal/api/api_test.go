@@ -155,6 +155,12 @@ func TestReady(t *testing.T) {
 		response := request(t, testHandler(store), http.MethodGet, "/api/v1/ready")
 		assertProblem(t, response, http.StatusServiceUnavailable, "database_unavailable")
 	})
+
+	t.Run("schema outdated", func(t *testing.T) {
+		store := &fakeApp{readyErr: data.ErrSchemaOutdated}
+		response := request(t, testHandler(store), http.MethodGet, "/api/v1/ready")
+		assertProblem(t, response, http.StatusServiceUnavailable, "database_unavailable")
+	})
 }
 
 func TestUniversities(t *testing.T) {

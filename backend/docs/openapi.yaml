@@ -129,6 +129,10 @@ paths:
       tags: [Service]
       operationId: getReadiness
       summary: Check whether the database and required schema are available
+      description: |
+        Checks connectivity and every migration shipped with this API binary.
+        Missing or rolled back migrations return 503. The API also checks this
+        before listening and never applies migrations automatically.
       responses:
         "200":
           description: API is ready to serve database-backed requests

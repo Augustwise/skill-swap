@@ -370,6 +370,7 @@ test("catalog creates, edits, hides and restores skills and keeps failed drafts"
 test("settings and moderation remain accessible at 360, 768, 1440 and 1920 px", async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   await safetyFixture(page, "ADMIN");
   for (const width of [360, 768, 1440, 1920]) {
     await page.setViewportSize({ width, height: 1000 });

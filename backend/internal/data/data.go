@@ -59,17 +59,6 @@ func (p *Postgres) conn(ctx context.Context) querier {
 	return p.pool
 }
 
-func (p *Postgres) Ready(ctx context.Context) error {
-	var migrated bool
-	if err := p.conn(ctx).QueryRow(ctx, `SELECT to_regclass('public.universities') IS NOT NULL`).Scan(&migrated); err != nil {
-		return err
-	}
-	if !migrated {
-		return errors.New("database schema is not ready")
-	}
-	return nil
-}
-
 func notFound(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
