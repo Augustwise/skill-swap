@@ -15,6 +15,7 @@ export type Profile = {
   formats: string[];
   teachingSkills: (Omit<SelectedSkill, "id"> & { skillId: string })[];
   learningSkills: (Omit<SelectedSkill, "id"> & { skillId: string })[];
+  eligibleForMatching: boolean;
 };
 export type ProfileFields = {
   firstName: string;

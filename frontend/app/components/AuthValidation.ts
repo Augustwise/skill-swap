@@ -44,6 +44,8 @@ export function focusInvalid(form: HTMLFormElement, errors: Record<string, strin
   if (field instanceof HTMLElement) field.focus();
 }
 
-export function loginDestination(search: string) {
-  return safeAppPath(new URLSearchParams(search).get("next"), "/onboarding");
+export function loginDestination(search: string, profileReady = false) {
+  const fallback = profileReady ? "/main" : "/onboarding";
+  const destination = safeAppPath(new URLSearchParams(search).get("next"), fallback);
+  return profileReady && destination === "/onboarding" ? "/main" : destination;
 }
