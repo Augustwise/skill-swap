@@ -22,6 +22,10 @@ test("login returns to the profile and rejects untrusted destinations", () => {
   assert.equal(loginDestination("?next=/main"), "/main");
   assert.equal(loginDestination("?next=https://example.com"), "/onboarding");
   assert.equal(loginDestination("?next=//example.com"), "/onboarding");
+  assert.equal(loginDestination("", true), "/main");
+  assert.equal(loginDestination("?next=/onboarding", true), "/main");
+  assert.equal(loginDestination("?next=/profile", true), "/profile");
+  assert.equal(loginDestination("?next=https://example.com", true), "/main");
 });
 
 test("offline lessons require a city; online lessons do not", () => {

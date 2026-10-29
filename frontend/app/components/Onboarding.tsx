@@ -79,12 +79,17 @@ export function Onboarding() {
           router.replace("/verify-email");
           return;
         }
-        const [data, categoryData] = await Promise.all([
-          onboardingRequest<{ profile: Profile }>("me/profile", { signal: controller.signal }),
-          onboardingRequest<{ items: Reference[] }>("skill-categories", {
-            signal: controller.signal,
-          }),
-        ]);
+        const data = await onboardingRequest<{ profile: Profile }>("me/profile", {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        if (data.profile.eligibleForMatching) {
+          router.replace("/main");
+          return;
+        }
+        const categoryData = await onboardingRequest<{ items: Reference[] }>("skill-categories", {
+          signal: controller.signal,
+        });
         const facultyData = await onboardingRequest<{ items: Reference[] }>(
           `universities/${data.profile.university.id}/faculties`,
           { signal: controller.signal },

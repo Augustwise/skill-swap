@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 import { AuthError, authRequest, requestError, type AuthSession } from "./AuthApi";
 import { emailError, focusInvalid, loginDestination, normalizeEmail } from "./AuthValidation";
+import type { Profile } from "./OnboardingApi";
 type Mode = "login" | "recovery" | "recoverySent";
 
 export function LoginForm({
@@ -76,9 +77,12 @@ export function LoginForm({
         body: JSON.stringify({ email: emailVal, password, rememberMe }),
       });
       formElement.reset();
-      router.replace(
-        data.user.emailVerified ? loginDestination(window.location.search) : "/verify-email",
-      );
+      if (!data.user.emailVerified) {
+        router.replace("/verify-email");
+        return;
+      }
+      const { profile } = await authRequest<{ profile: Profile }>("me/profile");
+      router.replace(loginDestination(window.location.search, profile.eligibleForMatching));
     } catch (error) {
       setError(
         error instanceof AuthError && error.status === 401
