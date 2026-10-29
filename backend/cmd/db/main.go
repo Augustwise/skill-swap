@@ -65,7 +65,7 @@ func run() error {
 	case "check":
 		return nil
 	case "seed":
-		return seed(ctx, cfg.DatabaseURL, "seeds/demo.sql", "Demo data seeded")
+		return seed(ctx, cfg.DatabaseURL, "seeds/demo.sql", "Database cleared and test data seeded")
 	case "seed-load":
 		return seed(ctx, cfg.DatabaseURL, "seeds/load.sql", "Load test students seeded")
 	case "counts":

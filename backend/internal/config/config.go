@@ -28,6 +28,8 @@ type SMTPConfig struct {
 	From     string
 }
 
+const defaultEmailDomains = "edu.kpi.ua,knu.ua,ukma.edu.ua,lnu.edu.ua,ucu.edu.ua,lpnu.ua,karazin.ua,khpi.edu.ua,students.example.test"
+
 func Load() (Config, error) {
 	if err := loadEnvFile(); err != nil {
 		return Config{}, err
@@ -42,7 +44,7 @@ func Load() (Config, error) {
 		FrontendURL: value("FRONTEND_ORIGIN", "http://localhost:3000"),
 		SMTP:        smtp,
 	}
-	cfg.AllowedEmailDomains, err = emailDomains(value("ALLOWED_EMAIL_DOMAINS", "students.example.test"))
+	cfg.AllowedEmailDomains, err = emailDomains(value("ALLOWED_EMAIL_DOMAINS", defaultEmailDomains))
 	if err != nil {
 		return Config{}, err
 	}

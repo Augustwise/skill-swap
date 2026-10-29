@@ -127,7 +127,11 @@ func TestLoadAllowedEmailDomains(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expect.Slice(t, "default domains", cfg.AllowedEmailDomains, []string{"students.example.test"})
+	expect.Slice(t, "default domains", cfg.AllowedEmailDomains, []string{
+		"edu.kpi.ua", "knu.ua", "ukma.edu.ua", "lnu.edu.ua",
+		"ucu.edu.ua", "lpnu.ua", "karazin.ua", "khpi.edu.ua",
+		"students.example.test",
+	})
 
 	t.Setenv("ALLOWED_EMAIL_DOMAINS", " Students.Example.Test , kpi.ua ")
 	cfg, err = Load()
