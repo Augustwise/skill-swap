@@ -100,3 +100,17 @@ unit tests run with `go test ./...`; database tests skip when a separate local
 `TEST_DATABASE_URL` is absent. A live demonstration with two student accounts,
 an administrator and a local PostgreSQL database, followed by review from the
 other team member, remains part of final sprint acceptance under LR1.
+
+## Troubleshooting an existing installation
+
+Reports, report decisions and the action log need backend migration 10. A schema
+still at version 7 fails with `column ma.skill_id does not exist`. Back up the
+configured database, inspect `go run ./cmd/db status` and apply pending migrations
+with `go run ./cmd/db up` from `backend/`. Do not reseed an existing database to
+fix this error. The API now checks its required migrations before listening.
+
+If a dev server returns 404 for existing dynamic routes after changing branches,
+stop it and regenerate its ignored `frontend/.next/dev` cache before restarting.
+Keep one dev server per checkout. PostgreSQL integration tests use the stable
+`backend/seeds/integration.sql` fixture through the local-only `seed-test` command;
+the demonstration dataset is maintained independently.

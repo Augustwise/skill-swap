@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -47,6 +48,12 @@ func run(logger *slog.Logger) error {
 	}
 	defer db.Close()
 	store := data.NewPostgres(db)
+	readyCtx, cancelReady := context.WithTimeout(ctx, 10*time.Second)
+	err = store.Ready(readyCtx)
+	cancelReady()
+	if err != nil {
+		return fmt.Errorf("database readiness check failed: %w", err)
+	}
 	access := auth.NewService(store, store, mailer.NewSMTP(cfg.SMTP), auth.Config{
 		FrontendOrigin:      cfg.FrontendURL,
 		AllowedEmailDomains: cfg.AllowedEmailDomains,

@@ -65,7 +65,7 @@ func newFixture(t *testing.T) *fixture {
 	comm := communication.NewService(store, store, store)
 	exchanges := exchange.NewService(store, store, store, comm)
 	sessions := NewService(store, store, store, comm)
-	base := time.Date(2026, time.October, 25, 10, 0, 0, 0, time.UTC)
+	base := time.Now().UTC().Truncate(24 * time.Hour).Add(34 * time.Hour)
 	sessions.now = func() time.Time { return base }
 
 	f := &fixture{

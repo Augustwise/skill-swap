@@ -67,6 +67,29 @@ go run ./cmd/db seed
 The `up` command reads Goose migrations from `migrations/`. The `seed` command
 loads `seeds/demo.sql`.
 
+After pulling code with new migrations, run `go run ./cmd/db status` and apply
+pending migrations with `go run ./cmd/db up` before starting the API. Back up
+an existing database first. `up` updates the schema; `seed` replaces demo data
+and is not needed for a schema update. Obtain approval before updating a shared
+remote database.
+
+The API now checks every migration shipped in the binary before listening.
+`/ready` uses the same check, including missing intermediate or rolled back
+migrations. If the schema is outdated, the startup error lists the missing
+versions and the migration command. It does not apply migrations automatically.
+
+If moderation reports or the action log fail with `column ma.skill_id does not
+exist`, migration `00010_moderation.sql` is missing. A database at version 7
+needs migrations 8–10; changing the frontend or reseeding is not the fix.
+
+The integration tests use stable identities and catalog entries from
+`seeds/integration.sql`, independently of the evolving demonstration dataset.
+Prepare an empty local test database with `DATABASE_URL` pointing to it, run
+`go run ./cmd/db up` and `go run ./cmd/db seed-test`, then set
+`TEST_DATABASE_URL` to that same local URL for `go test ./...`.
+`seed-test` refuses remote hosts. Keep the normal application's `DATABASE_URL`
+separate; process environment overrides avoid editing `backend/.env`.
+
 ## Run the API
 
 ```bash
@@ -1005,16 +1028,17 @@ go vet ./...
 go build ./...
 ```
 
-The catalog and auth integration tests are skipped unless `TEST_DATABASE_URL` is set. To
-run it, use a separate local database that already has the migrations and demo
-seed applied:
+The database integration tests are skipped unless `TEST_DATABASE_URL` is set.
+Use a separate local UTF-8 database with a Unicode-aware locale (such as ICU
+`uk-UA`) for case-insensitive Ukrainian search, migrations and the stable
+integration fixture:
 
 ```bash
 export TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/skillswap_test?sslmode=disable'
 export DATABASE_URL="$TEST_DATABASE_URL"
 
 go run ./cmd/db up
-go run ./cmd/db seed
+go run ./cmd/db seed-test
 go test ./internal/api -run AgainstLocalPostgres -v
 go test ./internal/session -run AgainstPostgres -v
 go test ./internal/data -run AgainstPostgres -v
@@ -1022,5 +1046,5 @@ go test ./internal/data -run AgainstPostgres -v
 
 `TestMVPScenarioAgainstLocalPostgres` (part of the first command) runs the whole MVP
 scenario on this database and removes its rows afterwards. Do not run
-`go run ./cmd/db seed-load` on the test database: the demo-data tests expect only the demo
-students on the first result pages.
+`go run ./cmd/db seed` or `go run ./cmd/db seed-load` on the test database:
+the integration tests expect the identities from `seeds/integration.sql`.

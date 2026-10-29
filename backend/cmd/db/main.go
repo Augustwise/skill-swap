@@ -16,7 +16,7 @@ import (
 	"skillswap/backend/internal/config"
 )
 
-const usage = "usage: go run ./cmd/db [check|status|up|seed|seed-load|counts|backup|restore FILE]"
+const usage = "usage: go run ./cmd/db [check|status|up|seed|seed-test|seed-load|counts|backup|restore FILE]"
 
 func main() {
 	if err := run(); err != nil {
@@ -66,6 +66,11 @@ func run() error {
 		return nil
 	case "seed":
 		return seed(ctx, cfg.DatabaseURL, "seeds/demo.sql", "Database cleared and test data seeded")
+	case "seed-test":
+		if !isLoopback(parsed.Hostname()) {
+			return errors.New("seed-test requires a separate local PostgreSQL database")
+		}
+		return seed(ctx, cfg.DatabaseURL, "seeds/integration.sql", "Local integration test fixture seeded")
 	case "seed-load":
 		return seed(ctx, cfg.DatabaseURL, "seeds/load.sql", "Load test students seeded")
 	case "counts":
