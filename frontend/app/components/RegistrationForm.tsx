@@ -317,7 +317,7 @@ export function RegistrationForm() {
           id="register-password-hint"
           className={fieldErrors.password ? "register-field__error" : "auth-hint"}
         >
-          {fieldErrors.password || "Щонайменше 12 символів, не більше 72 байтів UTF-8."}
+          {fieldErrors.password || "Щонайменше 12 символів."}
         </small>
       </div>
 
