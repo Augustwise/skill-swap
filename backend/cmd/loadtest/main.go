@@ -233,5 +233,5 @@ func summarize(results []result, group string) summary {
 // percentile returns the value below which the given share of the sorted times falls.
 func percentile(sorted []time.Duration, share float64) time.Duration {
 	index := int(math.Ceil(share*float64(len(sorted)))) - 1
-	return sorted[max(index, 0)].Round(time.Millisecond)
+	return sorted[max(index, 0)]
 }

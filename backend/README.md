@@ -897,6 +897,30 @@ go test ./internal/api -run TestMVPScenario -v
 `TestMVPScenarioAgainstLocalPostgres` runs the same steps on `TEST_DATABASE_URL` and then
 deletes every row it created.
 
+### Process end-to-end tests (Sprint 11)
+
+`e2e/` starts the compiled API, delivers verification/reset emails over SMTP and
+uses a separate PostgreSQL database for each scenario. It covers the acceptance
+and rejection paths, concurrent HTTP retries, transaction rollback, API/database
+restart, and real backup/restore with 1000 profiles.
+
+From PowerShell, point `E2E_PG_BIN` at PostgreSQL 15+ client/server tools (including
+ICU support). The suite creates and stops its own temporary loopback cluster:
+
+```powershell
+$env:E2E_PG_BIN = 'C:/Program Files/PostgreSQL/18/bin'
+go test ./e2e -v -count=1 -timeout 5m
+```
+
+Set `E2E_LOAD=1` for the full 10-minute, 50-user load test and `E2E_SOAK=1` for the
+60-minute stability test; use `-timeout 75m` when running both. Without explicit
+E2E environment settings, `go test ./...` skips the process tests. The suite
+never uses the application's `DATABASE_URL` from `.env`.
+
+See [SPRINT11.md](SPRINT11.md) for the complete requirement-to-test matrix,
+existing-local-server setup, measurements and the browser/human acceptance work
+that backend tests cannot replace.
+
 ### Load test (NFR-01)
 
 `seeds/load.sql` adds 1000 verified students `load.0001` … `load.1000@students.example.test`
