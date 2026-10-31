@@ -209,6 +209,13 @@ export function createMvpWorld(options = {}) {
     };
   }
 
+  function statusHistoryView(history) {
+    return history.map((change) => {
+      const author = change.changedBy ? users.get(change.changedBy.id) : null;
+      return { ...change, changedBy: author ? personView(author) : change.changedBy };
+    });
+  }
+
   function summaryView(user) {
     const uni = findUniversity(user.universityId);
     return {
@@ -1749,7 +1756,7 @@ export function createMvpWorld(options = {}) {
         if (!req || (req.requesterId !== viewer.id && req.recipientId !== viewer.id)) {
           return problem(404, "request_not_found");
         }
-        return send({ request: requestView(req), history: req.history });
+        return send({ request: requestView(req), history: statusHistoryView(req.history) });
       }
 
       if (path === "me/exchanges" && method === "GET") {
@@ -1934,7 +1941,10 @@ export function createMvpWorld(options = {}) {
         if (!ex || (ex.requesterId !== viewer.id && ex.recipientId !== viewer.id)) {
           return problem(404, "exchange_not_found");
         }
-        return send({ exchange: exchangeView(ex, viewer.id), history: ex.history });
+        return send({
+          exchange: exchangeView(ex, viewer.id),
+          history: statusHistoryView(ex.history),
+        });
       }
 
       const sessionProposalsMatch = /^sessions\/([^/]+)\/proposals$/.exec(path);

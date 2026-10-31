@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { AppDialog } from "./AppDialog";
+import { AppDialog, closeDialog } from "./AppDialog";
 import { changePassword, deleteAccount, invalidFields, passwordFields } from "./SafetyApi";
 import { FieldError, SafetyFeedback } from "./SafetyFeedback";
 import { useSafetyMutation } from "./useSafetyMutation";
@@ -184,7 +184,7 @@ function DeleteAccountDialog({ csrfToken, onClose }: { csrfToken: string; onClos
             className="dashboard-button"
             data-autofocus
             disabled={mutation.pending}
-            onClick={onClose}
+            onClick={(event) => closeDialog(event.currentTarget)}
           >
             Залишити акаунт
           </button>
