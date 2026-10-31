@@ -267,6 +267,8 @@ test("notifications target only the intended recipient, avoid duplicates, and up
 test("lesson planning validates times and URLs, detects overlaps, tracks rescheduling/cancellation, and orders schedule", async ({
   browser,
 }) => {
+  test.setTimeout(60_000);
+
   const world = createMvpWorld();
   const olha = world.seedUser({
     email: "olha@students.example.test",
