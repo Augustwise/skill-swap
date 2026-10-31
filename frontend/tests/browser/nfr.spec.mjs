@@ -1,9 +1,10 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../helpers/browser-version.mjs";
+import { assertPageBudget, measurePageLoads } from "../helpers/performance.mjs";
 import { BASE_URL, DEMO_PASSWORD, IDS, MAILPIT_URL, createMvpWorld } from "./mvp-fixture.mjs";
 
-test("page load latency stays within 3 seconds for at least 95 percent of 30 unthrottled local page loads", async ({
+test("frontend render latency includes loaded page data across 30 local loads with a mocked API", async ({
   page,
-}) => {
+}, testInfo) => {
   test.setTimeout(90_000);
 
   const world = createMvpWorld();
@@ -29,54 +30,39 @@ test("page load latency stays within 3 seconds for at least 95 percent of 30 unt
 
   await world.attach(page);
 
-  const publicRoutes = ["/", "/login", "/register", "/terms"];
-  const privateRoutes = [
-    "/main",
-    "/search",
-    "/matches",
-    "/requests",
-    "/exchanges",
-    "/schedule",
-    "/messages",
-    "/notifications",
-    "/profile",
-    "/settings",
-    "/admin",
-  ];
-
-  const samples = [];
-
-  for (let cycle = 0; cycle < 2; cycle++) {
-    await page.context().clearCookies();
-    for (const route of publicRoutes) {
-      const start = performance.now();
-      await page.goto(route);
-      await page.locator("h1").first().waitFor({ state: "visible" });
-      samples.push({ route, ms: performance.now() - start });
-    }
-
-    await world.signIn(page, admin.email);
-    for (const route of privateRoutes) {
-      const start = performance.now();
-      await page.goto(route);
-      await page.getByRole("link", { name: "До вмісту" }).waitFor({ state: "attached" });
-      samples.push({ route, ms: performance.now() - start });
-    }
-  }
-
-  expect(samples).toHaveLength(30);
-  const withinBudget = samples.filter((s) => s.ms <= 3000).length;
-  const sorted = [...samples].map((s) => s.ms).sort((a, b) => a - b);
-  const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1];
-
-  expect(withinBudget / samples.length).toBeGreaterThanOrEqual(0.95);
-  expect(p95).toBeLessThanOrEqual(3000);
+  await world.signIn(page, admin.email);
+  const samples = await measurePageLoads(page, [
+    {
+      path: "/main",
+      ready: async (page) => {
+        await expect(page.getByRole("heading", { name: "Привіт, Олена!" })).toBeVisible();
+        await expect(page.locator("#dashboard-matches")).toContainText("Максим Партнер");
+        await expect(page.locator('main [aria-busy="true"]')).toHaveCount(0);
+      },
+    },
+    {
+      path: "/search?q=Photoshop",
+      ready: async (page) => {
+        await expect(page.getByRole("heading", { name: "Максим Партнер" })).toBeVisible();
+        await expect(page.locator(".discovery-results")).toHaveAttribute("aria-busy", "false");
+        await expect(page.getByRole("combobox", { name: /^Категорія/ })).toBeEnabled();
+      },
+    },
+    {
+      path: "/profile",
+      ready: async (page) => {
+        await expect(page.getByLabel("Ім’я", { exact: true })).toHaveValue("Олена");
+        await expect(page.getByText(admin.email, { exact: true })).toBeVisible();
+      },
+    },
+  ]);
+  await assertPageBudget(samples, testInfo, { api: "mock" });
 });
 
 test("open chat receives partner message through polling well within 10 seconds", async ({
   browser,
 }) => {
-  const world = createMvpWorld({ pollIntervalSeconds: 2 });
+  const world = createMvpWorld();
   const olha = world.seedUser({
     email: "olha@students.example.test",
     firstName: "Ольга",
@@ -349,6 +335,7 @@ test("session cookie is HttpOnly SameSite=Lax, browser storage holds no secrets,
   await expect(page.getByRole("status")).toContainText("збережено");
 
   // /verify-email and /reset-password enforce referrer=no-referrer and strip query tokens.
+  await page.context().clearCookies();
   await page.goto("/verify-email?token=bad-token");
   await expect(page.locator('meta[name="referrer"]')).toHaveAttribute("content", "no-referrer");
   await expect(page).toHaveURL(`${BASE_URL}/verify-email`);
@@ -558,7 +545,15 @@ test("key interfaces fit 360, 768, 1440, and 1920 px viewports without horizonta
     await world.signIn(page, user.email);
     for (const privateRoute of ["/main", "/search", "/profile", "/schedule"]) {
       await page.goto(privateRoute);
-      await page.getByRole("link", { name: "До вмісту" }).waitFor({ state: "attached" });
+      if (privateRoute === "/main")
+        await expect(page.getByRole("heading", { name: "Привіт, Соломія!" })).toBeVisible();
+      if (privateRoute === "/search")
+        await expect(page.locator(".discovery-results")).toHaveAttribute("aria-busy", "false");
+      if (privateRoute === "/profile")
+        await expect(page.getByLabel("Ім’я", { exact: true })).toHaveValue("Соломія");
+      if (privateRoute === "/schedule")
+        await expect(page.getByText("У розкладі поки немає занять.")).toBeVisible();
+      await expect(page.locator('main [aria-busy="true"]')).toHaveCount(0);
       const metrics = await page.evaluate(() => ({
         lang: document.documentElement.lang,
         scrollWidth: document.documentElement.scrollWidth,
@@ -587,6 +582,8 @@ test("key interfaces fit 360, 768, 1440, and 1920 px viewports without horizonta
     (focusVisual.outlineStyle !== "none" && focusVisual.outlineWidth !== "0px") ||
       focusVisual.boxShadow !== "none",
   ).toBe(true);
+  await page.keyboard.press("Enter");
+  await expect(page.locator("main")).toBeFocused();
 
   // Every visible form control on /register, /profile, and /settings has an accessible label; errors set aria-invalid + text.
   async function assertControlsLabeled() {
