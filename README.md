@@ -128,7 +128,12 @@ npm test
 npm run lint
 npm run format:check
 npm run build
+npm run test:browser
 ```
+
+The [browser test plan](frontend/tests/browser/README.md) maps frontend scenarios to
+requirements, tracks the remaining blocks, and explains which checks need the real
+local backend and database.
 
 Database integration tests run only when `TEST_DATABASE_URL` points at a separate local
 database; see [backend/README.md](backend/README.md#tests-and-build-verification).
