@@ -13,6 +13,100 @@ async function openChat(scenario) {
 }
 
 test.describe("FR-08 — private chat acceptance gaps", () => {
+  for (const { label, paths, fault } of [
+    { label: "message 503", paths: ["/messages"], fault: { status: 503 } },
+    { label: "message network failure", paths: ["/messages"], fault: { kind: "network" } },
+    { label: "conversation 503", paths: [""], fault: { status: 503 } },
+    { label: "both initial reads failing", paths: ["", "/messages"], fault: { status: 503 } },
+  ]) {
+    test(`initial ${label} recovers automatically and resumes polling the newest history`, async ({
+      scenario,
+    }) => {
+      const { world, request, prepare, andrii, actor } = scenario;
+      const pending = await request();
+      const conversation = [...world.conversations.values()].find(
+        (item) => item.requestId === pending.id,
+      );
+      const path = `conversations/${conversation.id}`;
+      for (let index = 1; index <= 41; index++) {
+        await prepare(andrii, `${path}/messages`, { body: `Історія ${index}` });
+      }
+      const { page } = await actor();
+      for (const suffix of paths) world.addFault({ method: "GET", path: path + suffix, ...fault });
+      const navigations = [];
+      page.on("request", (entry) => {
+        if (entry.isNavigationRequest() && entry.frame() === page.mainFrame())
+          navigations.push(entry.url());
+      });
+      await page.goto(`/messages/${conversation.id}`);
+      await expect(page.locator(".chat-connection")).toContainText("Автоматично повторюємо");
+      await expect(page.locator(".chat-message__body").last()).toHaveText("Історія 41", {
+        timeout: 10_000,
+      });
+      await expect(page.locator(".chat-connection")).toHaveCount(0);
+      await expect(page.locator(".chat-panel .discovery-alert")).toHaveCount(0);
+      await expect(page.locator(".chat-message__body")).toHaveCount(21);
+      await expect(
+        page.getByRole("button", { name: "Показати попередні повідомлення" }),
+      ).toBeVisible();
+      await prepare(andrii, `${path}/messages`, { body: "Повідомлення після відновлення" });
+      await expect(page.locator(".chat-message__body").last()).toHaveText(
+        "Повідомлення після відновлення",
+        { timeout: 10_000 },
+      );
+      expect(navigations).toHaveLength(1);
+      expect(world.config.pollIntervalSeconds).toBe(5);
+    });
+  }
+
+  for (const status of [401, 403, 404]) {
+    test(`initial ${status} stops automatic chat retries`, async ({ scenario }) => {
+      const { world, request, actor } = scenario;
+      const pending = await request();
+      const conversation = [...world.conversations.values()].find(
+        (item) => item.requestId === pending.id,
+      );
+      const path = `conversations/${conversation.id}/messages`;
+      world.addFault({ method: "GET", path, status, times: 100 });
+      const { page } = await actor();
+      await page.clock.install();
+      await page.goto(`/messages/${conversation.id}`);
+      if (status === 404) {
+        await expect(page.getByText("Розмову не знайдено.", { exact: true })).toBeVisible();
+      } else {
+        await expect(page.locator(".chat-panel .discovery-alert")).toBeVisible();
+      }
+      await page.clock.fastForward(11_000);
+      expect(
+        world.requestLog.filter((entry) => entry.method === "GET" && entry.path === path),
+      ).toHaveLength(1);
+      await expect(page.locator(".chat-connection")).toHaveCount(0);
+    });
+  }
+
+  test("leaving a chat cancels its pending initial retry", async ({ scenario }) => {
+    const { world, request, actor } = scenario;
+    const pending = await request();
+    const conversation = [...world.conversations.values()].find(
+      (item) => item.requestId === pending.id,
+    );
+    const path = `conversations/${conversation.id}/messages`;
+    world.addFault({ method: "GET", path, status: 503, times: 100 });
+    const { page } = await actor();
+    await page.clock.install();
+    await page.goto(`/messages/${conversation.id}`);
+    await expect(page.locator(".chat-connection")).toBeVisible();
+    await page
+      .getByRole("navigation", { name: "Основна навігація", exact: true })
+      .getByRole("link", { name: "Повідомлення", exact: true })
+      .click();
+    await expect(page.getByRole("heading", { name: "Обери розмову", exact: true })).toBeVisible();
+    await page.clock.fastForward(11_000);
+    expect(
+      world.requestLog.filter((entry) => entry.method === "GET" && entry.path === path),
+    ).toHaveLength(1);
+  });
+
   test("a message of exactly 2000 Unicode code points is sent without truncation", async ({
     scenario,
   }) => {
