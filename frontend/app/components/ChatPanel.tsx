@@ -7,7 +7,7 @@ import { useCountersChanged } from "./AppShell";
 import { AuthError } from "./AuthApi";
 import { ChatComposer } from "./ChatComposer";
 import { ChatThread } from "./ChatThread";
-import { conversationContext, conversationDetails, messagesHref } from "./ChatApi";
+import { conversationContext, messagesHref } from "./ChatApi";
 import { DashboardAvatar } from "./DashboardCards";
 import { DashboardIcon as Icon } from "./DashboardIcon";
 import { DiscoveryEmpty } from "./DiscoveryCards";
@@ -16,7 +16,6 @@ import { avatarColor, fullName, initials } from "./DiscoveryFormat";
 import { exchangeHref, requestPerspective } from "./ExchangeApi";
 import { SkillTag, StatusBadge } from "./ExchangeCards";
 import { Skeleton } from "./Skeleton";
-import { useApiQuery } from "./useApiQuery";
 import { useChat } from "./useChat";
 import { StudentSafety } from "./StudentSafety";
 
@@ -67,7 +66,6 @@ export function ChatPanel({
   const countersChanged = useCountersChanged();
   const [blocked, setBlocked] = useState(false);
   const [safetyNotice, setSafetyNotice] = useState("");
-  const details = useApiQuery(path, (signal) => conversationDetails(conversationId, signal));
   const chat = useChat({
     conversationId,
     viewerId,
@@ -77,7 +75,7 @@ export function ChatPanel({
       onActivity();
     },
   });
-  const conversation = details.state.status === "ready" ? details.state.data : null;
+  const conversation = chat.conversation;
 
   async function send(body: string) {
     try {
@@ -88,14 +86,7 @@ export function ChatPanel({
     }
   }
 
-  const failed =
-    details.state.status === "error"
-      ? { error: details.state.error, retry: details.retry }
-      : chat.status === "error"
-        ? { error: chat.error, retry: chat.retry }
-        : null;
-
-  if (failed) {
+  if (chat.status === "error") {
     return (
       <section className="account-card chat-panel chat-panel--state" aria-label="Чат">
         {safetyNotice && (
@@ -107,11 +98,16 @@ export function ChatPanel({
           ← До розмов
         </Link>
         <DiscoveryError
-          error={failed.error}
+          error={chat.error}
           path={path}
-          onRetry={failed.retry}
+          onRetry={chat.retry}
           notFound={<ChatMissing />}
         />
+        {!chat.online && (
+          <p className="chat-connection" role="status">
+            Немає з’єднання із сервером. Автоматично повторюємо завантаження кожні 5 секунд.
+          </p>
+        )}
       </section>
     );
   }
@@ -169,7 +165,7 @@ export function ChatPanel({
             onChanged={(notice) => {
               setSafetyNotice(notice);
               setBlocked(false);
-              details.retry();
+              chat.retry();
               onActivity();
             }}
           />
