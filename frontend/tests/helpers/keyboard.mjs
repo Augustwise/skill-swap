@@ -2,6 +2,7 @@ import { expect } from "@playwright/test";
 
 export async function tabTo(page, target) {
   await expect(target).toBeVisible();
+  let key = "Tab";
   for (let count = 0; count < 100; count++) {
     if (await target.evaluate((element) => element === document.activeElement)) {
       await expect(target).toBeFocused();
@@ -23,7 +24,15 @@ export async function tabTo(page, target) {
       expect(visibleFocus, "Keyboard focus must be visible").toBe(true);
       return;
     }
-    await page.keyboard.press("Tab");
+    const before = await page.evaluateHandle(() => document.activeElement);
+    await page.keyboard.press(key);
+    // Firefox under Playwright does not wrap focus past the last control, so search backwards.
+    if (
+      key === "Tab" &&
+      (await page.evaluate((element) => element === document.activeElement, before))
+    )
+      key = "Shift+Tab";
+    await before.dispose();
   }
   throw new Error(
     `Control cannot be reached with Tab: ${await target.evaluate((element) => element.outerHTML)}`,

@@ -27,6 +27,8 @@ export function ProfileEditor({
   const [pending, setPending] = useState(false);
   const [expired, setExpired] = useState(false);
   const saving = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const focusInvalid = useRef(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial());
 
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
@@ -59,6 +61,12 @@ export function ProfileEditor({
   }, [draft.universityId, attempt]);
 
   useEffect(() => {
+    if (pending || !focusInvalid.current) return;
+    focusInvalid.current = false;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [errors, pending]);
+
+  useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     window.addEventListener("beforeunload", warn);
@@ -82,11 +90,9 @@ export function ProfileEditor({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving.current) return;
-    const form = event.currentTarget;
-    const focusError = () =>
-      window.requestAnimationFrame(() =>
-        form.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(),
-      );
+    const focusError = () => {
+      focusInvalid.current = true;
+    };
     const invalid = validateProfile(draft);
     setErrors(invalid);
     setNotice("");
@@ -119,6 +125,7 @@ export function ProfileEditor({
 
   return (
     <form
+      ref={formRef}
       className="profile-editor"
       noValidate
       onSubmit={submit}
