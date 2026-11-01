@@ -173,6 +173,24 @@ export default async function setup() {
       MAIL_FROM: "no-reply@students.example.test",
       ALLOWED_EMAIL_DOMAINS: "students.example.test",
     };
+    if (process.env.E2E_MAILPIT === "1") {
+      const smtpPort = await freePort();
+      const mailPort = await freePort();
+      const mailpit =
+        process.env.E2E_MAILPIT_BIN || path.join(backend, `.local/mailpit/mailpit${suffix}`);
+      start(mailpit, [], {
+        env: {
+          ...process.env,
+          MP_SMTP_BIND_ADDR: `127.0.0.1:${smtpPort}`,
+          MP_UI_BIND_ADDR: `127.0.0.1:${mailPort}`,
+        },
+      });
+      process.env.E2E_MAILPIT_URL = `http://127.0.0.1:${mailPort}`;
+      await ready(`${process.env.E2E_MAILPIT_URL}/api/v1/messages`);
+      env.SMTP_ADDR = `127.0.0.1:${smtpPort}`;
+      process.env.E2E_STACK_DATABASE_URL = env.DATABASE_URL;
+      process.env.E2E_STACK_PG_BIN = pgBin;
+    }
     const api = path.join(directory, `api${suffix}`);
     const database = path.join(directory, `db${suffix}`);
     await command("go", ["build", "-o", api, "./cmd/api"], { cwd: backend });

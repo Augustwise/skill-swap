@@ -7,9 +7,9 @@
     "test:browser": "playwright test",
     "test:browser:matrix": "playwright test --config playwright.matrix.config.mjs",
     "test:acceptance": "playwright test --config playwright.acceptance.config.mjs",
-    "dev": "next dev",
+    "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --hostname 127.0.0.1",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

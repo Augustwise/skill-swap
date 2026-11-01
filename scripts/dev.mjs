@@ -423,7 +423,7 @@ async function main() {
   // 4. Next.js dev server (proxies /api/v1 to the Go API).
   if (useWeb && !shuttingDown) {
     const nextBin = path.join(FRONTEND, "node_modules", "next", "dist", "bin", "next");
-    start("web", process.execPath, [nextBin, "dev"], {
+    start("web", process.execPath, [nextBin, "dev", "--hostname", "127.0.0.1"], {
       cwd: FRONTEND,
       env: color ? { FORCE_COLOR: "1" } : { NO_COLOR: "1" },
     });
